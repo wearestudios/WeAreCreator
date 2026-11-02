@@ -38,7 +38,7 @@ import { STICKY_BAR } from "@/constants/testIds";
 import { WorkNotes } from "@/components/brand/WorkNotes";
 import QuestionThreadsPanel from "@/components/questions/QuestionThreadsPanel";
 import { api, formatApiError, mediaUrl } from "@/lib/api";
-import { formatCompensation, isBarter } from "@/lib/compensation";
+import { formatCompensation, formatRupees, isBarter } from "@/lib/compensation";
 import BudgetMeter from "@/components/campaign/BudgetMeter";
 import { budgetApplies } from "@/lib/budget";
 import { Button } from "@/components/ui/button";
@@ -96,6 +96,23 @@ const STATE_META = {
         tone: "bg-state-done-wash text-state-done border-state-done/30",
         note: "Waiting on the creator to publish and submit links.",
     },
+    // The delivery half, in the brand's words: it is the brand (or us) who
+    // sends it, so the confirmed address is the brand's cue.
+    address_confirmed: {
+        label: "Ready to send",
+        tone: "bg-primary/15 text-primary border-primary/40",
+        note: "The creator confirmed their address. Send it and record the tracking.",
+    },
+    dispatched: {
+        label: "On its way",
+        tone: "bg-state-progress-wash text-state-progress border-state-progress/30",
+        note: "Sent. Waiting on the creator to confirm it arrived.",
+    },
+    received: {
+        label: "Delivered",
+        tone: "bg-state-done-wash text-state-done border-state-done/30",
+        note: "It arrived. Waiting on the creator to shoot and submit.",
+    },
     draft_submitted: {
         label: "Review draft",
         tone: "bg-primary/15 text-primary border-primary/40",
@@ -114,7 +131,10 @@ const STATE_META = {
     content_approved: {
         label: "Approved",
         tone: "bg-state-approved-wash text-state-approved border-state-approved/30",
-        note: "Approved — payment is being processed.",
+        // True of both kinds of brief: a paid one goes to payment, a barter
+        // one is closed out. "Payment is being processed" was the line, and
+        // on a barter brief there is no payment.
+        note: "Approved. We handle the rest from here.",
     },
     in_payment: {
         label: "In payment",
@@ -134,8 +154,6 @@ const STATE_META = {
     },
 };
 
-const formatRupees = (n) =>
-    typeof n === "number" ? n.toLocaleString("en-IN") : "—";
 
 const formatCompact = (n) => {
     if (typeof n !== "number") return "—";

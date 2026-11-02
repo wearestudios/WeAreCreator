@@ -9,6 +9,7 @@ import React from "react";
 import { TEXT } from "@/components/admin/console/tokens";
 import { IST, LOCALE } from "@/lib/time";
 
+import { formatInr } from "@/lib/compensation";
 /**
  * Rupees, in Indian grouping — 12,00,000 rather than 1,200,000.
  *
@@ -16,10 +17,7 @@ import { IST, LOCALE } from "@/lib/time";
  * reading this reconciles a bank statement in, so it is the one to use even
  * though the rest of the app's numbers are small enough not to care.
  */
-export const rupees = (n) =>
-    n == null || Number.isNaN(Number(n))
-        ? "—"
-        : `₹${Number(n).toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
+export const rupees = (n) => formatInr(n);
 
 /** A follower count, compacted: 24k, 1.2M. Never a bare six-digit number in a
  *  column somebody is scanning. */

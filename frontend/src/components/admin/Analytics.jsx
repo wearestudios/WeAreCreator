@@ -28,6 +28,7 @@ import { TEXT } from "@/components/admin/console/tokens";
 import { ListEmptyState } from "@/components/data/DenseView";
 import { downloadCsv } from "@/lib/download";
 
+import { formatInr } from "@/lib/compensation";
 /**
  * The series palette, from the theme.
  *
@@ -96,8 +97,7 @@ function RangePicker({ value, onChange, testId }) {
 const pct = (v) => (v === null || v === undefined ? "—" : `${v}%`);
 const num = (v) =>
     v === null || v === undefined ? "—" : Number(v).toLocaleString("en-IN");
-const money = (v) =>
-    v === null || v === undefined ? "—" : `₹${Number(v).toLocaleString("en-IN")}`;
+const money = (v) => formatInr(v);
 
 /**
  * A line, hand-drawn in SVG.

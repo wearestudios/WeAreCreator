@@ -95,7 +95,7 @@ const Row = ({ row, testid, muted, onWithdraw, onRefresh }) => (
                 judgement about the creator, and finding out from a smaller
                 payment than expected is the version of this that costs
                 somebody. */}
-            <Shortfall shortfall={row.shortfall} testid={SHORTFALL.block(row.id)} />
+            <Shortfall shortfall={row.shortfall} note={row.partial_note} testid={SHORTFALL.block(row.id)} />
             {/* **Here as well as on the live card**, because delivered work
                 keeps moving down this list: a takedown lands on a
                 collaboration that is `closed` as often as one still running,

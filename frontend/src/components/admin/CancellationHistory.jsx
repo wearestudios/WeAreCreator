@@ -19,6 +19,7 @@ import { ADMIN_CANCELLATIONS as IDS } from "@/constants/testIds";
 import { CampaignLink, CreatorLink } from "./links";
 import { PANEL, TEXT } from "./console/tokens";
 
+import { formatInr } from "@/lib/compensation";
 /**
  * How much warning there was, said the way a person would say it.
  *
@@ -84,7 +85,7 @@ export default function CancellationHistory({ rows, showCreator = false }) {
                                 data-testid={IDS.fee(r.collaboration_id)}
                                 className={`mt-2 inline-flex rounded border border-primary/30 bg-primary/10 px-2 py-0.5 ${TEXT.meta} text-primary-ink`}
                             >
-                                ₹{Number(r.kill_fee).toLocaleString("en-IN")} cancellation fee
+                                {formatInr(r.kill_fee)} cancellation fee
                             </p>
                         )}
                     </li>

@@ -22,10 +22,8 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { TEXT } from "./console/tokens";
 
-const money = (v) =>
-    v === null || v === undefined
-        ? "—"
-        : `₹${Math.round(Number(v)).toLocaleString("en-IN")}`;
+import { formatInr } from "@/lib/compensation";
+const money = (v) => formatInr(v);
 
 /** Where a rate came from, in words. "15%" and "15%, because nobody has
  *  agreed anything else" are different facts, and only one is worth a call. */

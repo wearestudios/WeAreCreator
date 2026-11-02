@@ -168,6 +168,10 @@ export const ADMIN_COLLAB_PAGE = {
 	bookOnBehalf: 'admin-collab-page-book-on-behalf',
 	confirmAddressOnBehalf: 'admin-collab-page-confirm-address-on-behalf',
 	onBehalf: 'admin-collab-page-on-behalf',
+	// A delivery waiting to be sent: the dispatch form lives on the
+	// application screen, so the page links there rather than offering an
+	// Advance the route refuses.
+	dispatchLink: 'admin-collab-page-dispatch-link',
 };
 
 // Booking a slot for a creator who asked us to: the slot picker and the

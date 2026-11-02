@@ -32,6 +32,7 @@ import { StatePill } from "@/components/creator/shared";
 import { formatLatLng, googleMapsLink, staticMapUrl } from "@/lib/googleMaps";
 import { ADDRESS, CREATOR_PROFILE as IDS } from "@/constants/testIds";
 
+import { formatInr } from "@/lib/compensation";
 const Row = ({ label, children, testid }) => (
     <div>
         <dt className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
@@ -338,7 +339,7 @@ export default function CreatorProfile() {
                                 </Row>
                                 <Row label="Your usual rate" testid={IDS.rate}>
                                     {profile.base_rate != null
-                                        ? `₹${profile.base_rate.toLocaleString("en-IN")}`
+                                        ? formatInr(profile.base_rate)
                                         : null}
                                 </Row>
                             </dl>

@@ -11,7 +11,7 @@
 // block carries `warning`, `exhausted` and `warning_ratio`, so a panel reads
 // the answer rather than the arithmetic.
 
-import { formatCompensation } from "@/lib/compensation";
+import { formatCompensation, formatInr } from "@/lib/compensation";
 
 /** The block, or `null` — for a brief with no cap and for a payload that
  *  didn't look, which are the same answer for a screen: draw nothing. */
@@ -22,8 +22,7 @@ export function budgetOf(source) {
 }
 
 export function formatMoney(value) {
-    if (value === null || value === undefined) return "—";
-    return `₹${Math.round(Number(value)).toLocaleString("en-IN")}`;
+    return formatInr(value);
 }
 
 /** 0–100 for a progress bar, clamped: a brief that went over its cap through

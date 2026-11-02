@@ -17,6 +17,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { WORK_NOTES } from "@/constants/testIds";
 import { IST } from "@/lib/time";
 
+import { formatRupees } from "@/lib/compensation";
 const ROLE_LABEL = {
     brand: "Brand",
     brand_manager: "Brand",
@@ -24,8 +25,6 @@ const ROLE_LABEL = {
     campaign_manager: "WeAre manager",
 };
 
-const formatRupees = (n) =>
-    typeof n === "number" ? n.toLocaleString("en-IN", { maximumFractionDigits: 0 }) : "—";
 
 function formatWhen(iso) {
     if (!iso) return "";

@@ -9,7 +9,7 @@
 // only what has happened makes you remember what comes next; showing the whole
 // run makes the next move obvious.
 import React, { useCallback, useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { Check, ExternalLink, Circle, IndianRupee } from "lucide-react";
 
 import { api, formatApiError } from "@/lib/api";
@@ -28,6 +28,7 @@ import {
     Stat,
 } from "@/components/admin/DetailPage";
 import {
+    ADVANCE_VERB,
     STATE_META,
     StatePill,
     formatDateTime,
@@ -195,7 +196,7 @@ export default function CollaborationDetailPage() {
                                 onClick={advance}
                                 className="rounded-full bg-primary text-primary-foreground hover:bg-primary-hover"
                             >
-                                {STATE_META[collab.next_state]?.label || "Advance"}
+                                {ADVANCE_VERB[collab.next_state] || "Advance"}
                             </Button>
                         )}
                         {collab.next_owner === "brand" && collab.next_state && (
@@ -205,10 +206,23 @@ export default function CollaborationDetailPage() {
                                 {STATE_META[collab.next_state]?.label} is the brand's to do.
                             </span>
                         )}
-                        {collab.state !== "closed" && !collab.can_advance && collab.can_cancel && (
+                        {/* Whose move it is, said from the server's `next_owner`
+                            rather than guessed from a missing button — a
+                            delivery waiting to be sent is ours, not the
+                            creator's, and the old line said otherwise. */}
+                        {collab.next_owner === "creator" && collab.can_cancel && (
                             <span className="text-meta text-muted-foreground">
                                 Waiting on the creator.
                             </span>
+                        )}
+                        {collab.next_state === "dispatched" && (
+                            <Link
+                                to={`/admin/applications/${id}`}
+                                data-testid={IDS.dispatchLink}
+                                className="text-meta font-medium text-foreground underline underline-offset-4"
+                            >
+                                Record the dispatch
+                            </Link>
                         )}
                         {/* **The override, where the ordinary advance refuses.**
                             Booking and confirming an address are the creator's

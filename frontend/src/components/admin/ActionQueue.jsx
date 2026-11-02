@@ -36,7 +36,7 @@ import { TimeAgo } from "./console/format";
 import { CALM, DENSITY, FOCUS, PANEL, ROW_H, TEXT } from "./console/tokens";
 import useListState from "./console/useListState";
 import useTableKeys from "./console/useTableKeys";
-import { formatRupees } from "./shared";
+import { ADVANCE_VERB, formatRupees } from "./shared";
 import AgeBadge from "@/components/AgeBadge";
 import SuspensionPrompts from "./SuspensionPrompts";
 
@@ -50,14 +50,9 @@ const ADMIN_ACTION_STATES = [
     "content_approved",
 ];
 
-// What each step is actually called when you're the one doing it.
-const NEXT_STEP_LABEL = {
-    verified: "Verify creator",
-    commercial_agreed: "Agree fee",
-    slot_booked: "Book slot",
-    attended: "Mark attended",
-    in_payment: "Start payment",
-};
+// What each step is actually called when you're the one doing it:
+// `ADVANCE_VERB`, shared with the collaboration page so the queue and the
+// page name one button the same way — including the barter close.
 
 const KIND_META = {
     payment: { label: "Payout", Icon: Wallet, band: 0 },
@@ -925,7 +920,7 @@ export default function ActionQueue({ onChanged, feePercent, allAccess = true })
 /** What the primary action on this row is actually called. */
 function nextLabelFor(item) {
     if (item.kind === "collaboration") {
-        return NEXT_STEP_LABEL[item.raw.next_state] || "Move forward";
+        return ADVANCE_VERB[item.raw.next_state] || "Move forward";
     }
     return item.kind === "payment" ? "Record payout" : "Approve";
 }

@@ -26,7 +26,7 @@ import {
 } from "@/components/data/PageSkeleton";
 import { useAuth } from "@/context/AuthContext";
 import { api, formatApiError } from "@/lib/api";
-import { compensationType, isBarter } from "@/lib/compensation";
+import { compensationType, formatRupees, isBarter } from "@/lib/compensation";
 import ExecutionBadge, { ExecutionNote } from "@/components/ExecutionBadge";
 import ShareButton from "@/components/ShareButton";
 import { isPrivate } from "@/lib/visibility";
@@ -95,8 +95,6 @@ const formatDate = (iso, opts) => {
     }
 };
 
-const formatRupees = (n) =>
-    typeof n === "number" ? n.toLocaleString("en-IN") : "—";
 
 function ApplyDialog({ open, onOpenChange, campaign, onApplied }) {
     const [pitch, setPitch] = useState("");

@@ -22,6 +22,7 @@ import DataTable from "./console/DataTable";
 import { TimeAgo } from "./console/format";
 import { CALM, TEXT } from "./console/tokens";
 
+import { formatInr } from "@/lib/compensation";
 const STATES = [
     { value: "open", label: "Open" },
     { value: "resolved", label: "Resolved" },
@@ -111,9 +112,7 @@ export default function DisputeQueue() {
                             className="h-3 w-3 text-state-progress"
                         />
                     )}
-                    {typeof r.agreed_amount === "number"
-                        ? `₹${r.agreed_amount.toLocaleString("en-IN")}`
-                        : "—"}
+                    {formatInr(r.agreed_amount)}
                 </span>
             ),
         },

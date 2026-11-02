@@ -315,6 +315,22 @@ def check_personas(collab, campaign, ladder, money):
     if delivery and state == "commercial_agreed":
         assert "slot" not in nxt["label"].lower(), nxt
 
+    # The console's own button: the next rung on *this* ladder, whose it is,
+    # and whether Advance may take it. Delivery rows used to read "next:
+    # address confirmed, owner: admin" with an Advance the route refuses.
+    console = server._console_next_step(state, campaign)
+    ladder_states = expected_ladder(ladder, money)
+    want_next = (
+        ladder_states[ladder_states.index(state) + 1] if state != "closed" else None
+    )
+    assert console["next_state"] == want_next, (state, console)
+    if want_next in ("slot_booked", "address_confirmed", "received", "draft_submitted"):
+        assert console["next_owner"] == "creator" and not console["can_advance"], console
+    if want_next == "dispatched":
+        assert not console["can_advance"], console
+    if want_next in ("in_payment", "closed") and state == "content_approved":
+        assert console["next_owner"] == "admin" and console["can_advance"], console
+
     # The eight-stage flow, in all three voices.
     for side, viewer in (
         ("creator", {"role": "creator"}),

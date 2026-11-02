@@ -3150,6 +3150,10 @@ DRAFT_REVIEW_STATES = ("draft_submitted", "draft_approved")
 VENUE_ATTENDANCE_STATES = ("slot_booked", "attended")
 DELIVERY_STATES = ("address_confirmed", "dispatched", "received")
 
+# The rung that only exists where there is money. A barter brief walks
+# `content_approved → closed` and never stands here — see `_collab_ladder`.
+PAYMENT_STATES = ("in_payment",)
+
 # Where a collaboration stands when the creator has the thing and can shoot.
 # `attended` on a venue brief, `received` on a delivery one — the same moment
 # in the story, so anything asking "can they submit content yet" asks this
@@ -3294,11 +3298,22 @@ def _collab_ladder(campaign: Optional[dict]) -> list:
     Exactly one of `VENUE_ATTENDANCE_STATES` and `DELIVERY_STATES` survives,
     always — there is no campaign where a creator both turns up and has it
     sent, and none where neither happens.
+
+    **And a barter brief has no payment rung.** `content_approved` steps
+    straight to `closed`. It used to step to `in_payment`, which the console
+    refuses without an agreed amount — and a barter collaboration never has
+    one, on purpose (`_resolve_agreed_amount` returns `None` there, because
+    `0` reads as "agreed, nothing"). So every barter collaboration ever
+    approved stood on `content_approved` for good, with the creator's card
+    saying a payment was being processed. The third substitution, composed
+    like the other two.
     """
     drop = set()
     if not _requires_draft_approval(campaign):
         drop |= set(DRAFT_REVIEW_STATES)
     drop |= set(DELIVERY_STATES if not _is_delivery(campaign) else VENUE_ATTENDANCE_STATES)
+    if _compensation_type(campaign) == "barter":
+        drop |= set(PAYMENT_STATES)
     return [s for s in COLLAB_STATE_ORDER if s not in drop]
 
 # Once a collaboration is in one of these, nothing may move it again.
@@ -4199,6 +4214,9 @@ NOTIFY_EVENTS = {
     "content_changes_requested": "The brand asked for a change",
     "content_approved": "Your content was approved",
     "payment_sent": "Your payment has been sent",
+    # The barter close: there is no payment to send, so the end of the work
+    # is its own message rather than a payment notice with no money in it.
+    "collaboration_closed": "Your collaboration is wrapped up",
     "new_applicant": "A creator applied to your campaign",
     "application_withdrawn": "A creator withdrew their application",
     "collaboration_cancelled": "A collaboration you were on was cancelled",
@@ -9068,6 +9086,20 @@ def _serialize_collab_row(
         "proof": _proof_block(campaign, collab),
         "quoted_rate": collab.get("quoted_rate"),
         "agreed_amount": collab.get("agreed_amount"),
+        # **The kind of money beside the figure, always.** The card used to
+        # print `agreed_amount ?? quoted_rate` with a rupee sign, which on a
+        # barter brief — no agreed amount, on purpose — printed the creator's
+        # own quote as if somebody had agreed it. The terms stand where a
+        # number would, in the brief's own words.
+        "compensation_type": _compensation_type(campaign),
+        "barter_terms": (campaign or {}).get("barter_description")
+        if _compensation_type(campaign) == "barter"
+        else None,
+        # What arrived short, and the runner's note on it, on the card of the
+        # person it is a judgement about — beside `shortfall` above, which
+        # says what is missing; this says why it was accepted anyway.
+        "partial_delivery": bool(collab.get("partial_delivery")),
+        "partial_note": collab.get("partial_note"),
         "agreed_at": _iso(collab.get("agreed_at")),
         "content_url": collab.get("content_url"),
         "content_urls": collab.get("content_urls")
@@ -9270,8 +9302,27 @@ def _creator_next_action(collab: dict, campaign: Optional[dict], can_be_paid: bo
     is not in their court is worth as much as telling them it is.
     """
     state = collab.get("state")
+    barter = _compensation_type(campaign) == "barter"
     if state == "accepted":
-        return {"action": None, "label": "We're agreeing your fee with the brand.", "waiting_on": "weare"}
+        return {
+            "action": None,
+            "label": (
+                "We're confirming the terms with the brand."
+                if barter
+                else "We're agreeing your fee with the brand."
+            ),
+            "waiting_on": "weare",
+        }
+    if state == "commercial_agreed" and _is_delivery(campaign):
+        # **There is no slot on a delivery brief.** The step out of here is
+        # the creator checking where the parcel goes — which the card already
+        # knows how to draw (`confirm_address`), and which this function used
+        # to answer with the slot picker regardless of what was being sent.
+        return {
+            "action": "confirm_address",
+            "label": "Confirm your delivery address so it can be sent.",
+            "waiting_on": "you",
+        }
     if state == "commercial_agreed":
         kind = (campaign or {}).get("campaign_type")
         return {
@@ -9354,6 +9405,14 @@ def _creator_next_action(collab: dict, campaign: Optional[dict], can_be_paid: bo
             "action": "resubmit_content",
             "label": "The brand is reviewing your content. You can still replace it.",
             "waiting_on": "brand",
+        }
+    if state == "content_approved" and barter:
+        # Approval is the end of a barter collaboration. Asking for a UPI id
+        # here would be asking somebody for bank details to receive nothing.
+        return {
+            "action": None,
+            "label": "Approved — that's everything. We'll close this out.",
+            "waiting_on": "weare",
         }
     if state in ("content_approved", "in_payment"):
         # The payout gate is the one place a creator can be blocking their own
@@ -10079,7 +10138,7 @@ async def list_creator_slots(
         "state": collab.get("state"),
         # Booking is the step out of commercial_agreed; the flag saves the UI
         # re-deriving the state machine to decide whether to show the button.
-        "can_book": collab.get("state") == "commercial_agreed",
+        "can_book": collab.get("state") == "commercial_agreed" and not _is_delivery(campaign),
         "picks_own_time": campaign.get("campaign_type") == "personal_table",
         "how_it_works": _slot_window_note(campaign),
         # The brand's days and hours, so a creator picking their own time on a
@@ -16885,7 +16944,9 @@ def _ladder_for_standing(current: str, campaign: Optional[dict]) -> list:
     restore = next(
         (
             group
-            for group in (DRAFT_REVIEW_STATES, DELIVERY_STATES, VENUE_ATTENDANCE_STATES)
+            for group in (
+                DRAFT_REVIEW_STATES, DELIVERY_STATES, VENUE_ATTENDANCE_STATES, PAYMENT_STATES
+            )
             if current in group
         ),
         (),
@@ -17018,9 +17079,20 @@ def _next_action(collab: dict, campaign: Optional[dict] = None) -> dict:
     # On a campaign that reviews drafts, what follows attendance is a draft,
     # not a live link. The state is the same; the instruction is not, and the
     # creator is the one who has to act on the difference.
-    if state == "attended" and _requires_draft_approval(campaign):
+    if state in READY_TO_SHOOT_STATES and _requires_draft_approval(campaign):
         label = "Submit the draft"
         detail = "The draft is reviewed before anything is published."
+
+    # **A barter brief has no payment rung**, so what follows approval is the
+    # close itself. Saying "move into payment" here sent an admin to a button
+    # the route refuses — the collaboration has no amount to pay.
+    if _compensation_type(campaign) == "barter":
+        if state == "accepted":
+            label = "Confirm the terms"
+            detail = "Barter — record that the terms are agreed. There is no fee."
+        elif state == "content_approved":
+            label = "Close it out"
+            detail = "Barter — nothing to pay. Close it once the work is up."
 
     return {
         "state": state,
@@ -17050,9 +17122,10 @@ def _lifecycle_for(
     # standing on a draft state draws the draft ladder whatever the campaign
     # now says — a toggle flipped mid-flight must not erase the step somebody
     # is on.
-    ladder = _collab_ladder(campaign)
-    if state in DRAFT_REVIEW_STATES and state not in ladder:
-        ladder = COLLAB_STATE_ORDER
+    # `_ladder_for_standing` is the one rescue for all three substitutions —
+    # the draft gate, the delivery split and the barter payment rung — so a
+    # row standing on a rung its campaign has since dropped still draws it.
+    ladder = _ladder_for_standing(state, campaign)
     try:
         current_index = ladder.index(state)
     except ValueError:
@@ -17122,14 +17195,23 @@ PROCESS_STAGE_KEYS = tuple(k for k, _ in PROCESS_STAGES)
 # difference, and `_stage_of` would stop being one reader.
 _DELIVERY_STAGE_LABELS = {"scheduled": "Dispatch", "attended": "Delivered"}
 
+# **And the last box on a barter brief is not "Payment".** Nothing is paid; the
+# stage is where the work is closed out. The same relabelling, for the same
+# reason: a box that names a thing that never happens on this campaign is a
+# screen telling the creator it does not know what they agreed to.
+_BARTER_STAGE_LABELS = {"payment": "Wrapped up"}
+
 
 def _process_stages(campaign: Optional[dict]) -> tuple:
     """The eight stages, named for the kind of campaign this is. One reader."""
-    if not _is_delivery(campaign):
+    relabel = {}
+    if _is_delivery(campaign):
+        relabel.update(_DELIVERY_STAGE_LABELS)
+    if _compensation_type(campaign) == "barter":
+        relabel.update(_BARTER_STAGE_LABELS)
+    if not relabel:
         return PROCESS_STAGES
-    return tuple(
-        (key, _DELIVERY_STAGE_LABELS.get(key, label)) for key, label in PROCESS_STAGES
-    )
+    return tuple((key, relabel.get(key, label)) for key, label in PROCESS_STAGES)
 
 # Which stage each internal state stands in, on a campaign that gates drafts.
 _STAGE_BY_STATE_WITH_DRAFT = {
@@ -17188,7 +17270,16 @@ _PROCESS_ACTION = {
     "applied": ("admin", "Check the creator's profile", "We're checking the creator's profile"),
     "verified": ("brand", "Accept or decline this creator", "Waiting on a decision"),
     "accepted": ("admin", "Agree the fee", "The fee is being agreed"),
+    "accepted_barter": ("admin", "Confirm the terms", "The terms are being confirmed"),
     "commercial_agreed": ("creator", "Pick your slot", "Waiting for the creator to pick a slot"),
+    # A delivery brief has no slot: the step out of `commercial_agreed` is the
+    # creator confirming where it goes. "Pick your slot" there is the line
+    # that told creators to book a venue on a parcel.
+    "commercial_agreed_delivery": (
+        "creator",
+        "Confirm your delivery address",
+        "Waiting for the creator to confirm their address",
+    ),
     # Booked, and waiting on whoever runs the campaign to say the time works.
     "slot_pending": ("runner", "Confirm the creator's slot", "Your slot is waiting to be confirmed"),
     "slot_booked": ("creator", "Turn up on the day", "Booked — waiting for the day"),
@@ -17228,6 +17319,8 @@ _PROCESS_ACTION = {
     "draft_approved": ("creator", "Publish and send the live link", "Waiting for the creator to publish"),
     "content_submitted": ("brand", "Approve it, or ask for changes", "The content is being reviewed"),
     "content_approved": ("admin", "Raise the payout", "The payout is being raised"),
+    # Barter: approval is the end of the work. There is no payout to raise.
+    "content_approved_barter": ("admin", "Close it out", "Approved — being wrapped up"),
     "in_payment": ("admin", "Record the payout", "Payment on the way"),
     "closed": (None, "All done", "All done"),
 }
@@ -17300,6 +17393,10 @@ def _process_flow(
     action_key = state
     if state == "attended" and _requires_draft_approval(campaign):
         action_key = "attended_draft"
+    if state == "commercial_agreed" and _is_delivery(campaign):
+        action_key = "commercial_agreed_delivery"
+    if state in ("accepted", "content_approved") and _compensation_type(campaign) == "barter":
+        action_key = f"{state}_barter"
     if state == "slot_booked" and not _slot_confirmed(collab):
         action_key = "slot_pending"
     # And finer again where WeAre took the step for the creator: the line
@@ -25213,26 +25310,46 @@ async def list_all_collaborations(
         row = _serialize_admin_collab(
             c, camp, brand_name, creator_user, creator_profile, payment, targets
         )
-        next_state = _next_collab_state(row["state"], camp)
-        row["next_state"] = next_state
-        # Tell the console which button, if any, belongs to it — the brand owns
-        # accepting and approving, the creator and the reviewer own the draft,
-        # and the API will refuse if we bypass any of them.
-        row["next_owner"] = (
-            "brand"
-            if next_state in _BRAND_OWNED_TRANSITIONS or next_state == "draft_approved"
-            else "creator"
-            if next_state == "draft_submitted"
-            else "admin"
-        )
-        row["can_advance"] = bool(next_state) and next_state not in (
-            _BRAND_OWNED_TRANSITIONS
-            | _DRAFT_OWNED_TRANSITIONS
-            | _CREATOR_OWNED_TRANSITIONS
-        )
+        row.update(_console_next_step(row["state"], camp))
         row["can_cancel"] = row["state"] not in TERMINAL_COLLAB_STATES
         by_state.setdefault(row["state"], []).append(row)
     return {"by_state": by_state, "total": len(collabs)}
+
+
+# Steps the console reaches through a route of their own rather than through
+# Advance. Dispatch carries a tracking reference and a notification, so the
+# advance route refuses it and points at the dispatch form; offering Advance
+# there was a button whose only outcome was that refusal.
+_OWN_ROUTE_TRANSITIONS = {"dispatched"}
+
+
+def _console_next_step(state: str, campaign: Optional[dict]) -> dict:
+    """Which step comes next, whose it is, and whether Advance may take it.
+
+    **One reader for the list and the detail page**, which had two copies —
+    and both were written before the delivery ladder and the barter close,
+    so a delivery row read "next: Address confirmed, owner: admin" with an
+    Advance button the route refuses, and a barter row offered Advance into a
+    payment rung it could never reach. The next state is the campaign's own
+    ladder; the owner follows the ownership sets the routes enforce.
+    """
+    next_state = _next_collab_state(state, campaign)
+    if next_state in _BRAND_OWNED_TRANSITIONS or next_state == "draft_approved":
+        owner = "brand"
+    elif next_state in _CREATOR_OWNED_TRANSITIONS or next_state == "draft_submitted":
+        owner = "creator"
+    else:
+        owner = "admin"
+    return {
+        "next_state": next_state,
+        "next_owner": owner,
+        "can_advance": bool(next_state) and next_state not in (
+            _BRAND_OWNED_TRANSITIONS
+            | _DRAFT_OWNED_TRANSITIONS
+            | _CREATOR_OWNED_TRANSITIONS
+            | _OWN_ROUTE_TRANSITIONS
+        ),
+    }
 
 
 @admin_router.get("/collaborations/{collab_id}")
@@ -25281,18 +25398,7 @@ async def get_admin_collaboration_detail(
         payment,
         await sla_targets(),
     )
-    next_state = _next_collab_state(row["state"], campaign)
-    row["next_state"] = next_state
-    row["next_owner"] = (
-        "brand"
-        if next_state in _BRAND_OWNED_TRANSITIONS or next_state == "draft_approved"
-        else "creator"
-        if next_state == "draft_submitted"
-        else "admin"
-    )
-    row["can_advance"] = bool(next_state) and next_state not in (
-        _BRAND_OWNED_TRANSITIONS | _DRAFT_OWNED_TRANSITIONS | _CREATOR_OWNED_TRANSITIONS
-    )
+    row.update(_console_next_step(row["state"], campaign))
     row["can_cancel"] = row["state"] not in TERMINAL_COLLAB_STATES
     # **The override, offered only where the ordinary advance refuses.** The
     # two creator-owned steps an admin may take *for* the creator, decided
@@ -25510,6 +25616,16 @@ async def advance_collaboration(
             ),
         )
 
+    if to_state == "closed" and _compensation_type(campaign) != "barter":
+        # Only a barter ladder steps here from `content_approved`. A paid one
+        # closes through Mark as paid, which is the step that records where
+        # the money went — closing it from here would end a collaboration
+        # somebody is still owed for.
+        raise HTTPException(
+            status_code=409,
+            detail="A paid collaboration closes when its payout is marked paid.",
+        )
+
     if to_state == "in_payment":
         agreed = collab.get("agreed_amount")
         if agreed is None:
@@ -25633,6 +25749,17 @@ async def advance_collaboration(
             "commercial_agreed",
             title="Fee agreed",
             body=f"{campaign_title} — {terms}. Over to you: {booking}.",
+            link="/dashboard",
+        )
+    if to_state == "closed":
+        # The barter close. Said as the end of the work rather than as a
+        # payment: nothing is owed, and a creator told "payment is next" about
+        # a dinner waits for money that was never coming.
+        await notify(
+            collab["creator_id"],
+            "collaboration_closed",
+            title="All wrapped up",
+            body=f"{campaign_title} is closed — thanks for the work. Nothing else is needed from you.",
             link="/dashboard",
         )
     # There is no `slot_booked` branch here any more: this route refuses that
@@ -29751,19 +29878,40 @@ async def run_lifecycle_chasers(limit: int = 500) -> dict:
                 continue
             camp = campaigns.get(c["campaign_id"])
             title = (camp or {}).get("title") or "your campaign"
-            await _chase_creator(
-                c,
-                camp,
-                "book_slot",
-                title="Pick your slot",
-                body=(
-                    f"Your fee is agreed on {title} — pick a time that works and "
-                    "you're booked in."
-                    if nth == 1
-                    else f"{title} is still waiting on you to pick a time. "
-                    "The places go on a first-come basis."
-                ),
+            agreed = (
+                "The terms are agreed" if _compensation_type(camp) == "barter"
+                else "Your fee is agreed"
             )
+            # The same chase, about the step this campaign actually has: a
+            # delivery brief has no slot, and "pick your slot" about a parcel
+            # is the instruction the creator's card used to give as well.
+            if _is_delivery(camp):
+                await _chase_creator(
+                    c,
+                    camp,
+                    "book_slot",
+                    title="Confirm your delivery address",
+                    body=(
+                        f"{agreed} on {title} — confirm your delivery address so "
+                        "it can be sent."
+                        if nth == 1
+                        else f"{title} can't be sent until you confirm your address."
+                    ),
+                )
+            else:
+                await _chase_creator(
+                    c,
+                    camp,
+                    "book_slot",
+                    title="Pick your slot",
+                    body=(
+                        f"{agreed} on {title} — pick a time that works and "
+                        "you're booked in."
+                        if nth == 1
+                        else f"{title} is still waiting on you to pick a time. "
+                        "The places go on a first-come basis."
+                    ),
+                )
             report["book_slot"] += 1
     except Exception as exc:
         logger.error("book_slot reminders failed: %s", exc)
@@ -36606,6 +36754,13 @@ DISPUTABLE_STATES = (
     "commercial_agreed",
     "slot_booked",
     "attended",
+    # The delivery half of the same stretch. A parcel that never arrived, or
+    # arrived as something other than the brief described, is exactly the
+    # argument this exists for — and leaving these out made the one ladder
+    # with a courier in it the one that could not be disputed at all.
+    "address_confirmed",
+    "dispatched",
+    "received",
     "draft_submitted",
     "draft_approved",
     "content_submitted",
@@ -37026,24 +37181,37 @@ async def resolve_dispute(
     if not updated:
         raise HTTPException(status_code=409, detail="This was just resolved — reload.")
 
-    if payload.resolution == "refund":
+    if payload.resolution in ("refund", "cancelled"):
+        # **Both of these end the arrangement, so both end the row.** The
+        # refund branch used to cancel the payment and leave the collaboration
+        # standing on whatever rung it was frozen on — `content_approved`, or
+        # `in_payment` — so the creator's card went on saying "payment is
+        # being processed" about money that had just gone back, the brief's
+        # budget went on counting it as committed, and the console offered a
+        # Mark-as-paid against a cancelled payment.
+        #
+        # One terminal state, `cancelled`, with the kind of ending on
+        # `cancellation_type`: a refund and a call-off are the same exit from
+        # the ladder and different facts about it, and a fifth terminal state
+        # would have to be excluded from every read that already knows the
+        # four. Leaving the committed set is what releases the budget —
+        # derived, so nothing here has to remember to give it back.
+        await db.collaborations.update_one(
+            {"_id": collab["_id"]},
+            {"$set": {**_state_stamp("cancelled", now), "active": False,
+                      "cancellation_type": (
+                          "dispute_refund" if payload.resolution == "refund" else "dispute"
+                      ),
+                      "cancelled_by_role": "admin",
+                      "cancelled_by_name": user.get("name"),
+                      "exit_reason": payload.note.strip()[:500]}},
+        )
         # Nothing goes to the creator, and the payment says so rather than
         # sitting pending forever.
         await db.payments.update_one(
             {"collaboration_id": collab["_id"]},
             {"$set": {"state": "cancelled", "frozen": False, "frozen_reason": None,
                       "updated_at": now}},
-        )
-    elif payload.resolution == "cancelled":
-        await db.collaborations.update_one(
-            {"_id": collab["_id"]},
-            {"$set": {**_state_stamp("cancelled", now), "active": False,
-                      "cancellation_type": "dispute",
-                      "exit_reason": payload.note.strip()[:500]}},
-        )
-        await db.payments.update_one(
-            {"collaboration_id": collab["_id"]},
-            {"$set": {"state": "cancelled", "frozen": False, "updated_at": now}},
         )
     else:
         # Release and partial release both unfreeze and leave the payout to run

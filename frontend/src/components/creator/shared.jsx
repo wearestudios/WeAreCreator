@@ -15,12 +15,14 @@ import { Skeleton } from "@/components/ui/skeleton";
 import Settle from "@/components/motion/Settle";
 import { IST } from "@/lib/time";
 
+import { formatRupees } from "@/lib/compensation";
 // ---------------------------------------------------------------------------
 // Formatting
 // ---------------------------------------------------------------------------
 
-export const formatRupees = (n) =>
-    typeof n === "number" ? Math.round(n).toLocaleString("en-IN") : "—";
+// The one rupee formatter lives in `lib/compensation.js`; re-exported so the
+// creator surfaces' imports keep working.
+export { formatRupees };
 
 export const formatCompact = (n) => {
     if (typeof n !== "number") return "—";
@@ -121,6 +123,15 @@ export const STATE_META = {
         tone: "bg-state-approved-wash text-state-approved border-state-approved/30",
     },
     attended: { label: "Attended", tone: "bg-state-done-wash text-state-done border-state-done/30" },
+    address_confirmed: {
+        label: "Address confirmed",
+        tone: "bg-state-approved-wash text-state-approved border-state-approved/30",
+    },
+    dispatched: {
+        label: "On its way",
+        tone: "bg-state-progress-wash text-state-progress border-state-progress/30",
+    },
+    received: { label: "Arrived", tone: "bg-state-done-wash text-state-done border-state-done/30" },
     draft_submitted: {
         label: "Draft in review",
         tone: "bg-state-done-wash text-state-done border-state-done/30",
