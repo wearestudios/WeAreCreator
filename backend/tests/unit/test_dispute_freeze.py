@@ -636,6 +636,10 @@ EXEMPT = {
     # is an argument about the money — those are different questions.
     "request_takedown": "a live post can need taking down mid-dispute",
     "respond_to_takedown": "the creator's answer to a takedown is not frozen either",
+    # Reading what a live post did is measurement, not a move: the job writes
+    # only the refresh schedule (`insights_refresh`), never the state, and a
+    # mediator deciding a dispute about a post wants its numbers current.
+    "run_instagram_jobs": "re-reads post insights and writes only their refresh schedule",
     # The review clock, not the collaboration's state. Pausing or extending it
     # mid-mediation is how a mediator stops a window running out while the
     # argument is still open; freezing these would take that tool away at the

@@ -1485,6 +1485,8 @@ class TestAuditCoverage:
                 for helper in (
                     "_set_creator_verification",
                     "_record_performance",
+                    # The Instagram half of the same recorder, per post.
+                    "_record_instagram_posts",
                     "_pause_campaign",
                     "_resume_campaign",
                     "_invite_creators",
@@ -1519,7 +1521,8 @@ class TestAuditCoverage:
         "helper",
         ["_pause_campaign", "_resume_campaign", "_invite_creators",
          "_check_in_collaboration", "_set_creator_verification",
-         "_record_performance", "_approve_draft_by_window", "_claim_slot",
+         "_record_performance", "_record_instagram_posts",
+         "_approve_draft_by_window", "_claim_slot",
          "_record_delivery_received", "_accept_applicant", "_approve_draft_decision",
          "_request_draft_changes_decision", "_approve_content_decision"],
     )

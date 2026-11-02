@@ -98,6 +98,9 @@ WIPED = (
     # a creator who no longer exists is a queue item nobody can act on.
     "circumvention_reports",
     "content_performance",
+    # Per-post readings and their history: the dashboard's posts and its chart.
+    "post_performance",
+    "performance_snapshots",
     # Published write-ups of finished work. Wiped with the campaigns they are
     # about — a case study naming creators and a brand the database no longer
     # has is a public page whose every link is broken.

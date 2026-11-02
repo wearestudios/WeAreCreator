@@ -32,6 +32,7 @@ const METRICS = [
     { key: "views", label: "Views" },
     { key: "likes", label: "Likes" },
     { key: "comments", label: "Comments" },
+    { key: "shares", label: "Shares" },
     { key: "saves", label: "Saves" },
 ];
 
