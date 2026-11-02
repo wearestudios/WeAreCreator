@@ -24,6 +24,7 @@ import AgeBadge from "@/components/AgeBadge";
 import Shortfall from "@/components/Shortfall";
 import TakedownPanel from "@/components/TakedownPanel";
 import { SHORTFALL } from "@/constants/testIds";
+import { formatCollabMoney } from "@/lib/compensation";
 import Invitations from "./Invitations";
 import { CREATOR_APPLICATIONS as IDS } from "@/constants/testIds";
 import {
@@ -41,7 +42,14 @@ import {
 // on both sides — and the button is absent rather than present and refused.
 const WITHDRAWABLE = new Set(["applied", "verified"]);
 
-const Row = ({ row, testid, muted, onWithdraw, onRefresh }) => (
+const Row = ({ row, testid, muted, onWithdraw, onRefresh }) => {
+    const money = formatCollabMoney({
+        compensationType: row.compensation_type,
+        agreed: row.agreed_amount,
+        quoted: row.quoted_rate,
+        barterTerms: row.barter_terms,
+    });
+    return (
     <li
         data-testid={testid}
         className="flex flex-col gap-3 px-5 py-5 sm:flex-row sm:items-center sm:gap-6 sm:px-6"
@@ -80,9 +88,25 @@ const Row = ({ row, testid, muted, onWithdraw, onRefresh }) => (
         </Link>
 
         <div className="flex items-center justify-between gap-3 sm:flex-col sm:items-end">
-            <Money symbolClass="h-3.5 w-3.5" className="font-serif text-h3 leading-none">
-                {formatRupees(row.agreed_amount ?? row.quoted_rate)}
-            </Money>
+            {/* **Barter as barter**, the way the live card draws it. A barter
+                collaboration has no agreed amount on purpose, so falling back
+                to the quote printed the creator's own number as a fee on a
+                brief that pays a dinner. */}
+            {money.isBarter ? (
+                <span
+                    data-testid={IDS.amount(row.id)}
+                    data-barter="true"
+                    className="max-w-[14rem] text-right text-meta leading-snug text-muted-foreground"
+                >
+                    {money.text}
+                </span>
+            ) : (
+                <Money symbolClass="h-3.5 w-3.5" className="font-serif text-h3 leading-none">
+                    <span data-testid={IDS.amount(row.id)}>
+                        {formatRupees(row.agreed_amount ?? row.quoted_rate)}
+                    </span>
+                </Money>
+            )}
             <StatePill state={row.state} testid={IDS.state(row.id)} />
             {/* **The age, and no verdict.** The server sends this row no SLA
                 target on purpose: an SLA is the standard WeAre holds itself
@@ -120,7 +144,8 @@ const Row = ({ row, testid, muted, onWithdraw, onRefresh }) => (
             )}
         </div>
     </li>
-);
+    );
+};
 
 /**
  * Taking an application back.

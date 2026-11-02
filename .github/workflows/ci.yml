@@ -94,3 +94,11 @@ jobs:
           CI: "true"
           REACT_APP_BACKEND_URL: http://localhost:8001
         run: npm run build
+
+      - name: Component tests
+        working-directory: frontend
+        env:
+          CI: "true"
+        # Jest via CRA. `--watchAll=false` because CRA's runner otherwise
+        # waits for file changes; CI=true already implies it, stated anyway.
+        run: npx craco test --watchAll=false

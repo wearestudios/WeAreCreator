@@ -118,6 +118,7 @@ export const CREATOR_APPLICATIONS = {
 	count: 'creator-applications-count',
 	row: (id) => `application-row-${id}`,
 	state: (id) => `creator-application-state-${id}`,
+	amount: (id) => `creator-application-amount-${id}`,
 	note: (id) => `creator-application-note-${id}`,
 	declinedList: 'creator-declined-list',
 	declinedRow: (id) => `creator-declined-row-${id}`,
