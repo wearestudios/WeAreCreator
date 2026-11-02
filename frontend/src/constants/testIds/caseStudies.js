@@ -32,6 +32,24 @@ export const CASE_STUDIES = {
 	pieces: 'case-study-pieces',
 	roster: 'case-study-roster',
 
+	// The hero, which publish requires and the editor had no way to supply —
+	// so a blank draft, and any draft from a campaign with no cover, was
+	// permanently unpublishable with the reason listed and no control.
+	hero: 'case-study-hero',
+	heroInput: 'case-study-hero-input',
+	heroChoose: 'case-study-hero-choose',
+	heroRemove: 'case-study-hero-remove',
+	heroError: 'case-study-hero-error',
+
+	// The gallery, off the same endpoint. It renders as "The content" on the
+	// public page and had no editor at all.
+	gallery: 'case-study-gallery',
+	galleryAdd: 'case-study-gallery-add',
+	galleryAddInput: 'case-study-gallery-add-input',
+	galleryItem: (i) => `case-study-gallery-item-${i}`,
+	galleryCaption: (i) => `case-study-gallery-caption-${i}`,
+	galleryRemove: (i) => `case-study-gallery-remove-${i}`,
+
 	// What is in the way of publishing, named rather than counted.
 	missing: 'case-study-missing',
 

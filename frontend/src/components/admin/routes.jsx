@@ -139,12 +139,22 @@ export const AuditRoute = () => (
     </DensityScope>
 );
 
-/** Our own staff, and which brands each of them runs. Admin-only. */
-export const TeamRoute = () => (
-    <DensityScope surface="team">
-        <AdminTeam />
-    </DensityScope>
-);
+/**
+ * Our own staff: the scoped-console role and the campaign managers.
+ *
+ * The section is out of a team member's sidebar, so `allAccess` is not what
+ * keeps them off the screen — it is what keeps the *manager* half off it,
+ * because `POST /admin/managers` is admin-only where the team routes beside
+ * it are `CONSOLE_ROLES`.
+ */
+export const TeamRoute = () => {
+    const { allAccess } = useAdminConsole();
+    return (
+        <DensityScope surface="team">
+            <AdminTeam allAccess={allAccess} />
+        </DensityScope>
+    );
+};
 
 /** People asking to be forgotten. Admin-only, and irreversible. */
 export const DeletionsRoute = () => (
