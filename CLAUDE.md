@@ -4314,6 +4314,83 @@ effect of adding an export.
 campaigns we put in front of a prospect is not theirs to decide. The list filter
 uses `{"$ne": True}` for "not showcased" so campaigns predating the field match.
 
+## AI features, and the one door to a model
+
+`backend/ai.py` is the only code that talks to a model, and
+`generate_json(task, system, user, schema, *, prompt_version,
+max_output_tokens, timeout_s=20)` is its only entry point: a validated pydantic
+instance back, or `AIUnavailable`. Two providers behind one interface — Gemini
+over REST through the existing httpx, Anthropic through the official SDK —
+chosen by `AI_PROVIDER` / `AI_MODEL`, keyed by `GEMINI_API_KEY` /
+`ANTHROPIC_API_KEY`.
+
+- **Off unless asked for.** `AI_ENABLED` unset reads as off, and on still needs
+  the provider's key (`ai_configured()`). Off is a supported state, the
+  Instagram shape: every AI surface hides itself and nothing else depends on it.
+- **`redact_for_ai` runs inside `generate_json`**, so no caller can forget it.
+  It drops every key in `BRAND_FORBIDDEN_CREATOR_FIELDS` ∪
+  `PUBLIC_BRAND_FORBIDDEN_FIELDS` ∪ a base list at any depth, and scrubs
+  contact-shaped text (phone, email, UPI, PAN, IFSC, long digit runs) out of
+  free text. A test plants every forbidden field at three depths and searches
+  what the fake provider received.
+- **Data is data.** The payload is wrapped in per-call `<<<DATA-nonce>>>`
+  markers, a forged marker inside it is defused, and every instruction lives in
+  the system prompt. `ai.py` writes to nothing but `ai_calls`; a test reads its
+  source for that.
+- **Structured output, one retry, then closed.** Schema failures and the
+  caller's own `check` share the single retry, with the problems appended.
+- **`ai_calls` logs every provider call**: task, provider, model, prompt
+  version, input hash, tokens, latency, ok/error code. No input, no output, and
+  the account as a salted hash. The per-account-per-task limit
+  (`AI_ACCOUNT_TASK_DAILY_LIMIT`, 20) and the global ceiling
+  (`AI_DAILY_CALL_LIMIT`, 500) are counted from it per IST day. 90-day TTL.
+- **Prompts are versioned constants** (`ai.Prompt`, `register_prompt`);
+  `test_ai.py` pins each version's fingerprint, so changing the text without
+  bumping the version fails.
+- **The database is read through a getter** (`ai.configure(lambda: db)`), so a
+  test that swaps `server.db` is logging to its mock, not a cluster.
+- Tests use `tests/unit/fake_ai.py`; an autouse fixture makes both real
+  providers raise, so CI never opens a connection.
+
+### The campaign summary
+
+`campaign_summary.py` (pure) plus a section in `server.py`, behind
+`GET /brand/campaigns/{id}/summary` and `POST …/summary/regenerate` (owning
+brand and admin). **No screen yet** — the animated campaign dashboard is the
+next PR, so both routes are in `test_router_callers.py`'s `UNBUILT`.
+
+- **The model writes sentences; Python does the arithmetic.** The input is
+  built from `_campaign_analytics` (so through `_brand_visible_creator`) plus
+  the baseline, absent fields are left out rather than sent as null, and
+  `derive` computes cost per 1,000 reach, averages by format and the top
+  creator's share. No language averages until posts carry a tag.
+- **`ground` is the point of the feature.** Every number in the text —
+  ₹, Indian commas, %, "1.49L", "38K", number words — must match an input or
+  derived value within display rounding, of a compatible kind (a `%` must match
+  a rate, a `₹` money). **A multiple ("3x", "2-fold") never matches**: the first
+  version let "3x" through because three posts were measured. Evidence paths
+  must resolve, unmeasured posts must be named ("3 of 4"), and measures the
+  input does not carry (sales, footfall, followers, likes…) are refused.
+- **Cached by input hash**, which includes the prompt version. Data moving
+  marks the summary `stale` and keeps it readable beside the flag; Regenerate
+  on unchanged data returns the cache without a call. Five regenerations per
+  campaign per IST day, counting failed attempts. At least three measured posts.
+- **Written automatically on close** (`_summarise_when_closed`, both close
+  routes), in the background and only when AI is on; not one of the five.
+- Off, `GET` answers `{"available": false}` and nothing else — not a stale
+  summary from before the switch.
+- An erasure deletes summaries naming the creator (`creator_ids`) or written
+  for the brand.
+
+### The public site's switches
+
+`AI_FEATURES` in `content/marketing.js` (`campaignSummary`, `nicheMatching`,
+`briefWriter`, all false) and `aiLive(key)`, the only way a page may read them.
+A switch goes true only in the PR that ships the feature to brands or
+creators; if `AI_ENABLED` goes false in production these go false too, because
+a bundle cannot read the server's environment. `test_ai_switches.py` fails CI
+when a switch is true and its module or route does not exist.
+
 ## Doing it again
 
 A brand's second campaign was as much work as its first. Every field went back

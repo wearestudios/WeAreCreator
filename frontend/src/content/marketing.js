@@ -60,6 +60,34 @@ export const FACTS = {
     confirmedClients: ["The Brew Factory", "9889", "The Rameshwaram Cafe"],
 };
 
+/**
+ * The AI features the public site may talk about, one switch each.
+ *
+ * - A switch is flipped to `true` **only in the PR that ships that feature to
+ *   brands or creators** — the route, its module and the screen together. A
+ *   line on a public page about something a visitor cannot use yet is a claim
+ *   the product does not keep.
+ * - **Every AI line on the public site renders only while its switch is
+ *   `true`**, through `aiLive(key)`. No page reads this object directly.
+ * - **If `AI_ENABLED` is ever set to `false` in production, flip these off
+ *   too.** The server hides the features when its switch is off; this file is
+ *   built into the bundle and cannot read the server's environment, so the
+ *   public site would keep advertising a feature that has gone dark.
+ *
+ * `test_ai_switches.py` fails CI when a switch is `true` and the backend
+ * capability it names (the route and its module) does not exist.
+ */
+export const AI_FEATURES = {
+    campaignSummary: false,
+    nicheMatching: false,
+    briefWriter: false,
+};
+
+/** Whether the site may mention this AI feature. Unknown keys are off. */
+export function aiLive(key) {
+    return AI_FEATURES[key] === true;
+}
+
 /** True for a value a page may show. `0` and `false` are values; `null` and
  * `undefined` are not. */
 export function known(value) {
