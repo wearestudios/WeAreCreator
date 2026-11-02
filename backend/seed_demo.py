@@ -127,6 +127,7 @@ WIPED = (
     # against the ceilings and would otherwise carry a used-up limit into a
     # fresh demo.
     "campaign_summaries",
+    "brief_writer_uses",
     "ai_calls",
     "creator_lists",
     "payments",

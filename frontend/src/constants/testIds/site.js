@@ -5,6 +5,8 @@
 export const BRANDS_PAGE = {
 	page: 'brands-page',
 	hero: 'brands-hero',
+	// The hero lead while the brief writer's switch is on.
+	heroAiLead: 'brands-hero-ai-lead',
 	ctaTop: 'brands-cta-top',
 	ctaTalkTop: 'brands-cta-talk-top',
 	ctaBottom: 'brands-cta-bottom',

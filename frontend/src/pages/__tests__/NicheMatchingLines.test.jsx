@@ -99,6 +99,6 @@ describe.each([
     test("Home: step 01's line", () => {
         const Home = require("@/pages/Home").default;
         page(Home);
-        expect(Boolean(byId("landing-step-offer-ai"))).toBe(on);
+        expect(Boolean(byId("landing-step-offer-ai-nicheMatching"))).toBe(on);
     });
 });

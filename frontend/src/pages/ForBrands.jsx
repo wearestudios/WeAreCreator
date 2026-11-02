@@ -40,7 +40,11 @@ import { BRANDS_PAGE as IDS } from "@/constants/testIds";
 import { ASK, BRANDS, FACTS, aiLive, platformFeeText } from "@/content/marketing";
 
 /** An FAQ item gated on a fact renders only when that fact is true. */
-const visibleFaq = (items) => items.filter((item) => !item.showIf || FACTS[item.showIf] === true);
+// An item can wait on a fact (`showIf`) or on an AI switch (`aiKey`).
+const visibleFaq = (items) =>
+    items.filter(
+        (item) => (!item.showIf || FACTS[item.showIf] === true) && (!item.aiKey || aiLive(item.aiKey)),
+    );
 
 export default function ForBrands() {
     const { meta, hero, shortlist, pricing, report, promises, compare, faq, close } = BRANDS;
@@ -51,7 +55,19 @@ export default function ForBrands() {
                     <div className="lg:col-span-7">
                         <Label>{hero.label}</Label>
                         <h1 className="mkt-h1 mt-6 max-w-5xl text-heading">{hero.title}</h1>
-                        <p className="mkt-lead mt-6 max-w-2xl text-muted-foreground">{hero.lead}</p>
+                        {/* The h1 never changes; the lead does, while the
+                            writer is shipped to brands. */}
+                        {aiLive("briefWriter") ? (
+                            <p
+                                data-testid={IDS.heroAiLead}
+                                data-track-section="hero-ai-lead"
+                                className="mkt-lead mt-6 max-w-2xl text-muted-foreground"
+                            >
+                                {hero.aiLead}
+                            </p>
+                        ) : (
+                            <p className="mkt-lead mt-6 max-w-2xl text-muted-foreground">{hero.lead}</p>
+                        )}
                         <div className="mt-10 flex flex-col gap-3 sm:flex-row">
                             <Cta ask={ASK.postBrief} testid={IDS.ctaTop} />
                             <Cta ask={ASK.talkWhatsapp} variant="outline" testid={IDS.ctaTalkTop} />

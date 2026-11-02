@@ -4461,10 +4461,47 @@ model's reply, a person's save and a brief's confirmation all go through
   `nicheMatching` is on; the step-01 line says "not by follower count alone",
   because tier fit is a component and the site may not claim otherwise.
 
+### The brief writer
+
+A textarea at the top of Post a brief: "Describe your campaign in two lines".
+English, Kannada or Hinglish in, the form's fields out in English.
+`brief_writer.py` is pure and holds the rules; `POST /brand/campaigns/brief-writer`
+is the door. **It never posts** — the draft lands in the form and the ordinary
+`POST /brand/campaigns` is still the only way a campaign is made.
+
+- **The hard rules are code, not prompt.** Budget, total budget, creator
+  count, revisions and dates survive only if the brand's text carries them
+  (`stated`, over `campaign_summary.extract_numbers`); every number in the
+  title, brief, dos, don'ts and caption guidance must too, as the `check` that
+  earns one retry, after which the draft fails closed. Dates are never before
+  today (IST) or more than a year out, and only the ones the campaign type has.
+  Enums are the server's literals, mirrored and drift-tested. "eight thousand"
+  is not read, so that fee is left for the brand rather than guessed.
+- **Disclosure is always added by code**: `paid_partnership`, `#ad` among the
+  hashtags, and a do saying so.
+- **Compensation defaults to paid; barter is never chosen.** If the brand's
+  words mention barter, `compensation_type` comes back `null`, the picker is
+  left unselected, a notice says why, and the form will not submit until the
+  brand picks. The model has no compensation field to fill.
+- **The venue is the brand's** first outlet; the model has no address field.
+- Ten drafts per brand per IST day (`brief_writer_uses`, claimed before the
+  call so a failure counts), twenty seconds then "Couldn't draft this — fill
+  it in below". `brief_writer` on `GET /brand/profile` says whether to render
+  it; with AI off it is `{"available": false}` and nothing renders.
+- **An AI-filled field carries "AI draft" until it is edited**, by value: the
+  marker shows while the field still holds what the draft wrote
+  (`lib/briefDraft.js`). Regenerate replaces only fields still at the default
+  or the last draft's value; anything the brand changed comes back as a
+  conflict and a dialog asks before replacing it.
+- The site's lines — the For Brands hero lead (the h1 stays), home step 01 and
+  the FAQ entry — render only while `briefWriter` is on. The lead says "we
+  shortlist" where the brief said "you shortlist", because we do.
+
 ### The public site's switches
 
 `AI_FEATURES` in `content/marketing.js` (`campaignSummary` on since the
-dashboard shipped, `nicheMatching` since matching did; `briefWriter` off) and `aiLive(key)`, the only way a page may read them.
+dashboard shipped, `nicheMatching` since matching did, `briefWriter` since
+the writer did) and `aiLive(key)`, the only way a page may read them.
 A switch goes true only in the PR that ships the feature to brands or
 creators; if `AI_ENABLED` goes false in production these go false too, because
 a bundle cannot read the server's environment. `test_ai_switches.py` fails CI

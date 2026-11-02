@@ -323,7 +323,14 @@ export function Faq({ items, testid, itemTestid }) {
     return (
         <div data-testid={testid} className="mt-12 divide-y divide-border border-y border-border">
             {items.map((item, i) => (
-                <details key={item.q} data-testid={itemTestid ? itemTestid(i) : undefined} className="group">
+                <details
+                    key={item.q}
+                    data-testid={itemTestid ? itemTestid(i) : undefined}
+                    // An item that only shows while a feature is on reports
+                    // when it is seen, like every other switched line.
+                    data-track-section={item.track || undefined}
+                    className="group"
+                >
                     <summary
                         className={`flex min-h-[3.5rem] cursor-pointer list-none items-center justify-between gap-6 py-5 text-left mkt-lead text-foreground ${FOCUS} [&::-webkit-details-marker]:hidden`}
                     >

@@ -801,6 +801,8 @@ def test_the_brand_faq_is_the_questions_the_brief_names():
     and the GST one renders only once `gstInvoiceConfirmed` is true."""
     items = content()["BRANDS"]["faq"]["items"]
     assert [i["q"] for i in items] == [
+        # Only while the brief writer's switch is on — see test_ai_switches.
+        "Do I have to write the brief myself?",
         "What if nobody applies?",
         "What if the content is bad?",
         "Can I use creators I already work with?",
@@ -818,7 +820,7 @@ def test_the_brand_faq_is_the_questions_the_brief_names():
         "Yes. That's the managed side — the venue plan, the creator list, the run of show and the night itself."
     )
     src = copy_of(*PAGES["brands"])
-    assert "items.filter((item) => !item.showIf || FACTS[item.showIf] === true)" in src
+    assert "!item.showIf || FACTS[item.showIf] === true" in src and "!item.aiKey || aiLive(item.aiKey)" in src
     assert content()["FACTS"]["gstInvoiceConfirmed"] is None
 
 
@@ -920,8 +922,8 @@ def test_the_money_band_counts_once_and_names_the_amount_once():
 # whether or not they render — a budget that ignored copy behind a switch
 # would be a budget the next switch walks round.
 BUDGET = {
-    "home": 460,
-    "brands": 725,
+    "home": 470,
+    "brands": 790,
     "creators": 367,
     "contact": 200,
 }

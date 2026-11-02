@@ -101,11 +101,17 @@ def test_a_switch_that_is_on_has_its_backend(key):
     )
 
 
-def test_the_check_would_fail_a_switch_with_no_backend():
-    """The negative half, so the test above is known to be able to fail: the
-    feature not built yet is missing its module and route."""
-    assert missing_for("briefWriter")
+def test_the_check_would_fail_a_switch_with_no_backend(monkeypatch):
+    """The negative half, so the test above is known to be able to fail: a
+    capability naming a module and a route that do not exist is reported."""
+    monkeypatch.setitem(
+        CAPABILITIES, "imaginary", {"module": "no_such_module", "routes": [("GET", "/api/nowhere")]}
+    )
+    assert missing_for("imaginary") == ["module no_such_module", "route GET /api/nowhere"]
 
+
+def test_the_brief_writer_backend_exists():
+    assert missing_for("briefWriter") == []
 
 def test_the_matching_backend_exists():
     assert missing_for("nicheMatching") == []
@@ -162,36 +168,38 @@ PAGES = Path(server.__file__).resolve().parents[1] / "frontend" / "src" / "pages
 
 # (page file, the content key printed, the switch that must guard it, the
 # analytics section id it reports as).
-# A key of `None` means the guard is the content's own `aiKey`, which the test
-# below holds to the right switch per step.
+# (page file, the content expression printed, the guard that must sit above
+# it, the analytics section id it reports as). Home's step lines and the FAQ
+# item carry their own switch key, held to the right switch by the tests below.
 SWITCHED_LINES = [
-    ("ForBrands.jsx", "report.aiLine", "campaignSummary", "report-ai-summary"),
-    ("ForBrands.jsx", "shortlist.aiLine", "nicheMatching", "shortlist-ai-matching"),
-    ("ForCreators.jsx", "briefs.aiLine", "nicheMatching", "briefs-ai-matching"),
-    ("Home.jsx", "step.aiLine", None, "step-${step.key}-ai"),
+    ("ForBrands.jsx", "report.aiLine", 'aiLive("campaignSummary")', "report-ai-summary"),
+    ("ForBrands.jsx", "shortlist.aiLine", 'aiLive("nicheMatching")', "shortlist-ai-matching"),
+    ("ForBrands.jsx", "hero.aiLead", 'aiLive("briefWriter")', "hero-ai-lead"),
+    ("ForCreators.jsx", "briefs.aiLine", 'aiLive("nicheMatching")', "briefs-ai-matching"),
+    ("Home.jsx", "a.line", "aiLive(a.key)", "step-${step.key}-ai-${a.key}"),
 ]
 
-# Homepage steps that carry an AI line, and the switch each must sit behind.
-STEP_SWITCHES = {"offer": "nicheMatching", "paid": "campaignSummary"}
+# Homepage steps that carry AI lines, and the switch behind each line.
+STEP_SWITCHES = {
+    "offer": ["briefWriter", "nicheMatching"],
+    "paid": ["campaignSummary"],
+}
 
 
-@pytest.mark.parametrize("page,expr,key,track", SWITCHED_LINES)
-def test_each_ai_line_renders_only_behind_its_switch(page, expr, key, track):
+@pytest.mark.parametrize("page,expr,guard,track", SWITCHED_LINES)
+def test_each_ai_line_renders_only_behind_its_switch(page, expr, guard, track):
     src = (PAGES / page).read_text()
     at = src.index("{" + expr + "}")
-    needle = f'aiLive("{key}")' if key else "aiLive(step.aiKey)"
-    guard = src.rfind(needle, 0, at)
-    assert guard != -1 and at - guard < 600, f"{expr} on {page} is not inside {needle}"
+    found = src.rfind(guard, 0, at)
+    assert found != -1 and at - found < 600, f"{expr} on {page} is not inside {guard}"
     # And the element it renders on reports when it is seen.
     assert f"data-track-section={{`{track}`}}" in src or f'data-track-section="{track}"' in src
 
 
-@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
-def test_each_homepage_ai_line_names_its_switch():
+def _evaluated(expr: str):
     script = (
         re.sub(r"^import .*?;\s*$", "", MARKETING.read_text(), flags=re.M)
-        + "\nconsole.log(JSON.stringify(HOME.how.items.filter(s => s.aiLine)"
-        ".map(s => [s.key, s.aiKey])));"
+        + f"\nconsole.log(JSON.stringify({expr}));"
     )
     out = subprocess.run(
         ["node", "--input-type=module", "-e", script], capture_output=True, text=True, timeout=60
@@ -199,7 +207,25 @@ def test_each_homepage_ai_line_names_its_switch():
     assert out.returncode == 0, out.stderr
     import json
 
-    assert dict(json.loads(out.stdout)) == STEP_SWITCHES
+    return json.loads(out.stdout)
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_each_homepage_ai_line_names_its_switch():
+    got = _evaluated("HOME.how.items.filter(s => s.ai).map(s => [s.key, s.ai.map(a => a.key)])")
+    assert dict(got) == STEP_SWITCHES
+    assert all(key in CAPABILITIES for keys in STEP_SWITCHES.values() for key in keys)
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_the_switched_faq_item_is_filtered_and_tracked():
+    items = _evaluated("BRANDS.faq.items.filter(i => i.aiKey)")
+    assert [(i["aiKey"], i["q"]) for i in items] == [("briefWriter", "Do I have to write the brief myself?")]
+    assert items[0]["track"]
+    src = (PAGES / "ForBrands.jsx").read_text()
+    assert "!item.aiKey || aiLive(item.aiKey)" in src
+    parts = (FRONTEND / "components" / "marketing" / "SiteParts.jsx").read_text()
+    assert "data-track-section={item.track" in parts
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
@@ -210,14 +236,14 @@ def test_the_example_why_line_is_drawn_only_behind_the_switch():
     assert "showWhy = false" in mocks and "showWhy && row.why" in mocks
 
 
-def test_every_ai_line_in_the_content_has_a_guarded_render():
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_every_switched_string_in_the_content_has_a_guarded_render():
+    """Every `aiLine`/`aiLead` in the content is printed by an entry above."""
     text = MARKETING.read_text()
-    for name in re.findall(r"^\s*(aiLine):", text, re.M):
-        assert name == "aiLine"
-    rendered = sum(
-        (PAGES / page).read_text().count("aiLine}") for page, *_ in SWITCHED_LINES
-    )
-    assert rendered >= len(SWITCHED_LINES)
+    keys = set(re.findall(r"^\s*(ai[A-Z]\w*):", text, re.M)) - {"aiKey"}
+    assert keys <= {"aiLine", "aiLead"}, keys
+    printed = {expr.split(".")[-1] for _, expr, *_ in SWITCHED_LINES}
+    assert keys <= printed
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")

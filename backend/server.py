@@ -156,6 +156,7 @@ db = client[os.environ["DB_NAME"]]
 import ai  # noqa: E402
 import campaign_summary  # noqa: E402
 import niche_tagging  # noqa: E402
+import brief_writer  # noqa: E402
 
 ai.configure(lambda: db)
 
@@ -12587,7 +12588,8 @@ async def get_brand_profile(user: dict = Depends(require_roles(*BRAND_ROLES))):
     doc = await db.brand_profiles.find_one({"user_id": _brand_scope(user)})
     if not doc:
         raise HTTPException(status_code=404, detail="Brand profile not found")
-    return await _brand_profile_response(doc)
+    # Whether Post a brief offers the writer — absent when AI is off.
+    return {**await _brand_profile_response(doc), "brief_writer": await _brief_writer_status(_brand_scope(user))}
 
 
 @brand_router.put("/profile")
@@ -15522,6 +15524,116 @@ async def confirm_campaign_tags(
     await db.campaigns.update_one({"_id": campaign["_id"]}, {"$set": {"tags": tags}})
     await audit(user, "campaign.tags", "campaign", campaign["_id"], after=tags, **_campaign_audit_context(campaign))
     return {**_campaign_tags_block({**campaign, "tags": tags}), "vocabulary": niche_tagging.vocabulary()}
+
+
+# --- The brief writer -------------------------------------------------------
+#
+# Two lines in, a filled form out. `brief_writer.py` holds the rules and
+# enforces them in code; this is the door: who may call it, how often, how
+# long it may take, and the venue it fills from the brand's own profile. It
+# **never creates a campaign** — the draft goes back to the form, and the
+# ordinary `POST /brand/campaigns` is still the only way one is made.
+
+
+class BriefWriterPayload(BaseModel):
+    text: str = Field(min_length=8, max_length=brief_writer.MAX_INPUT_CHARS)
+
+
+def _brief_writer_venue(profile: Optional[dict]) -> Optional[dict]:
+    """The brand's first outlet, as the form's venue. Never the model's."""
+    profile = profile or {}
+    for outlet in profile.get("outlets") or []:
+        address = ", ".join(p for p in (outlet.get("name"), outlet.get("address")) if p)
+        area = outlet.get("area") or None
+        if address or area:
+            return {"venue_address": address or None, "area": area}
+    areas = profile.get("areas") or []
+    return {"venue_address": None, "area": areas[0]} if areas else None
+
+
+async def _brief_writer_used_today(brand_id) -> int:
+    row = await db.brief_writer_uses.find_one(
+        {"brand_id": brand_id, "day": brief_writer.day_key()}
+    )
+    return int((row or {}).get("count") or 0)
+
+
+async def _brief_writer_status(brand_id) -> dict:
+    """Whether the form shows the writer, and how many drafts are left today.
+    Off — `available: false` — when AI is off, and the form renders nothing."""
+    if not ai.ai_configured():
+        return {"available": False}
+    used = await _brief_writer_used_today(brand_id)
+    return {
+        "available": True,
+        "limit": brief_writer.DRAFTS_PER_DAY,
+        "remaining": max(0, brief_writer.DRAFTS_PER_DAY - used),
+    }
+
+
+@brand_router.post("/campaigns/brief-writer")
+async def draft_brief(payload: BriefWriterPayload, user: dict = Depends(require_roles(*BRAND_ROLES))):
+    """Draft the form's fields from a description. Ten a day per brand,
+    counting failed attempts; twenty seconds, then the brand fills it in."""
+    if not ai.ai_configured():
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "ai_off", "message": "Drafting isn't available right now — fill the brief in below."},
+        )
+    brand_id = _brand_scope(user)
+    day = brief_writer.day_key()
+    # Claimed before the call, so a slow failure still counts and two tabs
+    # cannot both take the tenth draft.
+    row = await db.brief_writer_uses.find_one_and_update(
+        {"brand_id": brand_id, "day": day},
+        {"$inc": {"count": 1}, "$setOnInsert": {"created_at": datetime.now(timezone.utc)}},
+        upsert=True,
+        return_document=True,
+    )
+    used = int(row.get("count") or 0)
+    if used > brief_writer.DRAFTS_PER_DAY:
+        await db.brief_writer_uses.update_one({"_id": row["_id"]}, {"$inc": {"count": -1}})
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "code": "draft_limit",
+                "message": f"That's today's {brief_writer.DRAFTS_PER_DAY} drafts. Fill the brief in below, or draft again tomorrow.",
+            },
+        )
+    profile = await db.brand_profiles.find_one({"user_id": brand_id}) or {}
+    text = payload.text.strip()
+    today = brief_writer.today_ist()
+    try:
+        draft = await asyncio.wait_for(
+            ai.generate_json(
+                brief_writer.PROMPT.task,
+                brief_writer.PROMPT.system,
+                brief_writer.payload(text, today, category_hint=profile.get("category")),
+                brief_writer.BriefDraft,
+                prompt_version=brief_writer.PROMPT.version,
+                max_output_tokens=1200,
+                timeout_s=brief_writer.TIMEOUT_S,
+                account=str(brand_id),
+                check=lambda d: brief_writer.text_problems(d, text),
+            ),
+            timeout=brief_writer.TIMEOUT_S,
+        )
+    except (asyncio.TimeoutError, ai.AIUnavailable) as exc:
+        reason = "timeout" if isinstance(exc, asyncio.TimeoutError) else exc.reason
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "draft_failed", "reason": reason, "message": "Couldn't draft this — fill it in below."},
+        )
+    out = brief_writer.finalise(draft, text, today=today, venue=_brief_writer_venue(profile))
+    await audit(
+        user, "campaign.brief_drafted", "brand_profile", brand_id,
+        after={"fields": sorted(out["fields"]), "dropped": out["dropped"]},
+    )
+    return {
+        "fields": out["fields"],
+        "notices": out["notices"],
+        "remaining": max(0, brief_writer.DRAFTS_PER_DAY - used),
+    }
 
 
 # --- Matching ---------------------------------------------------------------

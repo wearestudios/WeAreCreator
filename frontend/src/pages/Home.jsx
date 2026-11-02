@@ -205,15 +205,18 @@ function HowItWorks({ n }) {
                                             <dd className="mkt-body mt-1 text-muted-foreground">{step.creatorLine}</dd>
                                         </div>
                                     </dl>
-                                    {step.aiLine && aiLive(step.aiKey) ? (
-                                        <p
-                                            data-testid={IDS.stepAi(step.key)}
-                                            data-track-section={`step-${step.key}-ai`}
-                                            className="mkt-body mt-4 text-foreground"
-                                        >
-                                            {step.aiLine}
-                                        </p>
-                                    ) : null}
+                                    {(step.ai || [])
+                                        .filter((a) => aiLive(a.key))
+                                        .map((a) => (
+                                            <p
+                                                key={a.key}
+                                                data-testid={IDS.stepAi(step.key, a.key)}
+                                                data-track-section={`step-${step.key}-ai-${a.key}`}
+                                                className="mkt-body mt-4 text-foreground"
+                                            >
+                                                {a.line}
+                                            </p>
+                                        ))}
                                 </div>
                             </li>
                         ))}

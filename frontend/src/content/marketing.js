@@ -80,7 +80,7 @@ export const FACTS = {
 export const AI_FEATURES = {
     campaignSummary: true,
     nicheMatching: true,
-    briefWriter: false,
+    briefWriter: true,
 };
 
 /** Whether the site may mention this AI feature. Unknown keys are off. */
@@ -213,9 +213,11 @@ export const HOME = {
                 title: "Offer",
                 line: "Post the brief: what you want made, what it pays and how you may use it.",
                 creatorLine: "Creators see what it pays, what it asks for and how it may be used before they apply.",
-                // Rendered only while `aiLive(aiKey)`.
-                aiKey: "nicheMatching",
-                aiLine: "Matched creators apply — matched on what they post, not by follower count alone.",
+                // Each rendered only while `aiLive(key)`.
+                ai: [
+                    { key: "briefWriter", line: "Describe it in two lines — we draft the brief." },
+                    { key: "nicheMatching", line: "Matched creators apply — matched on what they post, not by follower count alone." },
+                ],
                 screen: { kicker: "New brief", rows: ["Weekend brunch launch", "₹11,000 per creator", "1 reel · 3 stories"] },
                 yours: true,
             },
@@ -241,9 +243,10 @@ export const HOME = {
                 title: "Get paid",
                 line: "You approve the work, and the creator is paid within 7 days of your approval.",
                 creatorLine: "Paid to their UPI or bank within 7 days of your approval — all of it.",
-                // Rendered only while `aiLive(aiKey)`.
-                aiKey: "campaignSummary",
-                aiLine: "An AI summary then reads your results in plain English, using only your real numbers.",
+                // Rendered only while `aiLive(key)`.
+                ai: [
+                    { key: "campaignSummary", line: "An AI summary then reads your results in plain English, using only your real numbers." },
+                ],
                 screen: { kicker: "Payment", rows: ["Work approved", "₹12,500 to Kiran", "Paid in full"] },
                 yours: true,
             },
@@ -381,6 +384,9 @@ export const BRANDS = {
         label: "For brands",
         title: "Ten minutes to a brief",
         lead: "Say what you want made and what it pays. We shortlist verified creators, agree each fee in writing and run the shoot day.",
+        // In place of `lead` while `aiLive("briefWriter")`. The brief said
+        // "you shortlist"; we do — the brand chooses from our shortlist.
+        aiLead: "Describe your campaign in two lines and we draft the full brief for you to edit. Matched creators apply, we shortlist, and every term you agree is recorded.",
     },
     shortlist: {
         label: "The shortlist",
@@ -516,6 +522,13 @@ export const BRANDS = {
         label: "Questions",
         title: "What brands ask first",
         items: [
+            {
+                // Shown only while `aiLive("briefWriter")`.
+                aiKey: "briefWriter",
+                track: "faq-ai-brief-writer",
+                q: "Do I have to write the brief myself?",
+                a: "No. Describe the campaign in a line or two, in English, Kannada or Hinglish, and we draft it. You edit and post; nothing goes out without you.",
+            },
             {
                 q: "What if nobody applies?",
                 a: "We invite creators who fit the brief. If we still can't fill it, the campaign fee is refunded, unless you turned down everyone we shortlisted.",
