@@ -53,7 +53,7 @@ const COLLAB_GROUPS = [
 
 export default function CreatorDetailPage() {
     const { id } = useParams();
-    const { reloadCounts } = useAdminConsole();
+    const { reloadCounts, allAccess } = useAdminConsole();
 
     const [data, setData] = useState(null);
     const [audit, setAudit] = useState(null);
@@ -69,11 +69,20 @@ export default function CreatorDetailPage() {
             setError("");
         } catch (err) {
             if (err?.response?.status === 404) setNotFound(true);
+            // A 403 is a role, not a fault — said as one rather than mapped to
+            // "Insufficient permissions", which read like something broke.
+            else if (err?.response?.status === 403)
+                setError("Only admins can open this creator's profile.");
             else setError(formatApiError(err));
         }
     }, [id]);
 
     const loadAudit = useCallback(async () => {
+        // The audit log is admin-only; a scoped console does not ask.
+        if (!allAccess) {
+            setAudit([]);
+            return;
+        }
         try {
             // Two subjects carry a creator's history: the profile (verification)
             // and the account (suspension). Asked for by id, which the log
@@ -85,7 +94,7 @@ export default function CreatorDetailPage() {
         } catch {
             setAudit([]);
         }
-    }, [id]);
+    }, [id, allAccess]);
 
     useEffect(() => {
         setData(null);
@@ -125,15 +134,21 @@ export default function CreatorDetailPage() {
         : null;
     const ig = data?.instagram;
     const suspended = creator?.status === "suspended";
+    // **The scoped reading**: a team member opening a creator from their own
+    // board. The server already left out contact details, the address and
+    // payout identity; the page leaves out the decisions that stay admin's.
+    const team = data?.scope === "team";
 
     return (
         <DetailShell
             testid={IDS.page}
-            backTo="/admin/creators"
-            backLabel="All creators"
+            backTo={allAccess ? "/admin/creators" : "/admin/campaigns"}
+            backLabel={allAccess ? "All creators" : "Campaigns"}
             crumbs={[
                 { key: "console", label: "Console", to: "/admin" },
-                { key: "creators", label: "Creators", to: "/admin/creators" },
+                allAccess
+                    ? { key: "creators", label: "Creators", to: "/admin/creators" }
+                    : { key: "campaigns", label: "Campaigns", to: "/admin/campaigns" },
                 { key: "creator", label: creator?.name || "Creator" },
             ]}
             kicker={creator?.reference ? `Creator · ${creator.reference}` : "Creator"}
@@ -166,7 +181,8 @@ export default function CreatorDetailPage() {
                 )
             }
             aside={
-                creator && (
+                creator &&
+                !team && (
                     <>
                         {creator.verification_status !== "verified" && (
                             <Button
@@ -255,10 +271,20 @@ export default function CreatorDetailPage() {
                                     <CreatorAvatar creator={creator} size="h-16 w-16" />
                                     <div className="min-w-0">
                                         <p className="font-serif text-h3">{creator.name}</p>
-                                        <p className="mt-1 text-meta text-muted-foreground">
-                                            {creator.email || "No email"}
-                                            {creator.phone ? ` · ${creator.phone}` : ""}
-                                        </p>
+                                        {team ? (
+                                            <p
+                                                data-testid={IDS.scopedNote}
+                                                className="mt-1 text-meta text-muted-foreground"
+                                            >
+                                                Their work on your brands. Contact details,
+                                                address and payout stay with admins.
+                                            </p>
+                                        ) : (
+                                            <p className="mt-1 text-meta text-muted-foreground">
+                                                {creator.email || "No email"}
+                                                {creator.phone ? ` · ${creator.phone}` : ""}
+                                            </p>
+                                        )}
                                     </div>
                                 </div>
                                 {/* Their own words, before the fields somebody
@@ -301,6 +327,8 @@ export default function CreatorDetailPage() {
                                         {creator.payout_ready ? "Yes" : "No — UPI or PAN missing"}
                                     </Field>
                                     <Field label="City">{creator.city}</Field>
+                                    {!team && (
+                                    <>
                                     <Field label="Neighbourhood">{creator.address}</Field>
                                     <Field label="Address" className="sm:col-span-3">
                                         <span className="block whitespace-pre-line">
@@ -350,6 +378,8 @@ export default function CreatorDetailPage() {
                                     </Field>
                                     <Field label="IFSC">{creator.payout_ifsc}</Field>
                                     <Field label="PAN">{creator.pan_masked}</Field>
+                                    </>
+                                    )}
                                 </dl>
                                 {creator.verification_reason && (
                                     <p className="mt-6 rounded-md border border-state-pending/30 bg-state-pending-wash p-4 text-body leading-relaxed text-state-pending">
@@ -550,13 +580,15 @@ export default function CreatorDetailPage() {
                         </div>
                     </Section>
 
-                    <Section id="audit" title="Everything that happened" count={audit?.length}>
-                        <AuditTrail
-                            rows={audit}
-                            formatWhen={formatDateTime}
-                            emptyMessage="No decisions recorded against this creator yet."
-                        />
-                    </Section>
+                    {!team && (
+                        <Section id="audit" title="Everything that happened" count={audit?.length}>
+                            <AuditTrail
+                                rows={audit}
+                                formatWhen={formatDateTime}
+                                emptyMessage="No decisions recorded against this creator yet."
+                            />
+                        </Section>
+                    )}
                 </>
             )}
 

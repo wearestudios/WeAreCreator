@@ -419,7 +419,7 @@ export default function Analytics() {
                         {margin.campaigns - margin.with_recorded_cost} brief
                         {margin.campaigns - margin.with_recorded_cost === 1 ? " has" : "s have"}{" "}
                         no delivery cost recorded, so their revenue is counted and their
-                        margin is not. Record it on the campaign page.
+                        margin is not. Record it under Commercial terms on each campaign page.
                     </p>
                 )}
                 <div className="mt-5">

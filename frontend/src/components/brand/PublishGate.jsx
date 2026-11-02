@@ -22,11 +22,69 @@ import { BRAND_PUBLISH as IDS } from "@/constants/testIds";
  *   never works out for itself whether somebody may publish.
  * @param {object} [props.trust]  When a brand has earned it, the same slot says
  *   the opposite thing: this one skips review entirely.
+ * @param {object} [props.block]  `publish_block` from the same payload — the
+ *   lapsed check and the overdue invoice, decided by `_brand_publish_block`.
+ * @param {string} [props.reviewReason]  Why we sent this brief back, if we did.
  */
-export default function PublishGate({ verification, trust }) {
+export default function PublishGate({ verification, trust, block, reviewReason }) {
     const state = verification?.state || "unsubmitted";
 
+    // **Sent back, said on the form that fixes it.** A brief we returned is
+    // a draft again, and opened like any other draft — the reason was one
+    // screen away. It goes above everything else here because it is about
+    // this brief, where the rest is about the brand.
+    const changes = reviewReason ? (
+        <p
+            data-testid={IDS.changesRequested}
+            className="rounded-md border border-state-pending/30 bg-state-pending-wash p-4 text-meta leading-relaxed text-state-pending"
+        >
+            <span className="block font-medium text-foreground">Changes requested</span>
+            {reviewReason} Fix that and send it again — everything else you wrote is kept.
+        </p>
+    ) : null;
+
+    // **The two refusals that sit on top of a verified brand.** The form knew
+    // unverified and pending and nothing else, so a lapsed check or an
+    // overdue invoice was met in a toast after the brief was written. The
+    // sentence is the server's (`_brand_publish_block`), the same one the
+    // route answers with.
+    if (state === "verified" && block) {
+        return (
+            <>
+                {changes}
+                <div
+                    data-testid={IDS.blocked}
+                    data-code={block.code}
+                    className="rounded-md border border-state-pending/30 bg-state-pending-wash p-4"
+                >
+                    <p className="flex items-start gap-2 text-meta text-state-pending/90">
+                        <ShieldAlert
+                            aria-hidden="true"
+                            className="mt-0.5 h-4 w-4 flex-none text-state-pending"
+                        />
+                        <span>
+                            <span className="block font-medium text-foreground">
+                                You can write and save this now; sending it is paused.
+                            </span>
+                            {block.message}
+                        </span>
+                    </p>
+                    {block.code === "verification_lapsed" && (
+                        <Link
+                            to="/onboarding/brand"
+                            data-testid={IDS.gateLink}
+                            className="mt-3 inline-block text-meta text-primary underline underline-offset-4 hover:no-underline"
+                        >
+                            Confirm your details
+                        </Link>
+                    )}
+                </div>
+            </>
+        );
+    }
+
     if (state === "verified") {
+        if (changes) return changes;
         // Nothing is in the way. The only thing worth saying here is the good
         // news, and only when there is some — a permanent green banner over
         // every brief is chrome.
@@ -83,6 +141,8 @@ export default function PublishGate({ verification, trust }) {
         );
 
     return (
+        <>
+        {changes}
         <div
             data-testid={IDS.gate}
             className="rounded-md border border-state-pending/30 bg-state-pending-wash p-4"
@@ -109,5 +169,6 @@ export default function PublishGate({ verification, trust }) {
                 </Link>
             )}
         </div>
+        </>
     );
 }

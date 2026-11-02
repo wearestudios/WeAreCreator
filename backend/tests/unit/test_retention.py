@@ -514,8 +514,11 @@ class TestRescheduleLimit:
         """
         creator_side = inspect.getsource(server.creator_cancel_slot)
         assert "await reschedule_limit()" in creator_side
-        assert '"code": "reschedule_limit"' in creator_side
-        assert "campaign" in creator_side.split('"code": "reschedule_limit"')[0][-400:]
+        assert "_slot_cancel_refusal(" in creator_side
+        # The refusal itself lives in the one decider the card shares.
+        decider = inspect.getsource(server._slot_cancel_refusal)
+        assert '"code": "reschedule_limit"' in decider
+        assert "campaign" in decider.split('"code": "reschedule_limit"')[0][-400:]
 
         runner_side = inspect.getsource(server.reschedule_creator)
         assert "reschedule_limit()" not in runner_side, (

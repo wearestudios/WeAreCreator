@@ -34,6 +34,8 @@ import CircumventionQueue from "@/components/admin/CircumventionQueue";
 import RetentionPanel from "@/components/admin/RetentionPanel";
 import AdminDormant from "@/components/admin/AdminDormant";
 import CaseStudies from "@/components/admin/CaseStudies";
+import SurveyResults from "@/components/admin/SurveyResults";
+import UnfinishedProfiles from "@/components/admin/UnfinishedProfiles";
 import { DensityScope } from "@/components/admin/console/density";
 
 /**
@@ -45,7 +47,7 @@ import { DensityScope } from "@/components/admin/console/density";
  * find out about an underfilled shoot from the brand instead.
  */
 export const OverviewRoute = () => {
-    const { reloadCounts } = useAdminConsole();
+    const { reloadCounts, allAccess } = useAdminConsole();
     return (
         <div className="space-y-8">
             {/* Health and the activity charts moved to sidebar sections of
@@ -60,7 +62,7 @@ export const OverviewRoute = () => {
                 <Overview onChanged={reloadCounts} />
             </SafeSection>
             <SafeSection name="exports" label="Exports couldn't load">
-                <ExportsPanel />
+                <ExportsPanel allAccess={allAccess} />
             </SafeSection>
         </div>
     );
@@ -174,11 +176,14 @@ export const EnquiriesRoute = () => {
 export const SettingsRoute = () => <PlatformSettings />;
 
 /** Frozen collaborations, worst-waiting first. Scoped like every list. */
-export const DisputesRoute = () => (
-    <DensityScope surface="disputes">
-        <DisputeQueue />
-    </DensityScope>
-);
+export const DisputesRoute = () => {
+    const { allAccess } = useAdminConsole();
+    return (
+        <DensityScope surface="disputes">
+            <DisputeQueue allAccess={allAccess} />
+        </DensityScope>
+    );
+};
 
 /** Collaborations flagged as having gone off-platform. Admin-only: a
  *  creator works across every brand, so their account is not scoped work. */
@@ -186,6 +191,20 @@ export const CircumventionRoute = () => (
     <DensityScope surface="circumvention">
         <CircumventionQueue />
     </DensityScope>
+);
+
+/** The anonymous creator survey, read back. Admin-only: nobody to scope to. */
+export const SurveyRoute = () => (
+    <SafeSection name="survey" label="The survey results couldn't load">
+        <SurveyResults />
+    </SafeSection>
+);
+
+/** Signed up, never finished: the onboarding nudge list. */
+export const UnfinishedRoute = () => (
+    <SafeSection name="unfinished" label="That list couldn't load">
+        <UnfinishedProfiles />
+    </SafeSection>
 );
 
 /** What we keep and for how long, from the same table the code enforces. */

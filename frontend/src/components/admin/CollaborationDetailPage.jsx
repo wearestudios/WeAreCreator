@@ -455,6 +455,65 @@ export default function CollaborationDetailPage() {
                                     </li>
                                 )}
                             </ol>
+                            {/* **The reasons somebody had to write and nobody
+                                read**: the manager's no-show note, why the
+                                runner moved the booking, and why the creator
+                                released their slot. Each is required at the
+                                moment it is recorded. */}
+                            {(collab.no_show ||
+                                collab.reschedule_reason ||
+                                collab.slot_cancel_reason) && (
+                                <dl
+                                    data-testid={IDS.reasons}
+                                    className="mt-4 space-y-2 border-t border-border pt-4 text-meta"
+                                >
+                                    {collab.no_show && (
+                                        <div data-testid={IDS.noShow}>
+                                            <dt className="inline font-medium text-state-rejected">
+                                                No-show
+                                                {collab.no_show.reported_at
+                                                    ? ` · ${formatDateTime(collab.no_show.reported_at)}`
+                                                    : ""}
+                                                :{" "}
+                                            </dt>
+                                            <dd className="inline text-muted-foreground">
+                                                {collab.no_show.note || "No note was left."}
+                                            </dd>
+                                        </div>
+                                    )}
+                                    {collab.reschedule_reason && (
+                                        <div data-testid={IDS.rescheduleReason}>
+                                            <dt className="inline font-medium">
+                                                Moved
+                                                {collab.reschedule_count > 1
+                                                    ? ` (${collab.reschedule_count} times)`
+                                                    : ""}
+                                                {collab.rescheduled_at
+                                                    ? ` · ${formatDateTime(collab.rescheduled_at)}`
+                                                    : ""}
+                                                :{" "}
+                                            </dt>
+                                            <dd className="inline text-muted-foreground">
+                                                {collab.reschedule_reason}
+                                            </dd>
+                                        </div>
+                                    )}
+                                    {collab.slot_cancel_reason && (
+                                        <div data-testid={IDS.slotCancelReason}>
+                                            <dt className="inline font-medium">
+                                                Slot released by the creator
+                                                {collab.slot_cancelled_at
+                                                    ? ` · ${formatDateTime(collab.slot_cancelled_at)}`
+                                                    : ""}
+                                                :{" "}
+                                            </dt>
+                                            <dd className="inline text-muted-foreground">
+                                                {collab.slot_cancel_reason}
+                                            </dd>
+                                        </div>
+                                    )}
+                                </dl>
+                            )}
                         </Panel>
                     </Section>
 

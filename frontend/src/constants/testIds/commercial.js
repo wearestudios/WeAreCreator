@@ -16,6 +16,12 @@ export const COMMERCIAL = {
 	feeReason: 'campaign-fee-reason',
 	feeSave: 'campaign-fee-save',
 
+	// What running the brief cost us — the other half of its margin.
+	deliveryCost: 'campaign-delivery-cost',
+	deliveryCostInput: 'campaign-delivery-cost-input',
+	deliveryCostReason: 'campaign-delivery-cost-reason',
+	deliveryCostSave: 'campaign-delivery-cost-save',
+
 	// The refund reckoning, and the decision somebody makes against it.
 	refund: 'campaign-refund',
 	refundReason: 'campaign-refund-reason',

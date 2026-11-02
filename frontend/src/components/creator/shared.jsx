@@ -150,10 +150,20 @@ export const STATE_META = {
     },
     in_payment: { label: "In payment", tone: "bg-primary/15 text-primary border-primary/30" },
     closed: { label: "Paid", tone: "bg-muted text-muted-foreground border-input" },
+    // A barter collaboration closes at approval with nothing paid, so "Paid"
+    // would be the one false word on the row. Not a server state — the
+    // Finished list picks it off the row's compensation type.
+    closed_barter: { label: "Finished", tone: "bg-muted text-muted-foreground border-input" },
     // Deliberately not "rejected". A brand picking someone else is not a
     // verdict on the creator, and the word it is given shouldn't imply one.
     declined: { label: "Not this time", tone: "bg-muted text-muted-foreground border-input" },
     cancelled: { label: "Cancelled", tone: "bg-muted text-muted-foreground border-input" },
+    // The other two exits. Both rendered as the raw state word before —
+    // "withdrawn" and "expired" in lower case on a creator's own list.
+    // Withdrawn is theirs and no black mark; expired is nobody answering,
+    // said the way `_PROCESS_BANNERS` says it rather than as a rejection.
+    withdrawn: { label: "Withdrawn", tone: "bg-muted text-muted-foreground border-input" },
+    expired: { label: "No answer", tone: "bg-muted text-muted-foreground border-input" },
     pending: { label: "Pending", tone: "bg-state-pending-wash text-state-pending border-state-pending/30" },
     paid: { label: "Paid", tone: "bg-state-approved-wash text-state-approved border-state-approved/30" },
     refunded: { label: "Refunded", tone: "bg-muted text-muted-foreground border-input" },

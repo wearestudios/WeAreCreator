@@ -23,7 +23,11 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
-import { CREATOR_ACTIVE as IDS, REVIEW_WINDOW as WINDOW_IDS } from "@/constants/testIds";
+import {
+    CREATOR_ACTIVE as IDS,
+    CREATOR_DRAFT_SUMMARY as DRAFT_IDS,
+    REVIEW_WINDOW as WINDOW_IDS,
+} from "@/constants/testIds";
 import ReviewWindowNote from "@/components/collab/ReviewWindowNote";
 import NegotiationHistory from "@/components/collab/NegotiationHistory";
 import {
@@ -387,6 +391,45 @@ const ActiveCard = ({ collab, onBook, onSubmit, onDraft, onRefresh }) => {
                     this card. */}
                 <PayoutDue dueAt={collab.payout_due_at} className="mt-4" />
 
+                {/* **What they sent, and what became of it.** `draft` was on
+                    the row with the submission time, the file or link, the
+                    count of send-backs and the approval date — and the card
+                    drew only the review deadline, so a creator could not
+                    check which version was in front of the reviewer. */}
+                {collab.draft?.submitted_at && (
+                    <div
+                        data-testid={DRAFT_IDS.block(collab.id)}
+                        className="rounded-md border border-border bg-background/60 px-4 py-3 text-meta leading-relaxed text-muted-foreground"
+                    >
+                        <p className="text-foreground">
+                            Draft sent {formatDateTime(collab.draft.submitted_at)}
+                            {collab.draft.kind === "link" && collab.draft.draft_url ? (
+                                <>
+                                    {" · "}
+                                    <a
+                                        href={collab.draft.draft_url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="underline underline-offset-4"
+                                    >
+                                        the link you sent
+                                    </a>
+                                </>
+                            ) : collab.draft.original_name ? (
+                                ` · ${collab.draft.original_name}`
+                            ) : null}
+                        </p>
+                        <p className="mt-1">
+                            {collab.draft.revision_count > 0
+                                ? `Sent back ${collab.draft.revision_count} time${collab.draft.revision_count === 1 ? "" : "s"}`
+                                : "Not sent back"}
+                            {collab.draft.approved_at
+                                ? ` · approved ${formatDateTime(collab.draft.approved_at)}`
+                                : ""}
+                        </p>
+                    </div>
+                )}
+
                 {/* When the draft goes through if nobody answers. The
                     creator is the party waiting, so the date is theirs. */}
                 <ReviewWindowNote
@@ -474,9 +517,34 @@ const ActiveCard = ({ collab, onBook, onSubmit, onDraft, onRefresh }) => {
                 </div>
             )}
 
-            {(action || collab.can_cancel_slot) && (
+            {/* **Why the runner moved it**, on the card of the person whose
+                day it is. Required at the move and read by nobody, so a
+                creator found a different time here with no word about why. */}
+            {collab.reschedule_reason && (
+                <p
+                    data-testid={IDS.rescheduleReason(collab.id)}
+                    className="mt-5 text-meta leading-relaxed text-muted-foreground"
+                >
+                    Your booking was moved
+                    {collab.rescheduled_at ? ` on ${formatDateTime(collab.rescheduled_at)}` : ""}:{" "}
+                    {collab.reschedule_reason}
+                </p>
+            )}
+
+            {(action || collab.can_cancel_slot || collab.cancel_blocked_reason) && (
                 <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center">
                     {action}
+                    {/* **Disabled with the reason, not offered and refused.**
+                        Inside the cutoff, or past the reschedule cap, the
+                        route answers 409 — so the server sends why instead. */}
+                    {!collab.can_cancel_slot && collab.cancel_blocked_reason && (
+                        <p
+                            data-testid={IDS.cancelBlocked(collab.id)}
+                            className="text-meta leading-relaxed text-muted-foreground"
+                        >
+                            {collab.cancel_blocked_reason}
+                        </p>
+                    )}
                     {collab.can_cancel_slot && (
                         <button
                             type="button"
@@ -489,6 +557,16 @@ const ActiveCard = ({ collab, onBook, onSubmit, onDraft, onRefresh }) => {
                             {/* Up to the cutoff. The server refuses inside it and
                                 says so, rather than us guessing at the clock. */}
                             Can't make it? Release this slot
+                            {/* How many of their moves are left, from the
+                                same numbers the cap is checked against. */}
+                            {collab.reschedule_limit > 0 && (
+                                <span
+                                    data-testid={IDS.moves(collab.id)}
+                                    className="text-muted-foreground/80"
+                                >
+                                    ({collab.reschedule_count} of {collab.reschedule_limit} moves used)
+                                </span>
+                            )}
                         </button>
                     )}
                 </div>

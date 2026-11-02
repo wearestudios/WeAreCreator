@@ -22,7 +22,17 @@
 //   learned: a greyed-out button with no explanation is how a form becomes a
 //   support ticket.
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { ExternalLink, Loader2, Plus, Wand2 } from "lucide-react";
+import { ArrowDown, ArrowUp, ExternalLink, Loader2, Plus, Trash2, Wand2 } from "lucide-react";
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 import { api, formatApiError, mediaUrl } from "@/lib/api";
 import ImageUploadField from "@/components/ImageUploadField";
@@ -169,7 +179,7 @@ function GalleryEditor({ gallery, onChange }) {
  * half-written approach would be a form nobody could write a case study in
  * over two sittings, which is how long one actually takes.
  */
-function Editor({ study, onSaved, onClose }) {
+function Editor({ study, onSaved, onClose, onDeleted }) {
     const [form, setForm] = useState(() => ({ ...study }));
     const [missing, setMissing] = useState([]);
     const [preview, setPreview] = useState(null);
@@ -216,6 +226,19 @@ function Editor({ study, onSaved, onClose }) {
         if (ok) {
             notifySuccess("Saved");
             onSaved(ok);
+        }
+    };
+
+    const [confirmDelete, setConfirmDelete] = useState(false);
+    const remove = async () => {
+        const ok = await run(
+            () => api.delete(`/admin/case-studies/${study.id}`).then(() => true),
+            { onError: (e) => notifyError(formatApiError(e)) },
+        );
+        setConfirmDelete(false);
+        if (ok) {
+            notifySuccess("Draft deleted.");
+            onDeleted?.();
         }
     };
 
@@ -495,6 +518,21 @@ function Editor({ study, onSaved, onClose }) {
                         <ExternalLink className="h-3.5 w-3.5" /> View live
                     </a>
                 )}
+                {/* **Drafts only.** A published page may already be in a
+                    brand's WhatsApp, and the server refuses to delete one
+                    until it is taken down — so the button is absent rather
+                    than present and refusing. */}
+                {!published && (
+                    <Button
+                        variant="ghost"
+                        onClick={() => setConfirmDelete(true)}
+                        disabled={pending}
+                        data-testid={IDS.delete}
+                        className="text-destructive hover:bg-destructive/10"
+                    >
+                        <Trash2 className="mr-1.5 h-4 w-4" /> Delete draft
+                    </Button>
+                )}
                 <button
                     type="button"
                     onClick={onClose}
@@ -503,6 +541,29 @@ function Editor({ study, onSaved, onClose }) {
                     Close
                 </button>
             </div>
+
+            <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
+                <AlertDialogContent data-testid={IDS.deleteDialog}>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Delete this draft?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            {study.title || "This untitled draft"} and everything typed into it
+                            goes. It was never published, so no link points at it. This
+                            can&apos;t be undone.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>Keep it</AlertDialogCancel>
+                        <AlertDialogAction
+                            data-testid={IDS.deleteConfirm}
+                            onClick={remove}
+                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                        >
+                            Delete
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
         </div>
     );
 }
@@ -527,6 +588,32 @@ export default function CaseStudies() {
     useEffect(() => {
         load();
     }, [load]);
+
+    // **The order is sent whole**, which is what the route asks for: a move
+    // is a diff against a list the browser may no longer agree with. The row
+    // moves on screen at once and the server's answer replaces it.
+    const [ordering, setOrdering] = useState(false);
+    const move = async (index, delta) => {
+        const list = rows || [];
+        const to = index + delta;
+        if (to < 0 || to >= list.length) return;
+        const next = [...list];
+        [next[index], next[to]] = [next[to], next[index]];
+        const before = rows;
+        setRows(next);
+        setOrdering(true);
+        try {
+            const { data } = await api.post("/admin/case-studies/order", {
+                ids: next.map((r) => r.id),
+            });
+            setRows(data.case_studies || next);
+        } catch (e) {
+            setRows(before);
+            notifyError(formatApiError(e));
+        } finally {
+            setOrdering(false);
+        }
+    };
 
     const openPicker = async () => {
         setPicking(true);
@@ -564,6 +651,45 @@ export default function CaseStudies() {
 
     const columns = useMemo(
         () => [
+            // The running order, which is the order the shelf and `/work`
+            // read in. Arrows rather than drag: a phone has no drag, and a
+            // list of a dozen moves one place at a time comfortably.
+            {
+                key: "order",
+                header: "Order",
+                width: "w-20",
+                mobile: "action",
+                cell: (r, i) => (
+                    <span className="inline-flex gap-1">
+                        <button
+                            type="button"
+                            aria-label={`Move ${r.title || "this"} up`}
+                            disabled={ordering || i === 0}
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                move(i, -1);
+                            }}
+                            data-testid={IDS.moveUp(r.id)}
+                            className="rounded border border-border p-1 text-muted-foreground hover:text-primary-ink disabled:opacity-30"
+                        >
+                            <ArrowUp className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                            type="button"
+                            aria-label={`Move ${r.title || "this"} down`}
+                            disabled={ordering || i === (rows || []).length - 1}
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                move(i, 1);
+                            }}
+                            data-testid={IDS.moveDown(r.id)}
+                            className="rounded border border-border p-1 text-muted-foreground hover:text-primary-ink disabled:opacity-30"
+                        >
+                            <ArrowDown className="h-3.5 w-3.5" />
+                        </button>
+                    </span>
+                ),
+            },
             {
                 key: "title",
                 header: "Case study",
@@ -625,7 +751,8 @@ export default function CaseStudies() {
                 cell: (r) => relative(r.updated_at),
             },
         ],
-        [],
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        [rows, ordering],
     );
 
     return (
@@ -677,6 +804,10 @@ export default function CaseStudies() {
                             load();
                         }}
                         onClose={() => setEditing(null)}
+                        onDeleted={() => {
+                            setEditing(null);
+                            load();
+                        }}
                     />
                 </PeekPanel>
             )}

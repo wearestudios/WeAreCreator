@@ -51,10 +51,16 @@ function NumberSetting({ settingKey, endpoint, field, label, blurb, unit }) {
         load();
     }, [load]);
 
+    // **The endpoints disagree about shape**, so the bounds are read off both:
+    // most send `default`/`min`/`max` for their one number, while the brand
+    // wall and the leaderboard carry two numbers each and send `defaults` and
+    // `maximum`. Reading only the first shape left those rows with no reset
+    // and a ceiling of 10,000.
     const min = data?.min ?? 1;
-    const max = data?.max ?? 10000;
+    const max = data?.max ?? data?.maximum ?? 10000;
+    const fallback = data ? data.default ?? data.defaults?.[field] : undefined;
     const changed = data ? String(data[field]) !== String(value).trim() : false;
-    const isDefault = data ? String(value) === String(data.default) : true;
+    const isDefault = data ? fallback == null || String(value) === String(fallback) : true;
 
     const save = async () => {
         const n = Number(value);
@@ -67,7 +73,10 @@ function NumberSetting({ settingKey, endpoint, field, label, blurb, unit }) {
         setBusy(true);
         try {
             const { data: saved } = await api.put(endpoint, { [field]: n });
-            setData(saved);
+            // Merged, because two of the PUTs answer with the stored numbers
+            // and not the bounds — replacing would drop the default the reset
+            // button reads.
+            setData((prev) => ({ ...prev, ...saved }));
             setValue(String(saved[field]));
             notifySuccess(`${label} updated`);
         } catch (err) {
@@ -108,8 +117,8 @@ function NumberSetting({ settingKey, endpoint, field, label, blurb, unit }) {
                 <button
                     type="button"
                     disabled={!data || isDefault}
-                    onClick={() => setValue(String(data.default))}
-                    title={data ? `Back to the default, ${data.default} ${unit}` : "Back to the default"}
+                    onClick={() => setValue(String(fallback))}
+                    title={data ? `Back to the default, ${fallback} ${unit}` : "Back to the default"}
                     className={`rounded border border-border p-1.5 ${CALM} ${
                         isDefault
                             ? "opacity-30"
@@ -200,6 +209,31 @@ export default function PlatformSettings() {
                     unit="days"
                 />
 
+                {/* **The three that had an endpoint and no form.** Each was a
+                    number the server stores and an admin can only change by
+                    calling the API by hand — a setting that needs a deploy,
+                    with extra steps. */}
+                <NumberSetting
+                    settingKey="trusted-brands"
+                    endpoint="/admin/settings/trusted-brands"
+                    field="approvals"
+                    label="Clean approvals before a brand publishes on its own"
+                    // The check runs on every submission, so raising this
+                    // sends the next brief back through review and pulls
+                    // nothing already live.
+                    blurb="A verified brand with this many briefs approved and none ever rejected publishes on submission, and its brief is spot-checked afterwards. Applies from the next submission."
+                    unit="briefs"
+                />
+
+                <NumberSetting
+                    settingKey="large-campaign"
+                    endpoint="/admin/settings/large-campaign"
+                    field="creators"
+                    label="Headcount above which a brief is ours to run"
+                    blurb="A brief asking for more creators than this is WeAre-run whatever the brand picked: that many bookings and briefings on one campaign is coordination work."
+                    unit="creators"
+                />
+
                 <NumberSetting
                     settingKey="reschedule-limit"
                     endpoint="/admin/settings/reschedule-limit"
@@ -225,6 +259,26 @@ export default function PlatformSettings() {
                     label="Fewest logos worth showing"
                     blurb="Below this the brand wall is absent from the home page rather than short. A row of three advertises an operation with three customers."
                     unit="brands"
+                />
+
+                {/* The leaderboard's pair, the same honesty rule as the brand
+                    wall's: below the floor the section is absent, not short. */}
+                <NumberSetting
+                    settingKey="leaderboard-minimum"
+                    endpoint="/admin/settings/leaderboard"
+                    field="minimum"
+                    label="Fewest creators worth featuring"
+                    blurb="Below this the featured-creators row is absent from the home page rather than short. Only creators who opted in and are in good standing count."
+                    unit="creators"
+                />
+
+                <NumberSetting
+                    settingKey="leaderboard-size"
+                    endpoint="/admin/settings/leaderboard"
+                    field="size"
+                    label="Most creators featured on the home page"
+                    blurb="A cap on how many eligible creators get drawn. The order is recomputed daily."
+                    unit="creators"
                 />
 
                 <NumberSetting

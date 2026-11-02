@@ -10,9 +10,10 @@
 // at different rates and are refetched independently, so accepting one creator
 // does not re-download the audit log.
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Link, useParams, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
     CalendarDays,
+    Copy,
     IndianRupee,
     MapPin,
     Pause,
@@ -187,17 +188,38 @@ export default function CampaignDetailPage() {
     // Only fetched when the reassign control is opened — most visits never
     // touch it, and it is a whole extra request on a page that already makes
     // three.
+    //
+    // **A failure is said, not swallowed.** The list used to be admin-only and
+    // the 403 fell into an empty catch, so a team member read "There are no
+    // WeAre managers yet" on a platform with several. It is readable by the
+    // console now; if it still fails, the picker says that instead.
+    const [managersError, setManagersError] = useState("");
     const loadManagers = useCallback(async () => {
         if (managers.length) return;
         try {
             const { data } = await api.get("/admin/managers");
             setManagers(Array.isArray(data) ? data : []);
-        } catch {
-            /* the picker stays empty and says so */
+            setManagersError("");
+        } catch (err) {
+            setManagersError(formatApiError(err) || "The manager list couldn't load.");
         }
     }, [managers.length]);
 
     const campaign = detail?.campaign;
+    const navigate = useNavigate();
+
+    const duplicate = async () => {
+        setBusy("duplicate");
+        try {
+            const { data } = await api.post(`/admin/campaigns/${id}/duplicate`, {});
+            notifySuccess("Duplicated as a draft — set its dates.");
+            navigate(`/admin/campaigns/${data.id}?action=edit`);
+        } catch (err) {
+            notifyError(err, { fallback: "That couldn't be duplicated." });
+        } finally {
+            setBusy(null);
+        }
+    };
 
     const act = async (key, request, message) => {
         setBusy(key);
@@ -366,6 +388,21 @@ export default function CampaignDetailPage() {
                             className="rounded-full border-border bg-transparent hover:bg-tint/5"
                         >
                             Edit
+                        </Button>
+                        {/* **Again, like that one** — the brief without its
+                            dates, as a draft, on the same route the brand's
+                            own Duplicate uses. The copy has no manager and no
+                            dates on purpose; it lands on its own page so
+                            they can be set. */}
+                        <Button
+                            variant="outline"
+                            data-testid={DIDS.action("duplicate")}
+                            disabled={busy === "duplicate"}
+                            onClick={duplicate}
+                            className="rounded-full border-border bg-transparent hover:bg-tint/5"
+                        >
+                            <Copy className="mr-2 h-4 w-4" />
+                            Duplicate
                         </Button>
                         {canClose && (
                             <Button
@@ -916,6 +953,8 @@ export default function CampaignDetailPage() {
                 open={dialog.kind === "reassign"}
                 onOpenChange={(v) => !v && setDialog({ kind: null })}
                 managers={managers}
+                loadError={managersError}
+                canCreate={allAccess}
                 currentId={campaign?.manager_id}
                 submitting={busy === "reassign"}
                 onSubmit={(managerUserId) =>
@@ -945,6 +984,8 @@ function ReassignManagerDialog({
     open,
     onOpenChange,
     managers,
+    loadError = "",
+    canCreate = false,
     currentId,
     onSubmit,
     submitting,
@@ -991,14 +1032,36 @@ function ReassignManagerDialog({
                             <SelectValue placeholder="Pick a manager" />
                         </SelectTrigger>
                         <SelectContent className="rounded-md border-border bg-card">
+                            {/* `id` is what the list sends; it read `user_id`,
+                                which no row carries, so every option had no
+                                value to post. */}
                             {managers.map((m) => (
-                                <SelectItem key={m.user_id} value={m.user_id}>
+                                <SelectItem key={m.id} value={m.id}>
                                     {m.name}
+                                    <span className="ml-2 text-muted-foreground">
+                                        · {m.active_campaigns} running
+                                    </span>
                                 </SelectItem>
                             ))}
                         </SelectContent>
                     </Select>
-                    {managers.length === 0 && (
+                    {loadError && (
+                        <p
+                            role="alert"
+                            data-testid={IDS.managersError}
+                            className="text-body leading-relaxed text-destructive"
+                        >
+                            {loadError}
+                        </p>
+                    )}
+                    {!loadError && managers.length === 0 && !canCreate && (
+                        <p className="text-body leading-relaxed text-muted-foreground">
+                            There are no WeAre managers yet. An admin creates them on the
+                            Team screen — until then a campaign stays with the brand&apos;s
+                            own person.
+                        </p>
+                    )}
+                    {!loadError && managers.length === 0 && canCreate && (
                         // **"Create one first" used to name a step that did not
                         // exist**: there was no screen behind it, so the one
                         // sentence telling an admin what to do pointed nowhere.

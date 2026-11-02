@@ -87,6 +87,7 @@ export const ADMIN_HEALTH = {
 export const ADMIN_INTEL = {
 	section: 'admin-intel-section',
 	skeleton: 'admin-intel-skeleton',
+	error: 'admin-intel-error',
 	chart: (key) => `admin-intel-chart-${key}`,
 	stat: (key) => `admin-intel-stat-${key}`,
 };
@@ -123,6 +124,7 @@ export const ADMIN_CAMPAIGN_PAGE = {
 	// The way out of "there are no managers yet", which named a step with no
 	// screen behind it until Team grew one.
 	createManager: 'admin-campaign-page-create-manager',
+	managersError: 'admin-campaign-page-managers-error',
 	compensation: 'admin-campaign-page-compensation',
 	slot: (id) => `admin-campaign-page-slot-${id}`,
 	slotBooking: (id) => `admin-campaign-page-booking-${id}`,
@@ -136,6 +138,7 @@ export const ADMIN_CAMPAIGN_PAGE = {
 
 export const ADMIN_CREATOR_PAGE = {
 	page: 'admin-creator-page',
+	scopedNote: 'admin-creator-page-scoped-note',
 	instagram: 'admin-creator-page-instagram',
 	youtube: 'admin-creator-page-youtube',
 	collab: (id) => `admin-creator-page-collab-${id}`,
@@ -156,6 +159,10 @@ export const ADMIN_BRAND_PAGE = {
 
 export const ADMIN_COLLAB_PAGE = {
 	page: 'admin-collab-page',
+	reasons: 'admin-collab-page-reasons',
+	noShow: 'admin-collab-page-no-show',
+	rescheduleReason: 'admin-collab-page-reschedule-reason',
+	slotCancelReason: 'admin-collab-page-slot-cancel-reason',
 	creatorLink: 'admin-collab-page-creator',
 	campaignLink: 'admin-collab-page-campaign',
 	step: (state) => `admin-collab-page-step-${state}`,
@@ -666,4 +673,24 @@ export const ADMIN_DENSITY = {
 	toggle: 'admin-density-toggle',
 	option: (d) => `admin-density-${d}`,
 	scope: 'admin-density-scope',
+};
+
+// The anonymous creator survey, read back.
+export const ADMIN_SURVEY = {
+	page: 'admin-survey-page',
+	total: 'admin-survey-total',
+	export: 'admin-survey-export',
+	error: 'admin-survey-error',
+	empty: 'admin-survey-empty',
+	warning: 'admin-survey-open-text-warning',
+	question: (field) => `admin-survey-question-${field}`,
+	open: (field) => `admin-survey-open-${field}`,
+};
+
+// Creators who signed up and never finished, with the nudge.
+export const ADMIN_UNFINISHED = {
+	page: 'admin-unfinished-page',
+	nudge: 'admin-unfinished-nudge',
+	empty: 'admin-unfinished-empty',
+	row: (id) => `admin-unfinished-row-${id}`,
 };

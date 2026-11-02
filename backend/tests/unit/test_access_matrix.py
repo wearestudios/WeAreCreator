@@ -568,6 +568,7 @@ class TestEveryConsoleDoorIsTheSameDoor:
         "_collab_or_404",
         "_console_brand_or_404",
         "_console_payment_or_404",
+        "_console_creator_or_404",
     )
 
     def _console_handlers_taking_an_id(self):
@@ -722,23 +723,121 @@ class TestTheDrawingAgreesWithTheServer:
         assert "never" in text and "server" in text
 
 
+# What each section's screen has to read to draw anything, for **every** role
+# it is offered to. Checked two ways below: each path must be called from the
+# named file (so this map cannot describe a screen that no longer exists), and
+# each must be a real route whose guard is then *asked* whether `weare_team`
+# may call it. The action queue lists only the reads it makes for both roles —
+# it deliberately skips the two creator queues for a team member.
+SECTION_READS = {
+    "overview": ("Overview.jsx", ("/admin/dashboard",)),
+    "queue": (
+        "ActionQueue.jsx",
+        ("/admin/brands/pending", "/admin/campaigns/pending", "/admin/collaborations"),
+    ),
+    "creator-reviews": ("Reviews.jsx", ("/admin/creators/pending",)),
+    "campaign-reviews": ("Reviews.jsx", ("/admin/campaigns/pending",)),
+    "brand-reviews": ("Reviews.jsx", ("/admin/brands/pending",)),
+    "disputes": ("DisputeQueue.jsx", ("/admin/disputes",)),
+    "circumvention": ("CircumventionQueue.jsx", ("/admin/circumvention-reports",)),
+    "enquiries": ("AdminEnquiries.jsx", ("/admin/contact-enquiries",)),
+    "creators": ("AdminCreators.jsx", ("/admin/creators",)),
+    "campaigns": ("AdminCampaigns.jsx", ("/admin/campaigns",)),
+    "brands": ("AdminBrands.jsx", ("/admin/brands",)),
+    "performance": ("Health.jsx", ("/admin/intelligence",)),
+    "analytics": ("Analytics.jsx", ("/admin/analytics",)),
+    "health": ("Health.jsx", ("/admin/health",)),
+    "audit": ("AdminAudit.jsx", ("/admin/audit",)),
+    "team": ("AdminTeam.jsx", ("/admin/team",)),
+    "deletions": ("AdminDeletions.jsx", ("/admin/deletion-requests",)),
+    "case-studies": ("CaseStudies.jsx", ("/admin/case-studies",)),
+    "dormant": ("AdminDormant.jsx", ("/admin/dormant",)),
+    "unfinished": ("UnfinishedProfiles.jsx", ("/admin/creators/incomplete",)),
+    "survey": ("SurveyResults.jsx", ("/admin/survey/creator",)),
+    "retention": ("RetentionPanel.jsx", ("/admin/retention",)),
+    "settings": ("PlatformSettings.jsx", ("/admin/settings/payment-terms",)),
+}
+
+
+def _get_route(path):
+    for r in server.app.routes:
+        if getattr(r, "path", None) == "/api" + path and "GET" in getattr(r, "methods", ()):
+            return r.endpoint
+    raise AssertionError(f"GET {path} is not served by the app")
+
+
+def _team_may_call(fn):
+    from fastapi import params
+
+    for p in inspect.signature(fn).parameters.values():
+        dep = p.default
+        if isinstance(dep, params.Depends) and getattr(dep.dependency, "__name__", "") == "_guard":
+            loop = asyncio.new_event_loop()
+            try:
+                loop.run_until_complete(dep.dependency({"_id": "x", "role": "weare_team"}))
+                return True
+            except HTTPException:
+                return False
+            finally:
+                loop.close()
+    raise AssertionError(f"{fn.__name__} declares no require_roles guard")
+
+
+def derived_admin_only_sections():
+    """The sections whose reads a team member is refused — asked of the
+    server's own guards rather than written down. A hand-kept list of five was
+    how Performance came to be offered to a role its only read answers 403."""
+    return {
+        key
+        for key, (_, paths) in SECTION_READS.items()
+        if not all(_team_may_call(_get_route(p)) for p in paths)
+    }
+
+
+def _sidebar_sections():
+    import re
+
+    src = no_comments(FRONTEND / "components" / "admin" / "console" / "Sidebar.jsx")
+    body = src.split("export const ADMIN_SECTIONS = [", 1)[1].split("\n];", 1)[0]
+    out = {}
+    for chunk in body.split("key: ")[1:]:
+        key = re.match(r'"([a-z-]+)"', chunk).group(1)
+        out[key] = "adminOnly: true" in chunk.split("key: ", 1)[0]
+    return out
+
+
 class TestTheSidebarHidesWhatItCannotReach:
     SIDEBAR = FRONTEND / "components" / "admin" / "console" / "Sidebar.jsx"
 
-    ADMIN_ONLY_SECTIONS = ("creator-reviews", "creators", "health", "audit", "team")
+    def test_every_section_is_classified(self):
+        """A new section has to say what it reads before it can ship, or the
+        derivation below would silently not cover it."""
+        assert set(_sidebar_sections()) == set(SECTION_READS)
 
-    @pytest.mark.parametrize("key", ADMIN_ONLY_SECTIONS)
-    def test_each_platform_section_is_marked(self, key):
-        """A section whose endpoints answer 403 to a team member is a door
-        that opens onto an error. Marked here, filtered once in `sectionsFor`,
-        and enforced on the server regardless."""
-        src = no_comments(self.SIDEBAR)
-        block = src.split(f'key: "{key}"', 1)
-        assert len(block) == 2, f"no section named {key}"
-        # Up to the next section's key, so a flag on a later entry cannot
-        # satisfy this one.
-        chunk = block[1].split('key: "', 1)[0]
-        assert "adminOnly: true" in chunk, f"{key} is offered to a scoped console"
+    @pytest.mark.parametrize("key", sorted(SECTION_READS))
+    def test_the_map_describes_the_screen_that_exists(self, key):
+        import re
+
+        file, paths = SECTION_READS[key]
+        src = no_comments(FRONTEND / "components" / "admin" / file)
+        for path in paths:
+            assert re.search(r'api\s*\.get\(\s*["`]' + re.escape(path) + r'["`?]', src) or (
+                f'endpoint: "{path}"' in src
+            ) or f'endpoint="{path}"' in src, f"{file} does not read {path}"
+
+    def test_the_flags_are_exactly_what_the_guards_say(self):
+        """Both directions: a section the server refuses must be hidden, and a
+        section the server serves must not be — hiding work from the people
+        who do it is the other half of the bug."""
+        flagged = {k for k, admin_only in _sidebar_sections().items() if admin_only}
+        derived = derived_admin_only_sections()
+        assert flagged - derived == set(), f"hidden but readable: {flagged - derived}"
+        assert derived - flagged == set(), f"offered but refused: {derived - flagged}"
+
+    def test_performance_is_among_them(self):
+        """The one that shipped wrong, named so the regression reads plainly."""
+        assert "performance" in derived_admin_only_sections()
+        assert _sidebar_sections()["performance"] is True
 
     def test_the_scoped_sections_are_not_marked(self):
         src = no_comments(self.SIDEBAR)

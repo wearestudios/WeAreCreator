@@ -324,6 +324,98 @@ export function CampaignFeePanel({ campaignId, campaignFee, refund, onSaved }) {
     );
 }
 
+/**
+ * What running the brief cost us, typed by somebody who knows.
+ *
+ * **The margin was gross revenue until this existed.** `_campaign_margin`
+ * reports revenue and says so until a cost is recorded, and Analytics told
+ * admins to "record it on the campaign page" — which had no such control.
+ * Nothing in the system knows what a manager's evening or the samples cost,
+ * so it is typed, never inferred; an empty box clears it back to "not
+ * recorded", which is a different claim from zero.
+ */
+export function DeliveryCostPanel({ campaignId, deliveryCost, onSaved }) {
+    const initial = deliveryCost === null || deliveryCost === undefined ? "" : String(deliveryCost);
+    const [cost, setCost] = useState(initial);
+    const [reason, setReason] = useState("");
+    const [busy, setBusy] = useState(false);
+
+    useEffect(() => {
+        setCost(initial);
+    }, [initial]);
+
+    const trimmed = cost.trim();
+    const invalid = trimmed !== "" && !(Number(trimmed) >= 0);
+    const changed = trimmed !== initial;
+
+    const save = async () => {
+        setBusy(true);
+        try {
+            await api.put(`/admin/campaigns/${campaignId}/delivery-cost`, {
+                delivery_cost: trimmed === "" ? null : Number(trimmed),
+                reason: reason.trim() || null,
+            });
+            notifySuccess(trimmed === "" ? "Delivery cost cleared." : "Delivery cost saved.");
+            setReason("");
+            onSaved?.();
+        } catch (err) {
+            notifyError(err, { fallback: "That cost didn't save." });
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    return (
+        <div data-testid={IDS.deliveryCost} className="space-y-2">
+            <div className="flex flex-wrap items-end gap-2">
+                <div className="w-36">
+                    <Label htmlFor="delivery-cost" className={TEXT.meta}>
+                        Delivery cost
+                    </Label>
+                    <Input
+                        id="delivery-cost"
+                        data-testid={IDS.deliveryCostInput}
+                        type="number"
+                        min="0"
+                        step="500"
+                        value={cost}
+                        placeholder="Not recorded"
+                        onChange={(e) => setCost(e.target.value)}
+                        className="mt-1 h-10"
+                    />
+                </div>
+                <div className="min-w-[14rem] flex-1">
+                    <Label htmlFor="delivery-cost-why" className={TEXT.meta}>
+                        What it covers
+                    </Label>
+                    <Input
+                        id="delivery-cost-why"
+                        data-testid={IDS.deliveryCostReason}
+                        value={reason}
+                        placeholder="Manager's evening, samples posted"
+                        onChange={(e) => setReason(e.target.value)}
+                        className="mt-1 h-10"
+                    />
+                </div>
+                <Button
+                    data-testid={IDS.deliveryCostSave}
+                    onClick={save}
+                    disabled={busy || invalid || !changed}
+                    className="h-10"
+                >
+                    {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    Save
+                </Button>
+            </div>
+            <p className={`${TEXT.meta} text-muted-foreground`}>
+                {initial === ""
+                    ? "Not recorded — this brief's margin reports revenue until it is."
+                    : `Recorded at ${money(Number(initial))}. Clear the box to mark it unknown again.`}
+            </p>
+        </div>
+    );
+}
+
 export default function CommercialTerms({ campaign, refund, commission, onSaved }) {
     const reload = useCallback(() => onSaved?.(), [onSaved]);
     if (!campaign?.id) return null;
@@ -343,6 +435,11 @@ export default function CommercialTerms({ campaign, refund, commission, onSaved 
                 campaignId={campaign.id}
                 campaignFee={campaign.campaign_fee}
                 refund={refund}
+                onSaved={reload}
+            />
+            <DeliveryCostPanel
+                campaignId={campaign.id}
+                deliveryCost={campaign.delivery_cost}
                 onSaved={reload}
             />
         </div>

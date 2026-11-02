@@ -11,6 +11,7 @@
 import React, { useState } from "react";
 
 import { mediaUrl } from "@/lib/api";
+import { cn } from "@/lib/utils";
 import { coverGradient, initialOf } from "@/lib/cover";
 import { COVER } from "@/constants/testIds";
 
@@ -33,7 +34,12 @@ export default function CampaignCover({
     const src = campaign?.cover_image_url ? mediaUrl(campaign.cover_image_url) : null;
     const initial = initialOf(campaign?.brand_name, campaign?.business_name, campaign?.title);
 
-    const frame = `relative w-full overflow-hidden border border-border ${ratio} ${rounded} ${className}`;
+    // **Merged, so a caller's width wins.** Concatenated, `w-full` and a
+    // caller's `w-24` were both on the element and the stylesheet's order
+    // picked `w-full` — so the brand dashboard's thumbnail grew to the whole
+    // row and pushed the brief's title, status and "changes requested" line
+    // to zero width on every desktop.
+    const frame = cn("relative w-full overflow-hidden border border-border", ratio, rounded, className);
 
     if (src && !broken) {
         return (

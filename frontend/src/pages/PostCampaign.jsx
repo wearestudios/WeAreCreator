@@ -435,6 +435,7 @@ export default function PostCampaign() {
         campaignType,
         creatorsNeeded,
         threshold: brandProfile?.execution?.large_campaign_threshold,
+        launchIsWeareRun: brandProfile?.execution?.launch_is_weare_run,
     });
 
     const validateBase = () => {
@@ -1834,6 +1835,10 @@ export default function PostCampaign() {
                     <PublishGate
                         verification={brandProfile?.verification}
                         trust={brandProfile?.trust}
+                        block={brandProfile?.publish_block}
+                        reviewReason={
+                            existing?.status === "draft" ? existing?.review_reason : null
+                        }
                     />
 
                     <div className="flex flex-col-reverse items-stretch gap-3 border-t border-border pt-8 md:flex-row md:items-center md:justify-between">
@@ -1871,7 +1876,12 @@ export default function PostCampaign() {
                                 submitting ||
                                 savingDraft ||
                                 (brandProfile?.verification &&
-                                    brandProfile.verification.state !== "verified")
+                                    brandProfile.verification.state !== "verified") ||
+                                // A lapsed check or an overdue invoice stops a
+                                // brief going out; editing a live one is not
+                                // sending it, so that save stays open.
+                                (Boolean(brandProfile?.publish_block) &&
+                                    (!isEditing || existing?.status === "draft"))
                             }
                             className="group h-12 rounded-full bg-primary px-7 text-primary-foreground hover:bg-primary-hover md:ml-auto"
                         >

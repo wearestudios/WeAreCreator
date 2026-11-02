@@ -31,7 +31,7 @@ const STATES = [
 
 const RAISED_BY = { creator: "Creator", runner: "Runner" };
 
-export default function DisputeQueue() {
+export default function DisputeQueue({ allAccess = true }) {
     const [state, setState] = useState("open");
     const [data, setData] = useState(null);
 
@@ -152,6 +152,21 @@ export default function DisputeQueue() {
                     not going out. Open the row to see what it is about and decide it.
                 </p>
             </div>
+
+            {/* **Surfaced, not decided.** A team member sees their brands'
+                disputes and cannot resolve them — the resolve route is
+                admin-only — and used to find that out by opening a row and
+                finding no decision on it. Who mediates is a product decision
+                this line reports rather than changes. */}
+            {!allAccess && (
+                <p
+                    data-testid={IDS.teamNote}
+                    className={`rounded-md border border-border bg-muted/40 px-3 py-2 ${TEXT.meta} text-muted-foreground`}
+                >
+                    You can follow your brands&apos; disputes here; an admin decides them,
+                    because a resolution moves money and mediation sits with the platform.
+                </p>
+            )}
 
             <div className="flex flex-wrap gap-2">
                 {STATES.map((s) => (

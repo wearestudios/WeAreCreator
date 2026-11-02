@@ -23,6 +23,7 @@ import {
     BadgeCheck,
     Building2,
     ChevronsLeft,
+    ClipboardList,
     ChevronsRight,
     Inbox,
     LayoutDashboard,
@@ -36,6 +37,7 @@ import {
     Stethoscope,
     Timer,
     UserCog,
+    UserRoundPen,
     UserX,
     Users,
     X,
@@ -128,7 +130,16 @@ export const ADMIN_SECTIONS = [
     { key: "creators", to: "creators", label: "Creators", Icon: Users, adminOnly: true },
     { key: "campaigns", to: "campaigns", label: "Campaigns", Icon: Sparkles },
     { key: "brands", to: "brands", label: "Brands", Icon: Building2 },
-    { key: "performance", to: "performance", label: "Performance", Icon: Activity },
+    // **Admin-only: `/admin/intelligence` is.** It was unmarked, so a team
+    // member was offered a section whose only read answered 403 and drew an
+    // empty page. The flag is now checked against the server's own guard.
+    {
+        key: "performance",
+        to: "performance",
+        label: "Performance",
+        Icon: Activity,
+        adminOnly: true,
+    },
     // The four ratios the business is judged on, as opposed to Performance,
     // which is what the *content* did. Admin-only like every other
     // platform-wide instrument: a repeat rate across every brand is a fact
@@ -175,6 +186,24 @@ export const ADMIN_SECTIONS = [
     // Re-engagement, which is nobody's queue — it is the work that only gets
     // done if somebody can see who to do it for.
     { key: "dormant", to: "dormant", label: "Gone quiet", Icon: MoonStar },
+    // Signed up and stalled — the other half of re-engagement, and the one
+    // with a reminder to send. Drawn from the global roster, so admin-only.
+    {
+        key: "unfinished",
+        to: "unfinished",
+        label: "Unfinished profiles",
+        Icon: UserRoundPen,
+        adminOnly: true,
+    },
+    // The anonymous research survey. Nobody in it is attached to a brand, so
+    // there is nothing for a scoped console to be scoped to.
+    {
+        key: "survey",
+        to: "survey",
+        label: "Creator survey",
+        Icon: ClipboardList,
+        adminOnly: true,
+    },
     // What we keep and for how long, served rather than only documented so
     // the privacy page and the code cannot say different things.
     {

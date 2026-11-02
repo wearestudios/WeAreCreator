@@ -5012,6 +5012,60 @@ reading a web page and retyping it.
   plain-http laptop. A refusal arrives as a Blob too, so the handler reads the
   bytes back before formatting the message.
 
+## Mounting the routers, and a route nobody calls
+
+**Every `api_router.include_router(...)` sits at the end of `server.py`**, just
+before `app.include_router(api_router)`. `include_router` copies a router's
+routes at the moment it is called, so a route declared on a router after its
+include was never served: `GET /admin/disputes`, its resolution and both
+`verification/confirm` routes were 404s in production while every unit test,
+which calls handlers directly, passed. `test_console_complete.py` drives the
+app's own route table for every router.
+
+`test_router_callers.py` extends the "every route has a caller" rule to the
+brand, creator and drafts routers. Each call form must end where the path ends,
+so `${API_BASE}/drafts/${id}/file` cannot stand in for `GET /drafts/{id}`.
+Exemptions sit in three named lists: `INDIRECT_CALLERS` (checked against the
+file they name), `ALLOWED` (each says why it needs no screen) and `UNBUILT` (a
+ratchet). `test_unread_payload_keys.py` does the same for payload keys: every
+key the persona payload builders emit must be mentioned by some frontend file,
+or be listed with a reason, and a listed key that gets rendered fails until its
+line is deleted.
+
+## What the server decided, said on the screen
+
+- **The creator's home** carries `profile.block` (`_creator_block`) and draws a
+  suspended account full-width with the admin's reason. `_claim_slot` refuses a
+  suspended creator's own claim, so the card and the route agree. The admin
+  override is unaffected, and nothing already booked moves. A booking the venue
+  has not confirmed reads "Waiting for the venue to confirm" in
+  `_creator_next_action`, `_next_action` and the process flow, never "Turn up".
+  Finished work is its own tab, barter included, labelled "Finished" rather than
+  "Paid", with the takedown panel on every row. `held_resolved` shows pitches
+  that came off the table, with the reason.
+- **`can_cancel_slot` asks `_slot_cancel_refusal`**, the one decider for the
+  24-hour cutoff and the reschedule cap, shared with the route, and
+  `cancel_blocked_reason` says why.
+- **`_brand_publish_block` is the brand gate's four refusals** (no profile,
+  unverified, lapsed, invoice overdue). `_verified_brand_or_403` raises its
+  answer, and `GET /brand/profile` and `/brand/dashboard` carry it as
+  `publish_block`, so `PublishGate` and the dashboard's `BrandStanding` say it
+  before publish.
+- **Frozen means frozen on the screen**: while a dispute is open, every
+  state-moving action flag on `get_application` and `_serialize_applicant` is
+  false.
+
+## The scoped console's reads
+
+`GET /admin/creators/{id}` and `GET /admin/managers` are `CONSOLE_ROLES` now.
+The creator page goes through `_console_creator_or_404`, which gives a 404
+outside the team's creators. It narrows the work shown to the team's briefs and
+drops `_TEAM_HIDDEN_CREATOR_FIELDS` (contact, address, pin, payout). `scope:
+"team"` tells the page to leave out the admin's decisions. A team member gets
+manager names and load only. The sidebar's `adminOnly` flags are checked
+against the server's own guards (`SECTION_READS` in `test_access_matrix.py`)
+rather than against a hand-kept list.
+
 ## The admin console
 
 `/admin` is a **layout**, not a page (`pages/AdminConsole.jsx`): it owns the

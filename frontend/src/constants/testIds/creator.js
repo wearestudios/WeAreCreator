@@ -43,6 +43,9 @@ export const CREATOR_COMPLETENESS = {
 };
 
 export const CREATOR_ACTIVE = {
+	moves: (id) => `creator-active-moves-${id}`,
+	rescheduleReason: (id) => `creator-active-reschedule-reason-${id}`,
+	cancelBlocked: (id) => `creator-active-cancel-blocked-${id}`,
 	section: 'creator-active-section',
 	empty: 'creator-active-empty',
 	list: 'creator-active-list',
@@ -69,6 +72,7 @@ export const CREATOR_ACTIVE = {
 
 export const CREATOR_SLOT_PICKER = {
 	dialog: 'creator-slot-dialog',
+	declined: 'creator-slot-declined',
 	skeleton: 'creator-slot-skeleton',
 	error: 'creator-slot-error',
 	empty: 'creator-slot-empty',
@@ -253,4 +257,29 @@ export const CREATOR_INSTAGRAM_CALLBACK = {
 	notProfessional: 'creator-instagram-callback-not-professional',
 	retry: 'creator-instagram-callback-retry',
 	back: 'creator-instagram-callback-back',
+};
+
+// Finished work: the completed collaborations, barter included.
+export const CREATOR_FINISHED = {
+	section: 'creator-finished',
+	empty: 'creator-finished-empty',
+	row: (id) => `creator-finished-row-${id}`,
+	state: (id) => `creator-finished-state-${id}`,
+};
+
+// What the creator sent as a draft, on their own card.
+export const CREATOR_DRAFT_SUMMARY = {
+	block: (id) => `creator-draft-summary-${id}`,
+};
+
+// Held pitches that came off the table, with why.
+export const HELD_RESOLVED = {
+	panel: 'held-resolved',
+	row: (id) => `held-resolved-row-${id}`,
+};
+
+// The account-level block, said on the home page.
+export const CREATOR_BLOCK = {
+	banner: 'creator-block-banner',
+	recheckFields: 'creator-recheck-fields',
 };

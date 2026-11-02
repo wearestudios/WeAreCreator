@@ -40,7 +40,10 @@ import QuestionThreadsPanel from "@/components/questions/QuestionThreadsPanel";
 import { api, formatApiError, mediaUrl } from "@/lib/api";
 import { formatCompensation, formatRupees, isBarter } from "@/lib/compensation";
 import BudgetMeter from "@/components/campaign/BudgetMeter";
-import { budgetApplies } from "@/lib/budget";
+import { budgetApplies, formatMoney, overBudgetBy } from "@/lib/budget";
+import AgeBadge from "@/components/AgeBadge";
+import DisputePanel from "@/components/DisputePanel";
+import TakedownPanel from "@/components/TakedownPanel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -214,8 +217,15 @@ const StatePill = ({ state }) => {
 // Dialogs
 // ---------------------------------------------------------------------------
 
-function AcceptDialog({ open, onOpenChange, applicant, budget, onConfirm, busy }) {
+function AcceptDialog({ open, onOpenChange, applicant, budget, budgetBlock, onConfirm, busy }) {
     const [amount, setAmount] = useState("");
+    // **The same reading `ApplicationDetail` makes**, against the budget
+    // *block* rather than the per-creator figure. The board passed
+    // `budget_per_creator` here and never asked what the brief had left, so a
+    // brand could fill the form, press Accept on an exhausted brief and meet
+    // the 409. A brand has no override, so for them it is a disabled button
+    // with the reason beside it.
+    const over = overBudgetBy(budgetBlock, amount);
     const [note, setNote] = useState("");
     const [err, setErr] = useState("");
 
@@ -320,6 +330,17 @@ function AcceptDialog({ open, onOpenChange, applicant, budget, onConfirm, busy }
                         />
                     </div>
 
+                    {over != null && (
+                        <p
+                            data-testid="accept-over-budget"
+                            className="rounded-md border border-state-rejected/25 bg-state-rejected-wash px-3 py-2 text-meta text-state-rejected"
+                        >
+                            {formatMoney(over)} more than this brief has left
+                            {budgetBlock ? ` (${formatMoney(budgetBlock.remaining)} remaining)` : ""}.
+                            Agree a lower fee, or ask us to raise the budget.
+                        </p>
+                    )}
+
                     {err && (
                         <p data-testid="accept-error" className="text-meta text-destructive">
                             {err}
@@ -339,7 +360,7 @@ function AcceptDialog({ open, onOpenChange, applicant, budget, onConfirm, busy }
                         <Button
                             type="submit"
                             data-testid="accept-confirm-btn"
-                            disabled={busy}
+                            disabled={busy || over != null}
                             className="rounded-full bg-state-approved/90 text-primary-foreground hover:bg-state-approved"
                         >
                             {busy ? (
@@ -488,9 +509,20 @@ function ReasonDialog({
 // Applicant row
 // ---------------------------------------------------------------------------
 
+// The payment row in the brand's words: the creator's payout, then our
+// invoice to them, which is the half the brand actually pays.
+const PAYMENT_WORDS = {
+    pending: "Payout pending",
+    paid: "Creator paid",
+    cancelled: "Payout cancelled",
+    refunded: "Refunded",
+};
+const INVOICE_WORDS = { pending: "not yet sent", sent: "sent", settled: "settled", void: "void" };
+
 const ApplicantCard = ({
     applicant: a,
     budget,
+    budgetBlock,
     busy,
     onAccept,
     onDecline,
@@ -547,6 +579,48 @@ const ApplicantCard = ({
                         so a phone call between the three of them is about one
                         picture. */}
                     <ProcessFlow process={a.process} className="mt-4" />
+
+                    {/* **Frozen, said where the buttons are.** The row
+                        carried `dispute` and `takedown` and the board drew
+                        neither, so a brand pressed Approve on a frozen row and
+                        met the 409. The flags below already read false; this
+                        is the reason. Raising and answering happen on the
+                        application's own page, so no actions here. */}
+                    <div className="mt-3 space-y-3 empty:mt-0">
+                        <DisputePanel collaborationId={a.id} dispute={a.dispute} />
+                        <TakedownPanel collaborationId={a.id} takedown={a.takedown} />
+                    </div>
+
+                    {/* What the row already knew and never said: how long it
+                        has waited against our target, why the last booked
+                        time was turned down, and where the money is. */}
+                    <div className="mt-3 flex flex-wrap items-center gap-3 text-meta text-muted-foreground">
+                        <AgeBadge ageing={a.ageing} testid={`applicant-ageing-${a.id}`} />
+                        {a.payment && (
+                            <span data-testid={`applicant-payment-${a.id}`}>
+                                {PAYMENT_WORDS[a.payment.state] || a.payment.state}
+                                {a.payment.brand_invoice_state
+                                    ? ` · invoice ${INVOICE_WORDS[a.payment.brand_invoice_state] || a.payment.brand_invoice_state}`
+                                    : ""}
+                            </span>
+                        )}
+                    </div>
+                    {a.slot_declined_reason && (
+                        <p
+                            data-testid={`applicant-slot-declined-${a.id}`}
+                            className="mt-2 text-meta text-muted-foreground"
+                        >
+                            Last booked time declined: {a.slot_declined_reason}
+                        </p>
+                    )}
+                    {a.reschedule_reason && (
+                        <p
+                            data-testid={`applicant-reschedule-reason-${a.id}`}
+                            className="mt-2 text-meta text-muted-foreground"
+                        >
+                            Booking moved: {a.reschedule_reason}
+                        </p>
+                    )}
 
                     <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2 text-meta text-muted-foreground">
                         {c.instagram_handle && (
@@ -716,13 +790,27 @@ const ApplicantCard = ({
                     {a.can_accept && (
                         <Button
                             data-testid={`applicant-accept-btn-${a.id}`}
-                            disabled={busy}
+                            disabled={busy || Boolean(budgetBlock?.exhausted)}
+                            title={
+                                budgetBlock?.exhausted
+                                    ? "This brief's budget is fully committed"
+                                    : undefined
+                            }
                             onClick={() => onAccept(a)}
                             className="rounded-full bg-state-approved/90 text-primary-foreground hover:bg-state-approved"
                         >
                             <Check className="mr-1.5 h-4 w-4" />
                             Accept
                         </Button>
+                    )}
+                    {a.can_accept && budgetBlock?.exhausted && (
+                        <p
+                            data-testid={`applicant-budget-exhausted-${a.id}`}
+                            className="w-full text-meta text-state-rejected"
+                        >
+                            This brief&apos;s budget is fully committed, so Accept is off until
+                            a place frees up or we raise the budget with you.
+                        </p>
                     )}
                     {/* What arrived against what was asked, when anybody has
                         counted. Absent on a brief with no structured ask and
@@ -1141,6 +1229,7 @@ export default function BrandCampaignApplicants() {
                                     key={a.id}
                                     applicant={a}
                                     budget={isBarter(campaign) ? null : campaign.budget_per_creator}
+                                    budgetBlock={budgetApplies(campaign) ? campaign.budget : null}
                                     busy={busyId === a.id}
                                     onAccept={(x) => setDialog({ kind: "accept", applicant: x })}
                                     onDecline={(x) => setDialog({ kind: "decline", applicant: x })}
@@ -1210,6 +1299,7 @@ export default function BrandCampaignApplicants() {
                 onOpenChange={(v) => !v && closeDialog()}
                 applicant={dialog.applicant}
                 budget={isBarter(campaign) ? null : campaign.budget_per_creator}
+                budgetBlock={budgetApplies(campaign) ? campaign.budget : null}
                 busy={busyId === dialog.applicant?.id}
                 onConfirm={(body) =>
                     act(dialog.applicant, "accept", body, "Creator accepted")

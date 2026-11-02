@@ -491,6 +491,25 @@ function RosterList({ rows, onRecord }) {
                                 @{r.instagram_handle}
                             </p>
                         )}
+                        {/* **Why a seat came free, in the creator's words.**
+                            The manager was told "cancelled by the creator"
+                            and the reason they gave was stored and unread. */}
+                        {r.slot_cancel_reason && !r.slot_id && (
+                            <p
+                                data-testid={ROSTER_IDS.rowCancelReason(r.collaboration_id)}
+                                className="mt-1 text-meta text-muted-foreground"
+                            >
+                                Released their slot: {r.slot_cancel_reason}
+                            </p>
+                        )}
+                        {r.reschedule_reason && (
+                            <p
+                                data-testid={ROSTER_IDS.rowRescheduleReason(r.collaboration_id)}
+                                className="mt-1 text-meta text-muted-foreground"
+                            >
+                                Moved: {r.reschedule_reason}
+                            </p>
+                        )}
                     </div>
                     {/* Only once there is a post to have numbers about. Before
                         that the button would be a form that cannot be filled
