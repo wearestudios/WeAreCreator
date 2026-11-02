@@ -4382,10 +4382,48 @@ next PR, so both routes are in `test_router_callers.py`'s `UNBUILT`.
 - An erasure deletes summaries naming the creator (`creator_ids`) or written
   for the brand.
 
+### The results dashboard
+
+`components/dashboard/CampaignDashboard.jsx`, at `/brand/campaigns/:id/results`
+and `/admin/campaigns/:id/results` (one component, its own `results` chunk),
+drawn from the `dashboard` block of `GET /brand/campaigns/{id}/analytics`.
+
+- **A delivery is several posts now.** `post_performance` is the latest
+  reading per post (merged, so a hand-typed likes count does not erase the
+  views Instagram brought); `performance_snapshots` is append-only and is what
+  "Views, building up" is drawn from; `content_performance` is re-derived as
+  the delivery's sum by `_rollup_collab_performance`, so every older reader
+  keeps one row per delivery. `backfill_post_performance` turns pre-existing
+  readings into posts at startup, idempotently.
+- **Instagram is asked per media type** (`_IG_METRICS_BY_FORMAT`) on a pinned
+  Graph version (`INSTAGRAM_MEDIA_API_VERSION`), because one unsupported metric
+  refuses the whole request; `_fetch_media_insights` then falls back to one
+  metric at a time, so a wrong entry costs a metric, never the post.
+  `shares` joined `PERFORMANCE_METRICS` and `ENGAGEMENT_METRICS`.
+- `refresh_post_insights` re-reads every live post every 6 hours until 14 days
+  after posting, then freezes it (`insights_refresh` on the collaboration),
+  backs off on failure, caps calls per creator, and refreshes the expiring
+  thumbnail URL with the numbers. The screen falls back to a plain tile on any
+  image error. Manual readings are kept and shown as "Entered by hand".
+- **Totals are live posts only**, `None` rather than 0 before anything is live
+  (the empty state lists creators and where they are). Engagement rate is
+  (likes + comments + shares + saves) ÷ reach summed across posts.
+  `versus_last_campaign` is the one most recent earlier campaign, not a sum.
+- Motion is CSS (`.dash-*` in `index.css`, on `--weare-ease`) plus
+  `useCountUp`, which writes `textContent` per frame with Indian grouping.
+  Entrance classes go on the first render only; the 5-minute background
+  refresh never replays them. Reduced motion paints the end state.
+- The summary's derived values grew with it: each creator's share of views,
+  shares per 1,000 views, average views per post by format and the
+  `format_ratios` between them, the last-campaign delta, and the dashboard's
+  post and creator counts. **A multiple ("2.4x") matches only a `ratio`
+  field** — the one relaxation, and every other "3x" is still refused.
+  Prompt is `campaign_summary.v2`.
+
 ### The public site's switches
 
-`AI_FEATURES` in `content/marketing.js` (`campaignSummary`, `nicheMatching`,
-`briefWriter`, all false) and `aiLive(key)`, the only way a page may read them.
+`AI_FEATURES` in `content/marketing.js` (`campaignSummary` on since the
+dashboard shipped; `nicheMatching` and `briefWriter` off) and `aiLive(key)`, the only way a page may read them.
 A switch goes true only in the PR that ships the feature to brands or
 creators; if `AI_ENABLED` goes false in production these go false too, because
 a bundle cannot read the server's environment. `test_ai_switches.py` fails CI

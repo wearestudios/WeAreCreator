@@ -913,9 +913,15 @@ def test_the_money_band_counts_once_and_names_the_amount_once():
 # the revision cap) and added the brands FAQ on the clock. /for-brands +15 for
 # the FAQ; /for-creators +21 for the cap card, the clock card, the money band's
 # clock sentence and the brief's revisions chip, after tightening each.
+# Moved again by exactly what was added: the dashboard PR put one AI line under
+# home's step 04 (+15) and one under the brands report card (+17), and the
+# report's lead now names the measures the dashboard shows (+4). Both lines
+# render only while `AI_FEATURES.campaignSummary` is on, and are counted
+# whether or not they render — a budget that ignored copy behind a switch
+# would be a budget the next switch walks round.
 BUDGET = {
-    "home": 430,
-    "brands": 685,
+    "home": 445,
+    "brands": 706,
     "creators": 351,
     "contact": 200,
 }

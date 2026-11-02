@@ -154,13 +154,6 @@ UNBUILT = {
     # creator on one — the PATCH that edits members has no caller.
     ("brand_router", "patch", "/creator-lists/{list_id}"):
         "no control adds or removes a list's members",
-    # The AI campaign summary. The engine, its API and the switches shipped
-    # first; the screen that draws it is the animated campaign dashboard, the
-    # next PR. Its switch in `AI_FEATURES` stays false until then.
-    ("brand_router", "get", "/campaigns/{campaign_id}/summary"):
-        "the animated campaign dashboard is the next PR",
-    ("brand_router", "post", "/campaigns/{campaign_id}/summary/regenerate"):
-        "the animated campaign dashboard is the next PR",
 }
 
 

@@ -78,7 +78,7 @@ export const FACTS = {
  * capability it names (the route and its module) does not exist.
  */
 export const AI_FEATURES = {
-    campaignSummary: false,
+    campaignSummary: true,
     nicheMatching: false,
     briefWriter: false,
 };
@@ -238,6 +238,8 @@ export const HOME = {
                 title: "Get paid",
                 line: "You approve the work, and the creator is paid within 7 days of your approval.",
                 creatorLine: "Paid to their UPI or bank within 7 days of your approval — all of it.",
+                // Rendered only while `aiLive("campaignSummary")`.
+                aiLine: "An AI summary then reads your results in plain English, using only your real numbers.",
                 screen: { kicker: "Payment", rows: ["Work approved", "₹12,500 to Kiran", "Paid in full"] },
                 yours: true,
             },
@@ -429,21 +431,37 @@ export const BRANDS = {
     report: {
         label: "What you get at the end",
         title: "One report, not nine screenshots",
-        lead: "Reach, views and engagement for every post — read from Instagram's official API where the creator connected it — with the cost per thousand reached.",
+        lead: "Views, accounts reached, likes, shares, saves and comments for every post — read from Instagram's official API where the creator connected it — with every post on one page.",
+        // Rendered only while `aiLive("campaignSummary")`.
+        aiLine: "An AI summary reads your results in plain English — using only your real numbers, never invented ones.",
         card: {
             kicker: "Example report",
-            title: "Weekend brunch launch · 6 creators",
-            // Only measures the backend records: reach, impressions, views,
-            // likes, comments, saves, engagement rate over reach, and cost
-            // per thousand reach on paid work.
+            // **A mirror of the real dashboard and nothing more.** Every
+            // figure is one `GET /brand/campaigns/{id}/analytics` returns in
+            // its `dashboard` block, under the label the dashboard prints, and
+            // a test holds the two lists together. Creator names and figures
+            // are invented.
+            title: "Weekend brunch launch",
+            hero: { label: "Total views", value: "4,27,300", sub: "across 11 posts from 9 creators" },
             totals: [
-                { label: "Reach", value: "48,200" },
-                { label: "Views", value: "61,900" },
-                { label: "Engagements", value: "3,140" },
-                { label: "Engagement rate", value: "6.5%" },
-                { label: "Cost per 1,000 reached", value: "₹1,556" },
+                { label: "Creators", value: "9", sub: "all posted" },
+                { label: "Accounts reached", value: "2,81,900", sub: "added across posts" },
+                { label: "Likes", value: "19,600" },
+                { label: "Shares", value: "2,450" },
+                { label: "Saves", value: "2,790" },
+                { label: "Comments", value: "1,035" },
             ],
-            note: "Engagements are likes, comments and saves; the rate is over reach, not followers.",
+            postsLabel: "Every post",
+            posts: [
+                { name: "Ananya", format: "reel", views: "98,000", shares: "880" },
+                { name: "Ishaan", format: "reel", views: "76,000", shares: "410" },
+                { name: "Meghna", format: "reel", views: "64,000", shares: "300" },
+                { name: "Rohan", format: "reel", views: "52,000", shares: "260" },
+                { name: "Zoya", format: "carousel", count: 5, views: "21,000", shares: "90" },
+                { name: "Dev", format: "carousel", count: 4, views: "18,000", shares: "60" },
+            ],
+            more: "+5 more",
+            note: "Accounts reached are added across posts: one person who saw two posts counts twice.",
         },
     },
     promises: {

@@ -37,7 +37,7 @@ import {
 } from "@/components/marketing/SiteParts";
 import StickyCta from "@/components/marketing/StickyCta";
 import { BRANDS_PAGE as IDS } from "@/constants/testIds";
-import { ASK, BRANDS, FACTS, platformFeeText } from "@/content/marketing";
+import { ASK, BRANDS, FACTS, aiLive, platformFeeText } from "@/content/marketing";
 
 /** An FAQ item gated on a fact renders only when that fact is true. */
 const visibleFaq = (items) => items.filter((item) => !item.showIf || FACTS[item.showIf] === true);
@@ -130,6 +130,18 @@ export default function ForBrands() {
                     </div>
                     <div className="lg:col-span-7 lg:pt-16">
                         <ReportCard card={report.card} />
+                        {/* Only while the summary is shipped to brands: a line
+                            about a feature they cannot use is a claim the
+                            product does not keep. */}
+                        {aiLive("campaignSummary") ? (
+                            <p
+                                data-testid={IDS.reportAi}
+                                data-track-section="report-ai-summary"
+                                className="mkt-body mt-6 text-muted-foreground"
+                            >
+                                {report.aiLine}
+                            </p>
+                        ) : null}
                     </div>
                 </Wrap>
             </Band>

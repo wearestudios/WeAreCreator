@@ -44,7 +44,7 @@ import {
 } from "@/components/marketing/SiteParts";
 import StickyCta from "@/components/marketing/StickyCta";
 import { LANDING_CLOSING, LANDING_HERO as HERO_IDS, LANDING_PAGE as IDS } from "@/constants/testIds";
-import { ASK, HOME } from "@/content/marketing";
+import { ASK, HOME, aiLive } from "@/content/marketing";
 import { retryImport } from "@/lib/lazyRoute";
 
 // The film is framer-motion, and the homepage's first paint carries none.
@@ -205,6 +205,15 @@ function HowItWorks({ n }) {
                                             <dd className="mkt-body mt-1 text-muted-foreground">{step.creatorLine}</dd>
                                         </div>
                                     </dl>
+                                    {step.aiLine && aiLive("campaignSummary") ? (
+                                        <p
+                                            data-testid={IDS.stepAi(step.key)}
+                                            data-track-section={`step-${step.key}-ai`}
+                                            className="mkt-body mt-4 text-foreground"
+                                        >
+                                            {step.aiLine}
+                                        </p>
+                                    ) : null}
                                 </div>
                             </li>
                         ))}

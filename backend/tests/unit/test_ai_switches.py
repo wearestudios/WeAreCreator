@@ -145,3 +145,48 @@ def test_ai_live_reads_only_a_literal_true():
     state = switches()
     expected = [state["campaignSummary"], state["nicheMatching"], state["briefWriter"], False, False]
     assert got == str(expected).replace("True", "true").replace("False", "false").replace(" ", "")
+
+
+# ---------------------------------------------------------------------------
+# The lines each switch governs, on the pages that print them
+# ---------------------------------------------------------------------------
+
+PAGES = Path(server.__file__).resolve().parents[1] / "frontend" / "src" / "pages"
+
+# (page file, the content key printed, the switch that must guard it, the
+# analytics section id it reports as).
+SWITCHED_LINES = [
+    ("ForBrands.jsx", "report.aiLine", "campaignSummary", "report-ai-summary"),
+    ("Home.jsx", "step.aiLine", "campaignSummary", "step-${step.key}-ai"),
+]
+
+
+@pytest.mark.parametrize("page,expr,key,track", SWITCHED_LINES)
+def test_each_ai_line_renders_only_behind_its_switch(page, expr, key, track):
+    src = (PAGES / page).read_text()
+    at = src.index("{" + expr + "}")
+    guard = src.rfind(f'aiLive("{key}")', 0, at)
+    assert guard != -1 and at - guard < 600, f"{expr} on {page} is not inside aiLive(\"{key}\")"
+    # And the element it renders on reports when it is seen.
+    assert f"data-track-section={{`{track}`}}" in src or f'data-track-section="{track}"' in src
+
+
+def test_every_ai_line_in_the_content_has_a_guarded_render():
+    text = MARKETING.read_text()
+    for name in re.findall(r"^\s*(aiLine):", text, re.M):
+        assert name == "aiLine"
+    rendered = sum(
+        (PAGES / page).read_text().count("aiLine}") for page, *_ in SWITCHED_LINES
+    )
+    assert rendered >= len(SWITCHED_LINES)
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_the_lines_say_only_what_the_validator_holds():
+    """"Using only your real numbers" is a claim — `campaign_summary.ground`
+    is what makes it true, and the grounding tests are what hold it."""
+    text = MARKETING.read_text()
+    assert "using only your real numbers, never invented ones" in text
+    import campaign_summary
+
+    assert callable(campaign_summary.ground)

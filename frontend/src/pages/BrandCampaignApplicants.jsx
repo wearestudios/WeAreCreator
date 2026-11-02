@@ -1260,8 +1260,20 @@ export default function BrandCampaignApplicants() {
                     about rather than at the bottom under the panels about
                     filling a brief that is already filling. It renders nothing
                     until somebody has actually been taken on. */}
+                {/* The full results dashboard — every post, how views built
+                    up, who drove them — is its own page; this panel keeps the
+                    comparison with earlier campaigns beside the roster. */}
+                <div className="mt-12 flex justify-end">
+                    <Link
+                        to={`/brand/campaigns/${id}/results`}
+                        data-testid="brand-campaign-results-link"
+                        className="text-meta font-medium text-foreground underline underline-offset-4"
+                    >
+                        Open the results dashboard
+                    </Link>
+                </div>
                 <SafeSection name="campaign-analytics" label="Results couldn't load">
-                    <CampaignAnalytics campaignId={id} className="mt-12" />
+                    <CampaignAnalytics campaignId={id} className="mt-4" />
                 </SafeSection>
 
                 {/* **The curated half stays; the asking half went.** Ranked

@@ -104,18 +104,53 @@ export function BriefCard({ card }) {
 
 /** The end-of-campaign report, as an example. */
 export function ReportCard({ card }) {
+    // The real dashboard, drawn small: the one very large number, the tiles
+    // under it, and the wall of posts. Thumbnails are tinted tiles rather than
+    // photographs — nothing on the marketing site fetches a third party, and
+    // an invented post should not look like somebody's real one.
     return (
         <div className="rounded-lg border border-border bg-card p-6 md:p-8">
             <p className="text-meta font-medium text-muted-foreground">{card.kicker}</p>
             <p className="mt-2 font-serif text-fluid-2xl leading-tight text-heading">{card.title}</p>
+            <div className="mt-6">
+                <p className="text-meta text-muted-foreground">{card.hero.label}</p>
+                <p className="mkt-h1 mt-1 tabular-nums text-heading">{card.hero.value}</p>
+                <p className="mt-1 text-meta text-muted-foreground">{card.hero.sub}</p>
+            </div>
             <dl className="mt-6 grid grid-cols-2 gap-x-6 gap-y-5 sm:grid-cols-3">
                 {card.totals.map((t) => (
                     <div key={t.label}>
                         <dt className="text-meta text-muted-foreground">{t.label}</dt>
-                        <dd className="mkt-h3 mt-1 text-heading">{t.value}</dd>
+                        <dd className="mkt-h3 mt-1 tabular-nums text-heading">{t.value}</dd>
+                        {t.sub ? <dd className="text-meta text-muted-foreground">{t.sub}</dd> : null}
                     </div>
                 ))}
             </dl>
+            <p className="mt-7 text-meta font-medium text-foreground">{card.postsLabel}</p>
+            <ul className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-4">
+                {card.posts.map((p, i) => (
+                    <li key={p.name} className="overflow-hidden rounded-md border border-border">
+                        <div
+                            className="relative aspect-[4/5]"
+                            style={{ background: `hsl(${20 + i * 6} 55% ${86 - i * 3}%)` }}
+                            aria-hidden
+                        >
+                            <span className="absolute right-1.5 top-1.5 rounded-pill bg-brand-navy/80 px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-brand-white">
+                                {p.format === "reel" ? "▶" : `1/${p.count}`}
+                            </span>
+                        </div>
+                        <div className="px-2 py-1.5">
+                            <p className="truncate text-[12px] font-medium text-foreground">{p.name}</p>
+                            <p className="text-[11px] tabular-nums text-muted-foreground">
+                                {p.views} views · {p.shares} shares
+                            </p>
+                        </div>
+                    </li>
+                ))}
+                <li className="flex aspect-[4/5] items-center justify-center rounded-md border border-dashed border-border text-meta text-muted-foreground sm:aspect-auto">
+                    {card.more}
+                </li>
+            </ul>
             <p className="mt-6 border-t border-border pt-4 text-meta text-muted-foreground">{card.note}</p>
         </div>
     );

@@ -298,6 +298,15 @@ def derive(data: dict, dashboard: Optional[dict] = None) -> dict:
             if b["average_views_per_post"]
         ]
 
+    # The dashboard counts posts, where `posts_total` above counts deliveries
+    # (a creator who posted twice is one delivery and two posts). Both are
+    # given, named apart, so "11 posts from 9 creators" can be grounded.
+    if dashboard:
+        out["instagram_posts_live"] = (dashboard.get("posts") or {}).get("live")
+        out["creators_posted"] = (dashboard.get("creators") or {}).get("posted")
+        out["creators_total"] = (dashboard.get("creators") or {}).get("total")
+        out = _drop_none(out)
+
     last = (dashboard or {}).get("versus_last_campaign") or {}
     if last.get("change_percent") is not None:
         out["vs_last_campaign"] = {

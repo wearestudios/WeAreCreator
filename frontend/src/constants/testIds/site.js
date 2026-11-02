@@ -10,6 +10,8 @@ export const BRANDS_PAGE = {
 	ctaBottom: 'brands-cta-bottom',
 	ctaTalkBottom: 'brands-cta-talk-bottom',
 	shortlist: 'brands-shortlist',
+	// The AI summary line under the example report, while its switch is on.
+	reportAi: 'brands-report-ai',
 	shortlistRow: (i) => `brands-shortlist-row-${i}`,
 	pricing: 'brands-pricing',
 	pricingCard: (key) => `brands-pricing-${key}`,

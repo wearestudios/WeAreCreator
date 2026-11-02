@@ -88,6 +88,14 @@ const BrandOnboarding = load(() =>
     import(/* webpackChunkName: "brand" */ "@/pages/BrandOnboarding"),
 );
 const PostCampaign = load(() => import(/* webpackChunkName: "brand" */ "@/pages/PostCampaign"));
+// The results dashboard, shared by the brand and the console — named apart from
+// both, so neither audience downloads the other's surface to reach it.
+const CampaignResults = load(() => import(/* webpackChunkName: "results" */ "@/pages/CampaignResults"));
+const AdminCampaignResults = load(() =>
+    import(/* webpackChunkName: "results" */ "@/pages/CampaignResults").then((m) => ({
+        default: m.AdminCampaignResults,
+    })),
+);
 // There is no brand creator directory, deliberately — see `_brand_visible_creator`
 // and the "Creators a brand may see" block in `server.py`. A brand reaches
 // creators through its own briefs: the applicant board, its invitations, and
@@ -378,6 +386,14 @@ function App() {
                             }
                         />
                         <Route
+                            path="/brand/campaigns/:id/results"
+                            element={
+                                <ProtectedRoute roles={[...BRAND_ROLES, "admin"]}>
+                                    <CampaignResults />
+                                </ProtectedRoute>
+                            }
+                        />
+                        <Route
                             path="/brand/campaigns/:id/applicants"
                             element={
                                 <ProtectedRoute roles={[...BRAND_ROLES, "admin"]}>
@@ -493,6 +509,7 @@ function App() {
                                 panel under it changes. */}
                             <Route path="campaigns" element={<CampaignsRoute />} />
                             <Route path="campaigns/:id" element={<AdminCampaignDetail />} />
+                            <Route path="campaigns/:id/results" element={<AdminCampaignResults />} />
                             <Route path="creators" element={<CreatorsRoute />} />
                             <Route path="creators/:id" element={<AdminCreatorDetail />} />
                             <Route path="brands" element={<BrandsRoute />} />

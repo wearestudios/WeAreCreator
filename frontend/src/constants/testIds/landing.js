@@ -16,6 +16,8 @@ export const LANDING_PAGE = {
 	band: 'landing-band',
 	how: 'landing-how',
 	step: (key) => `landing-step-${key}`,
+	// The AI line under a step, while that feature's switch is on.
+	stepAi: (key) => `landing-step-${key}-ai`,
 	// "You" or "The creator" under one step: both sides of the deal.
 	stepSide: (key, side) => `landing-step-${key}-${side}`,
 	stepTag: 'landing-step-tag',

@@ -389,6 +389,18 @@ export default function CampaignDetailPage() {
                         >
                             Edit
                         </Button>
+                        {/* The same results dashboard the brand reads,
+                            for any campaign — an admin answering "how did it
+                            do" should be looking at what the brand sees. */}
+                        <Button
+                            asChild
+                            variant="outline"
+                            className="rounded-full border-border bg-transparent hover:bg-tint/5"
+                        >
+                            <Link to={`/admin/campaigns/${id}/results`} data-testid={DIDS.action("results")}>
+                                Results
+                            </Link>
+                        </Button>
                         {/* **Again, like that one** — the brief without its
                             dates, as a draft, on the same route the brand's
                             own Duplicate uses. The copy has no manager and no

@@ -188,21 +188,30 @@ class TestBrandPromises:
             assert row["reasons"], row
 
     def test_the_report_shows_only_what_is_measured(self):
-        """"Never display a metric the app does not collect": every figure on
-        the example report is one `PERFORMANCE_METRICS` records or the rollup
-        derives (engagements, the rate over reach, cost per thousand reached)."""
-        labels = [t["label"] for t in content()["BRANDS"]["report"]["card"]["totals"]]
-        derivable = {
-            "Reach": "reach", "Views": "views", "Impressions": "impressions",
-            "Engagements": "total_engagements", "Engagement rate": "engagement_rate",
-            "Cost per 1,000 reached": "cost_per_thousand_reach",
+        """"Never display a metric the app does not collect": the example
+        report mirrors the real dashboard, so every label on it is a label
+        the dashboard prints, backed by a key `_campaign_dashboard` returns.
+        Cost per thousand and engagement counts came off the card when the
+        dashboard became the report — the dashboard does not print them."""
+        card = content()["BRANDS"]["report"]["card"]
+        labels = [card["hero"]["label"]] + [t["label"] for t in card["totals"]]
+        dashboard_label_to_key = {
+            "Total views": '"views"',
+            "Creators": '"posted"',
+            "Accounts reached": '"reach_sum"',
+            "Likes": '"likes"',
+            "Shares": '"shares"',
+            "Saves": '"saves"',
+            "Comments": '"comments"',
         }
-        rollup = inspect.getsource(server._rollup_performance)
-        for label in labels:
-            assert label in derivable, label
-            key = derivable[label]
-            assert key in server.PERFORMANCE_METRICS or f'"{key}"' in rollup, label
-        assert set(server.ENGAGEMENT_METRICS) == {"likes", "comments", "saves"}
+        assert labels == list(dashboard_label_to_key), labels
+        backend = inspect.getsource(server._campaign_dashboard)
+        screen = (FRONTEND / "src/components/dashboard/CampaignDashboard.jsx").read_text()
+        for label, key in dashboard_label_to_key.items():
+            assert key in backend, f"{label}: {key} is not in the dashboard block"
+            assert label in screen, f"{label} is not printed by the dashboard"
+        assert "added across posts" in card["totals"][1]["sub"]
+        assert set(server.ENGAGEMENT_METRICS) == {"likes", "comments", "shares", "saves"}
 
     def test_we_invite_the_creators_a_brand_already_knows(self):
         """"Send us their handles and we'll invite them" — inviting is staff
