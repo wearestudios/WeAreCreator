@@ -389,7 +389,11 @@ class TestStateMachine:
         cid, _ = _seed_open_campaign(bs, admin)
         collab_id = pipeline.apply_to_campaign(cs, cid)
         for state in ["verified", "accepted", "commercial_agreed", "slot_booked", "attended"]:
-            pipeline.step(admin, bs, collab_id, state)
+            if state == "slot_booked":
+                # The creator's step: the admin advance refuses it.
+                pipeline.book_slot(admin, bs, cs, collab_id)
+            else:
+                pipeline.step(admin, bs, collab_id, state)
         pipeline.submit_content(cs, collab_id)
         pipeline.step(admin, bs, collab_id, "content_approved")
 

@@ -5914,6 +5914,53 @@ Build collaborations through `tests/pipeline.py` rather than by hand — it rout
 each step to whoever owns it. Do not change `addopts` in `pytest.ini`; serialize
 with `-n 0`.
 
+### The harness drifted, and nothing could see it
+
+"Can't gate a PR" had a cost, and this is it. When booking became the
+creator's alone, `advance_collaboration` started refusing `slot_booked` with a
+409 — and `pipeline.py` kept it in `_ADMIN_STEPS` with a `scheduled_at`
+payload. Every integration test needing a collaboration past
+`commercial_agreed` died in setup, so `attended` through `closed` had no
+working integration coverage at all, and the only symptom was an assertion
+inside a suite nobody runs on a PR. The draft gate had never been walked end
+to end: `PIPELINE` did not list its two states.
+
+It had also drifted in three quieter ways, all fixed in the same pass: the
+brand-owned steps went through the brand session, which a weare-run brief
+answers with a 404 until a fee is agreed (they go through whoever *runs* the
+campaign now); `commercial_agreed` sent a hardcoded 8500, which a fixed brief
+refuses unless it is exactly the budget; and `approve_content` sent no
+`disclosure_confirmed`.
+
+- **Every step has exactly one owner** — `OWNERS` in `pipeline.py`, admin /
+  brand (the runner) / creator / reviewer — and `check_ownership` fails at
+  import, naming the state, if one is claimed twice or by nobody. Creator and
+  reviewer steps raise from `step()` with a pointer to their helper
+  (`book_slot`, `submit_draft`, `approve_draft`, `submit_content`) rather than
+  falling through to the admin advance.
+- **The ladder comes from the server.** `PIPELINE` and `DRAFT_PIPELINE` are the
+  two the harness knows; `ladder_for` picks the one matching the
+  collaboration's `state_order` and refuses to guess otherwise. Note the draft
+  gate defaults **off** for a brand-posted brief (every one is weare-run), so
+  `seed_open_campaign(requires_draft_approval=True)` is how to get it.
+- **`tests/unit/test_pipeline_ownership.py` is the half that gates a PR.** It
+  loads the harness without a server and checks its tables against
+  `_collab_ladder`, `_CREATOR_OWNED_TRANSITIONS`, `_BRAND_OWNED_TRANSITIONS`
+  and `_DRAFT_OWNED_TRANSITIONS`. Putting `slot_booked` back in `_ADMIN_STEPS`
+  fails four of its tests by name. The next ownership change fails there, on
+  the PR that makes it.
+- **`tests/test_lifecycle_walk.py` is the one test proving the lifecycle
+  completes**: `applied` to `closed` once per ladder, the draft-gate run with
+  the booking handshake on as well, reading the stored state back after every
+  step.
+
+Two more things stop the rest of `tests/` running today, and both are
+setup-level rather than harness-level. Most fixtures register without
+`accept_terms`, which `/auth/register` now refuses. And the auth cookies are
+`Secure`, so `requests` will not send them back over plain HTTP — the suite
+needs the backend behind TLS, or every authenticated call reads "Not
+authenticated".
+
 ### Reading the source is not driving the code
 
 Much of `tests/unit/` asserts on the *shape* of a handler — that
