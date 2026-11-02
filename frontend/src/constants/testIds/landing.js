@@ -16,6 +16,8 @@ export const LANDING_PAGE = {
 	band: 'landing-band',
 	how: 'landing-how',
 	step: (key) => `landing-step-${key}`,
+	// "You" or "The creator" under one step: both sides of the deal.
+	stepSide: (key, side) => `landing-step-${key}-${side}`,
 	stepTag: 'landing-step-tag',
 	promises: 'landing-promises',
 	promise: (i) => `landing-promise-${i}`,
@@ -35,6 +37,13 @@ export const LANDING_HERO = {
 	ctaTalk: 'hero-cta-talk',
 	card: 'hero-card',
 	cardRow: (i) => `hero-card-row-${i}`,
+	// The step deck in the card's place. `hero-slides` carries
+	// `data-mounted`, which is never more than two.
+	slides: 'hero-slides',
+	slide: (i) => `hero-slide-${i}`,
+	rail: 'hero-rail',
+	railStep: (i) => `hero-rail-step-${i}`,
+	progress: 'hero-progress',
 };
 
 export const LANDING_COMPARE = {

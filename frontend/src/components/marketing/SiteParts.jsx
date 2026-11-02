@@ -9,6 +9,17 @@
 // **Every section opens on the numbered rule**: the section's number in the
 // label face on the left, its name on the right, a hairline between, and then
 // the heading. A reader scanning the page reads the rules as a contents list.
+//
+// **The grounds alternate**, as the pre-revamp site's did ("band the site
+// light and dark", 0dc35ce): the page ground, a warm tint and navy, so no two
+// neighbouring sections share one and the page reads as a sequence of
+// bands rather than one long sheet. The light base is unchanged — navy is at
+// most two bands a page, and it is the existing dark token set
+// (`data-surface="dark"`), not a colour of its own. `Band` is the one way a
+// section picks its ground.
+//
+// The section heading and an illustration rise in once (`Rise`, the old
+// pages' `Reveal` entrance); body text, tables and the FAQ do not.
 // **The rule is the only place the label face (`mkt-label` — JetBrains Mono,
 // tracked capitals) appears on a public page**; everything else is sentence
 // case in Inter Tight.
@@ -16,7 +27,9 @@ import React from "react";
 import { Link } from "react-router-dom";
 import { ArrowRight } from "lucide-react";
 
+import Illustration from "@/components/marketing/Illustration";
 import PhotoSlot from "@/components/marketing/PhotoSlot";
+import { Rise } from "@/components/marketing/primitives";
 import { photoSlot } from "@/content/photoSlots";
 import { sectionNumber } from "@/content/marketing";
 import { SITE_PARTS as IDS } from "@/constants/testIds";
@@ -27,6 +40,37 @@ const HOVER =
 
 const FOCUS =
     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background";
+
+/**
+ * The three grounds a band may sit on. The tint is `--muted`, the warm
+ * #F1EEE9 the light set already holds; navy is the dark token set, switched
+ * on by `data-surface`, so everything inside resolves without a class of its
+ * own.
+ */
+export const GROUND = {
+    page: "bg-background",
+    tint: "bg-muted",
+    navy: "bg-background",
+};
+
+/**
+ * One section of a public page on one ground. `track` is the id the
+ * `section_view` event reports, so every band is measured by name.
+ */
+export function Band({ ground = "page", track, id, testid, className = "", children }) {
+    return (
+        <section
+            id={id}
+            data-track-section={track}
+            data-testid={testid}
+            data-ground={ground}
+            data-surface={ground === "navy" ? "dark" : undefined}
+            className={`${GROUND[ground]} text-foreground ${className}`}
+        >
+            {children}
+        </section>
+    );
+}
 
 /** A page-width container. 16px gutters on the narrowest phone. */
 export function Wrap({ children, className = "" }) {
@@ -58,12 +102,15 @@ export function SectionRule({ n, label, className = "" }) {
     );
 }
 
-/** The rule, an `h2` and an optional lead — the head of every section. */
+/** The rule, an `h2` and an optional lead — the head of every section. The
+ * heading rises in once; the rule and the lead do not move. */
 export function SectionHead({ n, label, title, lead, className = "", titleClassName = "" }) {
     return (
         <div className={className}>
             <SectionRule n={n} label={label} />
-            <h2 className={`mkt-h2 mt-8 max-w-5xl text-heading md:mt-10 ${titleClassName}`}>{title}</h2>
+            <Rise>
+                <h2 className={`mkt-h2 mt-8 max-w-5xl text-heading md:mt-10 ${titleClassName}`}>{title}</h2>
+            </Rise>
             {lead ? <p className="mkt-lead mt-5 max-w-2xl text-muted-foreground">{lead}</p> : null}
         </div>
     );
@@ -108,17 +155,24 @@ export function Cta({ ask, variant = "primary", testid, className = "" }) {
 }
 
 /**
- * The page's one navy band: three claims, each with the mechanism that makes
- * it true. `data-surface="dark"` swaps the tokens for the section, so
- * everything inside resolves from the navy set without a class of its own.
+ * A navy band: three claims, each with the mechanism that makes it true.
+ * `art` puts an illustration beside the heading — the guarantees band on
+ * /for-brands carries the door check-in drawing, as the old page did.
  */
-export function PromiseBand({ n, label, title, items, testid, itemTestid }) {
+export function PromiseBand({ n, label, title, items, testid, itemTestid, art }) {
     return (
         // The hairline marks the edge where this band meets a navy photo panel,
         // which otherwise runs straight into it.
-        <section data-testid={testid} data-surface="dark" className="border-t border-border bg-background text-foreground">
+        <Band ground="navy" track="promises" testid={testid} className="border-t border-border">
             <Wrap className="py-20 md:py-28">
-                <SectionHead n={n} label={label} title={title} />
+                {art ? (
+                    <div className="grid gap-10 lg:grid-cols-12 lg:items-end lg:gap-16">
+                        <SectionHead n={n} label={label} title={title} className="lg:col-span-7" />
+                        <Illustration name={art} className="order-first lg:order-none lg:col-span-5" />
+                    </div>
+                ) : (
+                    <SectionHead n={n} label={label} title={title} />
+                )}
                 <ul className="mt-14 grid gap-10 md:grid-cols-3 md:gap-12">
                     {items.map((item, i) => (
                         <li key={item.title} data-testid={itemTestid ? itemTestid(i) : undefined}>
@@ -130,7 +184,7 @@ export function PromiseBand({ n, label, title, items, testid, itemTestid }) {
                     ))}
                 </ul>
             </Wrap>
-        </section>
+        </Band>
     );
 }
 
@@ -138,8 +192,8 @@ export function PromiseBand({ n, label, title, items, testid, itemTestid }) {
  * A full-bleed photograph section.
  *
  * Without a photograph the slot *is* the section: in production `PhotoSlot`
- * draws the navy panel with the slot's headline, and in development the
- * dashed brief. With one, the same headline sits on a panel over the picture
+ * draws the slot's illustration with its headline on a navy band, and in
+ * development the dashed brief. With one, the same headline sits on a panel over the picture
  * — legible over whatever is in the frame, no scrim tuned to an image nobody
  * has taken. A phone gets a taller frame than 2:1, which at 390px would be
  * 195px and could not hold the headline.
@@ -147,7 +201,11 @@ export function PromiseBand({ n, label, title, items, testid, itemTestid }) {
 export function PhotoBand({ slot: id, testid }) {
     const slot = photoSlot(id);
     return (
-        <section data-testid={testid} className="relative min-h-[28rem] md:aspect-[2/1] md:max-h-[52rem] md:min-h-0">
+        <section
+            data-testid={testid}
+            data-track-section={`photo-${id}`}
+            className="relative min-h-[28rem] md:aspect-[2/1] md:max-h-[52rem] md:min-h-0"
+        >
             <div className="absolute inset-0">
                 <PhotoSlot id={id} fill />
             </div>
@@ -282,15 +340,17 @@ export function Faq({ items, testid, itemTestid }) {
 }
 
 /** The closing band: the rule, one big line, one small one, and the asks. */
-export function Closing({ n, label, title, line, children, testid, id }) {
+export function Closing({ n, label, title, line, children, testid, id, ground = "page" }) {
     return (
-        <section id={id} data-track-section="close" data-testid={testid} className="border-t border-border">
+        <Band ground={ground} id={id} track="close" testid={testid}>
             <Wrap className="py-20 md:py-32">
                 {n ? <SectionRule n={n} label={label} className="mb-10" /> : null}
-                <h2 className="mkt-display max-w-5xl text-heading">{title}</h2>
+                <Rise>
+                    <h2 className="mkt-display max-w-5xl text-heading">{title}</h2>
+                </Rise>
                 {line ? <p className="mkt-lead mt-6 max-w-2xl text-muted-foreground">{line}</p> : null}
                 <div className="mt-10 flex flex-col gap-3 sm:flex-row">{children}</div>
             </Wrap>
-        </section>
+        </Band>
     );
 }

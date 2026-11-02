@@ -128,7 +128,11 @@ export const MARKETING_PATHS = ["/", "/for-brands", "/for-creators"];
 /**
  * Paths that used to be pages, and where each one lives now.
  *
- * `/how-it-works` and `/why-weare` were folded into `/for-brands` as sections.
+ * `/how-it-works` lands on the homepage's "How it works" section, which shows
+ * the four steps from both sides as the old page did; `/why-weare` was folded
+ * into `/for-brands`. The anchor is the section's `id`, and `Home` scrolls to
+ * it on arrival, because a client-side redirect renders the page after the
+ * browser has already looked for the hash.
  * The audience pages kept their `/for-` paths, because changing a path breaks
  * every link and search result pointing at it. **Both retired paths redirect
  * rather than 404**: they are in the footers of old WhatsApp forwards and in
@@ -138,7 +142,7 @@ export const MARKETING_PATHS = ["/", "/for-brands", "/for-creators"];
  * pasted link actually meet. A test keeps the three in step.
  */
 export const RETIRED_MARKETING_PATHS = [
-    ["/how-it-works", "/for-brands"],
+    ["/how-it-works", "/#how-it-works"],
     ["/why-weare", "/for-brands"],
 ];
 

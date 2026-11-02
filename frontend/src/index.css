@@ -931,6 +931,9 @@
     --mkt-wipe: 520ms;
     --mkt-row: 400ms;
     --mkt-row-gap: 70ms;
+    /* The old site's `Reveal`: 14px of travel at the top of its band. */
+    --mkt-rise: 400ms;
+    --mkt-rise-travel: 14px;
     --mkt-marquee: 45s;
 }
 
@@ -970,6 +973,21 @@
 [data-written="true"] .mkt-row-final {
     animation-name: mkt-land;
     transform-origin: left center;
+}
+
+/* `Rise` — the pre-revamp `Reveal` entrance on a heading or an illustration.
+   Transparent and in its own box until `data-shown`, set once when it first
+   comes into view and never cleared, so arriving moves nothing and scrolling
+   past again does not replay it. */
+@keyframes mkt-rise {
+    from { opacity: 0; transform: translate3d(0, var(--mkt-rise-travel), 0); }
+    to   { opacity: 1; transform: none; }
+}
+.mkt-rise {
+    opacity: 0;
+}
+.mkt-rise[data-shown="true"] {
+    animation: mkt-rise var(--mkt-rise) var(--weare-ease) both;
 }
 
 /* FillText writes each word's opacity inline from scroll position; the only
@@ -1046,7 +1064,9 @@
     .mkt-wipe,
     .mkt-row,
     [data-written="true"] .mkt-row,
-    [data-written="true"] .mkt-row-final {
+    [data-written="true"] .mkt-row-final,
+    .mkt-rise,
+    .mkt-rise[data-shown="true"] {
         animation: none !important;
         opacity: 1 !important;
         transform: none !important;

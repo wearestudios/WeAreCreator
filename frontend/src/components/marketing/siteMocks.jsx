@@ -1,6 +1,7 @@
-// Product UI drawn for the public pages: the deal in the hero, the four step
-// screens, the shortlist a brand reads, the brief a creator applies to, the
-// report at the end and a creator's record.
+// Product UI drawn for the public pages: the shortlist a brand reads, the
+// brief a creator applies to, the report at the end and a creator's record.
+// The hero's four step screens are `heroScreens.jsx`, and they borrow `Chip`
+// from here so the two speak one vocabulary of states.
 //
 // **Drawn in the DOM, never screenshotted.** A screenshot dates the moment
 // somebody moves a button, and a real component would drag the app's data,
@@ -9,8 +10,6 @@
 // and every name and figure is invented and supplied by
 // `content/marketing.js`. What each one *shows* the product doing is real.
 import React from "react";
-
-import { RowWriter } from "@/components/marketing/primitives";
 
 const TONE = {
     warn: "border-state-pending/30 bg-state-pending-wash text-state-pending",
@@ -33,66 +32,6 @@ const Monogram = ({ text }) => (
         {text}
     </span>
 );
-
-/**
- * The hero's product card: one deal, its history written in as it scrolls into
- * view — once. **The agreed figure is the only large number on it**, in
- * Fraunces; every other figure is body size. Day labels are Inter Tight in
- * sentence case, like everything on the public pages that is not a section
- * rule.
- */
-export function DealCard({ card, testid, rowTestid }) {
-    const rows = card.rows.map((row, i) => ({
-        key: `${row.day}-${i}`,
-        final: Boolean(row.final),
-        node: (
-            <div
-                data-testid={rowTestid ? rowTestid(i) : undefined}
-                className={`grid grid-cols-[2.5rem_1fr_auto] items-baseline gap-3 py-3 ${row.final ? "" : "border-b border-border"}`}
-            >
-                <span className="text-meta text-muted-foreground">{row.day}</span>
-                <span className={`text-body ${row.final ? "font-semibold text-foreground" : "text-muted-foreground"}`}>
-                    {row.who}
-                </span>
-                {row.final ? (
-                    <span className="font-serif text-[2rem] leading-none text-heading">{row.amount}</span>
-                ) : (
-                    <span className="text-body text-foreground">{row.amount}</span>
-                )}
-            </div>
-        ),
-    }));
-    return (
-        <div data-testid={testid} className="rounded-lg border border-border bg-card p-5 sm:p-6">
-            <p className="font-serif text-[1.75rem] leading-tight text-heading">{card.title}</p>
-            <p className="mt-1 text-[0.9375rem] text-muted-foreground">{card.subline}</p>
-            <RowWriter rows={rows} className="mt-4" />
-            <p className="mt-4 border-t border-border pt-4 text-[0.9375rem] text-muted-foreground">{card.note}</p>
-        </div>
-    );
-}
-
-/** One of the four step screens: a kicker and three short rows. */
-export function StepScreen({ screen, final = "" }) {
-    return (
-        <div className="rounded-md border border-border bg-card p-4">
-            <p className="text-meta font-medium text-foreground">{screen.kicker}</p>
-            <ul className="mt-3 space-y-2">
-                {screen.rows.map((r, i) => (
-                    <li
-                        key={r}
-                        className={`flex items-center justify-between gap-3 text-meta ${
-                            i === screen.rows.length - 1 ? "text-foreground" : "text-muted-foreground"
-                        }`}
-                    >
-                        <span>{r}</span>
-                        {i === screen.rows.length - 1 && final ? <Chip tone="good">{final}</Chip> : null}
-                    </li>
-                ))}
-            </ul>
-        </div>
-    );
-}
 
 /** Scored applicants, the match as a number, the reasons beside it. */
 export function ShortlistCard({ card, rowTestid }) {

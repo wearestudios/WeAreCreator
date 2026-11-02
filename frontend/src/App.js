@@ -291,9 +291,10 @@ function App() {
                         <Route path="/privacy" element={<Privacy />} />
                         <Route path="/for-brands" element={<ForBrands />} />
                         <Route path="/for-creators" element={<ForCreators />} />
-                        {/* The retired pages. /how-it-works and /why-weare were
-                            folded into /for-brands as sections; the redirects
-                            are `replace` so the back button does not bounce.
+                        {/* The retired pages. /how-it-works lands on the home
+                            page's "How it works" section and /why-weare on
+                            /for-brands; the redirects are `replace` so the
+                            back button does not bounce.
                             The 301 half is in vercel.json, which is what a
                             crawler and an old link actually meet. */}
                         {RETIRED_MARKETING_PATHS.map(([from, to]) => (

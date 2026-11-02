@@ -22,7 +22,7 @@
 import React from "react";
 
 import { IMAGE_ZOOM } from "@/components/marketing/motion";
-import { PLACEHOLDER_BRIEFS } from "@/content/photoSlots";
+import { PLACEHOLDER_BRIEFS, PLACEHOLDER_ILLUSTRATIONS, SHOW_BRIEFS } from "@/content/photoSlots";
 
 /**
  * The tint, derived from the slot's own name.
@@ -100,12 +100,18 @@ export function PlaceholderImage({
 }) {
     const brief = note || (slot ? PLACEHOLDER_BRIEFS[slot] : null);
     const hue = tintFor(slot || note || "");
+    // **In production a named slot shows a drawing rather than an empty
+    // tint** — the sign-in and sign-up asides and the 404 — because there is
+    // no brief to show there. In development and on a preview it stays the
+    // tint with its brief, exactly as before, so the slot still says what
+    // photograph belongs in it. A real `src` always wins.
+    const shown = src || (!SHOW_BRIEFS && slot ? PLACEHOLDER_ILLUSTRATIONS[slot] || null : null);
 
     return (
         <div
             data-testid={testid}
             data-slot={slot}
-            data-placeholder={src || !brief ? undefined : brief}
+            data-placeholder={shown || !brief ? undefined : brief}
             // **Exactly one positioning utility, which `fill` used to break.**
             // The base here was `relative overflow-hidden` with `absolute
             // inset-0` appended for `fill`, so a filled slot carried *both*
@@ -143,9 +149,9 @@ export function PlaceholderImage({
                     } 60% 12%) 45%, hsl(var(--brand-navy)) 100%)`,
                 }}
             />
-            {src ? (
+            {shown ? (
                 <img
-                    src={src}
+                    src={shown}
                     alt={alt}
                     loading={eager ? "eager" : "lazy"}
                     fetchPriority={eager ? "high" : undefined}

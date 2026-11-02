@@ -99,13 +99,18 @@ function Board({ rows }) {
     );
 }
 
-/** @param {{ copy: typeof import("@/content/marketing").HOME.swap, n: number }} props */
-export default function ComparisonBand({ copy, n }) {
+/**
+ * @param {{ copy: typeof import("@/content/marketing").HOME.swap, n: number,
+ *           ground?: string }} props
+ *   `ground` is the band's background class (`GROUND` in SiteParts), so the
+ *   page can alternate it with its neighbours.
+ */
+export default function ComparisonBand({ copy, n, ground = "bg-background" }) {
     return (
         <section
             data-track-section="problem"
             data-testid={IDS.section}
-            className="bg-background [contain-intrinsic-size:auto_760px] [content-visibility:auto]"
+            className={`${ground} text-foreground [contain-intrinsic-size:auto_760px] [content-visibility:auto]`}
         >
             <Wrap className="py-20 md:py-28">
                 <SectionHead n={n} label={copy.label} title={<span data-testid={IDS.title}>{copy.title}</span>} />

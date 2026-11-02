@@ -39445,8 +39445,8 @@ async def public_brand_page(brand_id: str, request: Request):
 # and how to buy it back.
 #
 # **Home, /for-brands and /for-creators are the three pages now**, plus
-# /contact. /how-it-works and /why-weare were folded into /for-brands as
-# sections and redirect there (`RETIRED_MARKETING_PATHS`, mirrored from
+# /contact. /how-it-works redirects to the homepage's "How it works" section
+# and /why-weare to /for-brands (`RETIRED_MARKETING_PATHS`, mirrored from
 # `lib/siteNav.js` and the 301s in `vercel.json`), so they leave the sitemap: a
 # sitemap that lists a redirect is asking a crawler to index a page that does
 # not exist. The audience pages kept their paths, because changing a path
@@ -39469,7 +39469,7 @@ MARKETING_PATHS = (
 # Old path → where it lives now. Mirrors `RETIRED_MARKETING_PATHS` in
 # `frontend/src/lib/siteNav.js` and the `redirects` in `vercel.json`.
 RETIRED_MARKETING_PATHS = (
-    ("/how-it-works", FOR_BRANDS_PATH),
+    ("/how-it-works", HOME_PATH + "#how-it-works"),
     ("/why-weare", FOR_BRANDS_PATH),
 )
 

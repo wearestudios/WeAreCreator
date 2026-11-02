@@ -103,8 +103,11 @@ export const MARKETING = {
 	feeFlowTheirs: 'marketing-fee-flow-theirs',
 	feeFlowOurs: 'marketing-fee-flow-ours',
 	feeFlowShare: (side) => `marketing-fee-flow-share-${side}`,
+	feeFlowStep: (key) => `marketing-fee-flow-step-${key}`,
+	feeFlowFee: 'marketing-fee-flow-fee',
 	payoutClock: 'marketing-payout-clock',
 	payoutClockOurs: 'marketing-payout-clock-ours',
 	payoutClockTheirs: 'marketing-payout-clock-theirs',
 	payoutClockGap: 'marketing-payout-clock-gap',
+	payoutClockStart: 'marketing-payout-clock-start',
 };

@@ -22,6 +22,12 @@
 //                     read as a finished section, not as something missing.
 //   fallbackAccent    the one word of the headline set in Fraunces italic red
 //   fallbackLine      an optional sentence under it
+//   fallbackIllustration
+//                     the drawing that fills the slot, full bleed, while `src`
+//                     is null in production. The headline sits on a navy band
+//                     over it so it keeps its contrast whatever the drawing
+//                     is. When `src` is set the photograph replaces the
+//                     drawing and nothing else changes.
 //
 // **No real person is named in a brief**, and nobody from WeAre Studios: a
 // slot is described by what the frame needs, never by who is in it.
@@ -54,6 +60,7 @@ export const PHOTO_SLOTS = {
         brief: SHOW_BRIEFS
             ? "A creator mid-shoot at a venue — phone on a small rig, the room busy around them. Daylight or warm interior light; keep the left third quiet for a headline."
             : null,
+        fallbackIllustration: "/img/marketing/home-on-location.svg",
         fallbackHeadline: "The shoot still has to be good.",
         fallbackAccent: "good",
         fallbackLine:
@@ -68,6 +75,7 @@ export const PHOTO_SLOTS = {
         brief: SHOW_BRIEFS
             ? "A venue full on an ordinary weeknight, creators among the guests, phones out at the table. Wide, warm, no faces to camera; keep the left third quiet for a headline."
             : null,
+        fallbackIllustration: "/img/marketing/brands-full-house.svg",
         fallbackHeadline: "A full room on a Tuesday is the only metric that matters",
         fallbackAccent: null,
         fallbackLine: null,
@@ -81,6 +89,9 @@ export const PHOTO_SLOTS = {
         brief: SHOW_BRIEFS
             ? "A creator framing a shot of a dish or a product, seen from just behind the shoulder. Natural light; keep the left third quiet for a headline."
             : null,
+        // `creators-cafe-shoot` is beside "Briefs that fit" on the same page,
+        // so the band takes the wide venue rather than repeat it.
+        fallbackIllustration: "/img/marketing/home-venue-wide.svg",
         fallbackHeadline: "Turn up, shoot it well, get paid",
         fallbackAccent: null,
         fallbackLine: null,
@@ -102,6 +113,20 @@ export const PLACEHOLDER_BRIEFS = {
         : null,
     "auth-signup": SHOW_BRIEFS ? "Creator setting up a shot on location, portrait crop for the auth aside" : null,
     "not-found": SHOW_BRIEFS ? "Empty venue between shoots, chairs stacked, light through a window, 4:3" : null,
+};
+
+/**
+ * What the three tinted slots show in production, where there is no brief to
+ * show: a drawing that fits the screen, instead of an empty tint. In
+ * development and on a preview they keep the brief exactly as before.
+ */
+export const PLACEHOLDER_ILLUSTRATIONS = {
+    // A creator and a brand manager going over a shoot at a venue table.
+    "auth-login": "/img/marketing/how-table-talk.svg",
+    // A creator setting up a shot on location.
+    "auth-signup": "/img/marketing/home-on-location.svg",
+    // A venue between shoots.
+    "not-found": "/img/marketing/home-venue-wide.svg",
 };
 
 /** The slot, or a thrown error: a misspelt id must fail loudly, not render an
