@@ -161,7 +161,8 @@ function ReviewQueue({ config, onChanged }) {
                 value: (r) => String(config.primary(r) || ""),
                 cell: (r) => (
                     <span className="flex min-w-0 items-center gap-2">
-                        {config.renderAvatar?.(r)}
+                        {/* Dropped in compact, with every avatar block. */}
+                        <span className="density-avatar contents">{config.renderAvatar?.(r)}</span>
                         {/* **The name is a link to the whole record.** A row
                             opens the peek, which is a preview; the name goes
                             to the page, which is everything. Before this the
@@ -178,7 +179,7 @@ function ReviewQueue({ config, onChanged }) {
                             {config.primary(r)}
                         </Link>
                         {r.reference && (
-                            <span className="flex-none font-mono text-[10px] tracking-wider text-muted-foreground/70">
+                            <span className="flex-none font-mono text-eyebrow tracking-wider text-muted-foreground/70">
                                 {r.reference}
                             </span>
                         )}
@@ -525,7 +526,7 @@ export function CreatorReviews({ onChanged }) {
                         .join(" · "),
                 renderAvatar: (r) => <CreatorAvatar creator={r} size="h-6 w-6" />,
                 renderDetail: (r) => (
-                    <div className="space-y-4 text-sm">
+                    <div className="space-y-4 text-meta">
                         <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
                             {[
                                 ["Email", r.email],
@@ -547,7 +548,7 @@ export function CreatorReviews({ onChanged }) {
                                 .filter(([, v]) => v)
                                 .map(([label, value]) => (
                                     <div key={label}>
-                                        <dt className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+                                        <dt className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                                             {label}
                                         </dt>
                                         <dd className="mt-1 break-words">{value}</dd>
@@ -560,7 +561,7 @@ export function CreatorReviews({ onChanged }) {
                                 {r.niches.map((n) => (
                                     <span
                                         key={n}
-                                        className="rounded-full bg-primary/10 px-2.5 py-1 text-[10px] uppercase tracking-[0.18em] text-primary-ink"
+                                        className="rounded-full bg-primary/10 px-2.5 py-1 text-eyebrow uppercase tracking-eyebrow text-primary-ink"
                                     >
                                         {n}
                                     </span>
@@ -579,7 +580,7 @@ export function CreatorReviews({ onChanged }) {
                                 target="_blank"
                                 rel="noreferrer"
                                 data-testid={IDS.instagram(r.user_id)}
-                                className="inline-flex h-11 items-center gap-2 rounded-md border border-tint/15 px-4 text-sm transition-colors duration-150 hover:border-primary/40 hover:text-primary-ink"
+                                className="inline-flex h-11 items-center gap-2 rounded-md border border-border px-4 text-meta transition-colors duration-150 hover:border-primary/40 hover:text-primary-ink"
                             >
                                 <Instagram className="h-4 w-4" />
                                 Open @{r.instagram_handle}
@@ -643,11 +644,11 @@ export function CampaignReviews({ onChanged }) {
                     />
                 ),
                 renderDetail: (r) => (
-                    <div className="space-y-5 text-sm">
+                    <div className="space-y-5 text-meta">
                         {/* A brand that lost its verification while the brief
                             sat here can't have it approved — say so up front. */}
                         {!r.brand_verified && (
-                            <p className="rounded-md border border-primary/30 bg-primary/10 px-4 py-3 text-sm leading-relaxed text-primary-ink">
+                            <p className="rounded-md border border-primary/30 bg-primary/10 px-4 py-3 text-body leading-relaxed text-primary-ink">
                                 {r.brand_name || "This brand"} isn't verified. Approve them
                                 in Brand reviews first — this brief can't go live until
                                 they are.
@@ -655,13 +656,13 @@ export function CampaignReviews({ onChanged }) {
                         )}
 
                         {r.previous_review_reason && (
-                            <p className="rounded-md border border-tint/10 bg-background/60 px-4 py-3 text-sm leading-relaxed text-muted-foreground">
+                            <p className="rounded-md border border-border bg-background/60 px-4 py-3 text-body leading-relaxed text-muted-foreground">
                                 Last time we sent this back: “{r.previous_review_reason}”
                             </p>
                         )}
 
                         <div>
-                            <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+                            <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                                 The brief
                             </p>
                             <p className="mt-2 whitespace-pre-wrap leading-relaxed">
@@ -669,7 +670,7 @@ export function CampaignReviews({ onChanged }) {
                             </p>
                         </div>
                         <div>
-                            <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+                            <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                                 Deliverables
                             </p>
                             <DeliverableList campaign={r} className="mt-2" />
@@ -701,7 +702,7 @@ export function CampaignReviews({ onChanged }) {
                                 .filter(([, v]) => v)
                                 .map(([label, value]) => (
                                     <div key={label}>
-                                        <dt className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+                                        <dt className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                                             {label}
                                         </dt>
                                         <dd className="mt-1 capitalize">{value}</dd>
@@ -760,12 +761,12 @@ export function BrandReviews({ onChanged }) {
                         .filter(Boolean)
                         .join(" · "),
                 renderAvatar: () => (
-                    <span className="grid h-6 w-6 flex-none place-items-center rounded border border-tint/10 bg-primary/10 text-primary-ink">
+                    <span className="grid h-6 w-6 flex-none place-items-center rounded border border-border bg-primary/10 text-primary-ink">
                         <Building2 className="h-3.5 w-3.5" />
                     </span>
                 ),
                 renderDetail: (r) => (
-                    <div className="space-y-4 text-sm">
+                    <div className="space-y-4 text-meta">
                         <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
                             {[
                                 ["Business name", r.business_name],
@@ -783,7 +784,7 @@ export function BrandReviews({ onChanged }) {
                                 .filter(([, v]) => v)
                                 .map(([label, value]) => (
                                     <div key={label}>
-                                        <dt className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+                                        <dt className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                                             {label}
                                         </dt>
                                         <dd className="mt-1 break-words capitalize">{value}</dd>
@@ -794,7 +795,7 @@ export function BrandReviews({ onChanged }) {
                         {/* Briefs stacked up behind this decision make it urgent
                             in a way the signup date alone doesn't show. */}
                         {r.campaigns_awaiting_review > 0 && (
-                            <p className="inline-flex items-center gap-2 rounded-md border border-primary/30 bg-primary/10 px-4 py-2.5 text-sm text-primary-ink">
+                            <p className="inline-flex items-center gap-2 rounded-md border border-primary/30 bg-primary/10 px-4 py-2.5 text-meta text-primary-ink">
                                 <Sparkles className="h-3.5 w-3.5" />
                                 {r.campaigns_awaiting_review} brief
                                 {r.campaigns_awaiting_review === 1 ? "" : "s"} queued behind
@@ -803,7 +804,7 @@ export function BrandReviews({ onChanged }) {
                         )}
 
                         {r.campaign_count > 0 && (
-                            <p className="text-sm text-muted-foreground">
+                            <p className="text-meta text-muted-foreground">
                                 {r.campaign_count} campaign
                                 {r.campaign_count === 1 ? "" : "s"} written so far.
                             </p>

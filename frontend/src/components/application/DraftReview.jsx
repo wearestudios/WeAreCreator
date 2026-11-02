@@ -83,7 +83,7 @@ export default function DraftReview({
 
     return (
         <div data-testid={IDS.panel} className="space-y-4">
-            <p data-testid={IDS.state} className="text-sm leading-relaxed text-muted-foreground">
+            <p data-testid={IDS.state} className="text-body leading-relaxed text-muted-foreground">
                 {submitted
                     ? STATUS[draft.state] ||
                       "The creator hasn't sent a new draft since the last round."
@@ -91,8 +91,8 @@ export default function DraftReview({
             </p>
 
             {submitted && (
-                <div className="rounded-md border border-white/10 bg-white/5 p-4">
-                    <p className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                <div className="rounded-md border border-border bg-muted p-4">
+                    <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                         Sent {formatWhen(draft.submitted_at)}
                         {draft.revision_count > 0 && (
                             <>
@@ -110,7 +110,7 @@ export default function DraftReview({
                             target="_blank"
                             rel="noreferrer"
                             data-testid={IDS.link}
-                            className="mt-3 inline-flex items-center gap-2 text-sm text-primary underline underline-offset-4"
+                            className="mt-3 inline-flex items-center gap-2 text-meta text-primary underline underline-offset-4"
                         >
                             <ExternalLink className="h-4 w-4" />
                             Open the unlisted link
@@ -127,7 +127,7 @@ export default function DraftReview({
                             target="_blank"
                             rel="noreferrer"
                             data-testid={IDS.file}
-                            className="mt-3 inline-flex items-center gap-2 text-sm text-primary underline underline-offset-4"
+                            className="mt-3 inline-flex items-center gap-2 text-meta text-primary underline underline-offset-4"
                         >
                             <Download className="h-4 w-4" />
                             {draft.original_name || "Open the draft"}
@@ -138,7 +138,7 @@ export default function DraftReview({
                     {draft.note && (
                         <p
                             data-testid={IDS.note}
-                            className="mt-3 whitespace-pre-line text-sm leading-relaxed text-foreground/90"
+                            className="mt-3 whitespace-pre-line text-body leading-relaxed text-foreground/90"
                         >
                             “{draft.note}”
                         </p>
@@ -151,7 +151,7 @@ export default function DraftReview({
             {draft.revision_note && draft.state !== "draft_submitted" && (
                 <p
                     data-testid={IDS.revisionNote}
-                    className="rounded-md border border-primary/25 bg-primary/10 px-4 py-3 text-sm leading-relaxed text-primary"
+                    className="rounded-md border border-primary/25 bg-primary/10 px-4 py-3 text-body leading-relaxed text-primary"
                 >
                     You asked for: {draft.revision_note}
                 </p>
@@ -168,7 +168,7 @@ export default function DraftReview({
                     {disclosureLabel && (
                         <label
                             data-testid={IDS.disclosureCheck}
-                            className="flex cursor-pointer items-start gap-3 rounded-md border border-white/10 bg-card/60 p-4 text-sm leading-relaxed"
+                            className="flex cursor-pointer items-start gap-3 rounded-md border border-border bg-card/60 p-4 text-body leading-relaxed"
                         >
                             <input
                                 type="checkbox"
@@ -223,7 +223,7 @@ export default function DraftReview({
                                 value={note}
                                 onChange={(e) => setNote(e.target.value)}
                                 placeholder="What needs to change? The creator sees this word for word."
-                                className="min-h-[88px] border-white/10 bg-background/60 focus-visible:ring-primary"
+                                className="min-h-[88px] border-border bg-background/60 focus-visible:ring-primary"
                             />
                             <Button
                                 data-testid={IDS.changeSubmit}

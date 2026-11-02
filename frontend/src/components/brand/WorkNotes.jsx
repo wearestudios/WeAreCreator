@@ -101,43 +101,43 @@ export function WorkNotes({ collaborationId, agreedAmount, quotedRate, defaultOp
     return (
         <div
             data-testid={WORK_NOTES.section(collaborationId)}
-            className="rounded-md border border-white/10 bg-background/40"
+            className="rounded-md border border-border bg-background/40"
         >
             <button
                 type="button"
                 onClick={() => setOpen((v) => !v)}
                 data-testid={WORK_NOTES.toggle(collaborationId)}
                 aria-expanded={open}
-                className="flex min-h-[2.75rem] w-full items-center justify-between gap-3 px-4 py-3 text-left transition-colors duration-200 hover:bg-white/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary"
+                className="flex min-h-[2.75rem] w-full items-center justify-between gap-3 px-4 py-3 text-left transition-colors duration-200 hover:bg-wash focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary"
             >
-                <span className="inline-flex items-center gap-2 text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+                <span className="inline-flex items-center gap-2 text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                     <MessageSquare className="h-3.5 w-3.5" />
                     Work notes
                     {notes.length > 0 && (
                         <span className="text-primary">{notes.length}</span>
                     )}
                 </span>
-                <span className="text-xs text-muted-foreground">
+                <span className="text-meta text-muted-foreground">
                     {open ? "Hide" : "Open"}
                 </span>
             </button>
 
             {open && (
-                <div className="border-t border-white/10 px-4 py-4">
+                <div className="border-t border-border px-4 py-4">
                     {/* The number sits above the conversation that produced it. */}
                     <div
                         data-testid={WORK_NOTES.agreed(collaborationId)}
                         className="mb-4 flex flex-wrap items-baseline gap-x-6 gap-y-1"
                     >
-                        <span className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+                        <span className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                             {agreed != null ? "Agreed" : "They quoted"}
                         </span>
-                        <span className="inline-flex items-baseline font-serif text-2xl">
+                        <span className="inline-flex items-baseline font-serif text-h3">
                             <IndianRupee className="h-4 w-4 text-primary" />
                             {formatRupees(agreed ?? quoted)}
                         </span>
                         {agreed != null && quoted != null && agreed !== quoted && (
-                            <span className="text-xs text-muted-foreground">
+                            <span className="text-meta text-muted-foreground">
                                 from ₹{formatRupees(quoted)} quoted
                             </span>
                         )}
@@ -146,7 +146,7 @@ export function WorkNotes({ collaborationId, agreedAmount, quotedRate, defaultOp
                     {loading && thread === null ? (
                         <div
                             data-testid={WORK_NOTES.loading(collaborationId)}
-                            className="flex items-center gap-2 py-4 text-sm text-muted-foreground"
+                            className="flex items-center gap-2 py-4 text-meta text-muted-foreground"
                         >
                             <Loader2 className="h-4 w-4 animate-spin" />
                             Loading the thread…
@@ -154,7 +154,7 @@ export function WorkNotes({ collaborationId, agreedAmount, quotedRate, defaultOp
                     ) : notes.length === 0 ? (
                         <p
                             data-testid={WORK_NOTES.empty(collaborationId)}
-                            className="py-2 text-sm leading-relaxed text-muted-foreground"
+                            className="py-2 text-body leading-relaxed text-muted-foreground"
                         >
                             Nothing recorded yet. What was asked for, what was offered, what
                             was agreed and why — the next person to look at this will only
@@ -169,12 +169,12 @@ export function WorkNotes({ collaborationId, agreedAmount, quotedRate, defaultOp
                                 <li key={n.id} data-testid={WORK_NOTES.note(n.id)}>
                                     <div
                                         data-testid={WORK_NOTES.noteAuthor(n.id)}
-                                        className="flex flex-wrap items-baseline gap-x-2 text-xs"
+                                        className="flex flex-wrap items-baseline gap-x-2 text-meta"
                                     >
                                         <span className="font-medium text-foreground/90">
                                             {n.author_name || "Someone"}
                                         </span>
-                                        <span className="rounded-full bg-white/5 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+                                        <span className="rounded-full bg-muted px-2 py-0.5 text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                                             {ROLE_LABEL[n.author_role] || n.author_role}
                                         </span>
                                         <span className="text-muted-foreground/70">
@@ -183,7 +183,7 @@ export function WorkNotes({ collaborationId, agreedAmount, quotedRate, defaultOp
                                     </div>
                                     <p
                                         data-testid={WORK_NOTES.noteBody(n.id)}
-                                        className="mt-1 whitespace-pre-wrap border-l-2 border-white/10 pl-3 text-sm leading-relaxed text-foreground/85"
+                                        className="mt-1 whitespace-pre-wrap border-l-2 border-border pl-3 text-body leading-relaxed text-foreground/85"
                                     >
                                         {n.body}
                                     </p>
@@ -205,7 +205,7 @@ export function WorkNotes({ collaborationId, agreedAmount, quotedRate, defaultOp
                         />
                         <div className="flex items-center justify-between gap-3">
                             {/* Said once, plainly, rather than as a warning banner. */}
-                            <span className="text-[11px] text-muted-foreground">
+                            <span className="text-eyebrow text-muted-foreground">
                                 Only you and the WeAre team can see these.
                             </span>
                             <Button

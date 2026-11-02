@@ -87,12 +87,12 @@ export default function PerformanceSheet({ row, onClose, onSaved }) {
             <SheetContent
                 side="bottom"
                 data-testid={IDS.sheet}
-                className="max-h-[90dvh] overflow-y-auto rounded-t-md border-t border-white/10 bg-card grain-surface"
+                className="max-h-[90dvh] overflow-y-auto rounded-t-md border-t border-border bg-card grain-surface"
             >
-                <SheetTitle className="font-serif text-2xl leading-tight">
+                <SheetTitle className="font-serif text-h3 leading-tight">
                     How did {row?.name || "it"} do?
                 </SheetTitle>
-                <SheetDescription className="mt-2 text-sm leading-relaxed text-muted-foreground">
+                <SheetDescription className="mt-2 text-body leading-relaxed text-muted-foreground">
                     Read off the post's own insights. Leave anything you cannot see
                     blank — a blank is "not known", which is different from zero, and
                     the report treats it that way.
@@ -101,7 +101,7 @@ export default function PerformanceSheet({ row, onClose, onSaved }) {
                 <div className="mt-5 grid grid-cols-2 gap-3">
                     {METRICS.map((m) => (
                         <label key={m.key} className="block min-w-0">
-                            <span className="block text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
+                            <span className="block text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                                 {m.label}
                             </span>
                             <Input
@@ -111,14 +111,14 @@ export default function PerformanceSheet({ row, onClose, onSaved }) {
                                 value={form[m.key]}
                                 onChange={set(m.key)}
                                 data-testid={IDS.field(m.key)}
-                                className="mt-1 rounded-md border-white/10 bg-background/60 text-base focus-visible:ring-primary"
+                                className="mt-1 rounded-md border-border bg-background/60 text-body focus-visible:ring-primary"
                             />
                         </label>
                     ))}
                 </div>
 
                 <label className="mt-4 block">
-                    <span className="block text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
+                    <span className="block text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                         Note <span className="opacity-60">(optional)</span>
                     </span>
                     <Textarea
@@ -128,12 +128,12 @@ export default function PerformanceSheet({ row, onClose, onSaved }) {
                         onChange={set("note")}
                         data-testid={IDS.note}
                         placeholder="e.g. Read 4 days after posting"
-                        className="mt-1 rounded-md border-white/10 bg-background/60 text-base focus-visible:ring-primary"
+                        className="mt-1 rounded-md border-border bg-background/60 text-body focus-visible:ring-primary"
                     />
                 </label>
 
                 {err && (
-                    <p data-testid={IDS.error} className="mt-3 text-sm text-destructive">
+                    <p data-testid={IDS.error} className="mt-3 text-meta text-destructive">
                         {err}
                     </p>
                 )}
@@ -153,7 +153,7 @@ export default function PerformanceSheet({ row, onClose, onSaved }) {
                         variant="outline"
                         onClick={onClose}
                         data-testid={IDS.cancel}
-                        className="border-white/15 bg-transparent"
+                        className="border-input bg-transparent"
                     >
                         Back
                     </BigButton>

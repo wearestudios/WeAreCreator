@@ -34,7 +34,7 @@ export const EXECUTION_META = {
             "You'll deal with the brand directly — they review applications and run the day.",
         brandNote: "You're running this one. Applications come to you.",
         adminNote: "The brand runs this. Applications go to their manager.",
-        tone: "bg-state-done/15 text-state-done border-state-done/30",
+        tone: "bg-state-done-wash text-state-done border-state-done/30",
     },
     weare: {
         label: "WeAre-run",

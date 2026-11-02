@@ -57,22 +57,22 @@ export function ViewAsButton({ userId, name, role, disabled }) {
                 disabled={disabled || !userId}
                 onClick={() => setOpen(true)}
                 data-testid={IDS.start(userId)}
-                className="rounded-full border-tint/15 bg-transparent hover:bg-tint/5"
+                className="rounded-full border-border bg-transparent hover:bg-tint/5"
             >
                 <Eye className="mr-2 h-4 w-4" />
                 View as
             </Button>
 
             <AlertDialog open={open} onOpenChange={setOpen}>
-                <AlertDialogContent className="rounded-md border border-tint/10 bg-card">
+                <AlertDialogContent className="rounded-md border border-border bg-card">
                     <AlertDialogHeader>
-                        <p className="text-xs uppercase tracking-[0.2em] text-primary-ink">
+                        <p className="text-eyebrow uppercase tracking-eyebrow text-primary-ink">
                             View as
                         </p>
-                        <AlertDialogTitle className="mt-3 font-serif text-2xl leading-tight">
+                        <AlertDialogTitle className="mt-3 font-serif text-h3 leading-tight">
                             {name || "This user"}
                         </AlertDialogTitle>
-                        <AlertDialogDescription className="mt-2 space-y-3 text-sm leading-relaxed text-muted-foreground">
+                        <AlertDialogDescription className="mt-2 space-y-3 text-body leading-relaxed text-muted-foreground">
                             <span className="block">
                                 You'll see the app exactly as they do. It is{" "}
                                 <span className="text-foreground">read-only</span> — the
@@ -87,7 +87,7 @@ export function ViewAsButton({ userId, name, role, disabled }) {
                         </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter className="gap-2">
-                        <AlertDialogCancel className="rounded-full border-tint/15 bg-transparent hover:bg-tint/5">
+                        <AlertDialogCancel className="rounded-full border-border bg-transparent hover:bg-tint/5">
                             Cancel
                         </AlertDialogCancel>
                         <AlertDialogAction

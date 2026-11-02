@@ -22,7 +22,7 @@
 //   learned: a greyed-out button with no explanation is how a form becomes a
 //   support ticket.
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { ExternalLink, Eye, Loader2, Plus, Wand2 } from "lucide-react";
+import { ExternalLink, Loader2, Plus, Wand2 } from "lucide-react";
 
 import { api, formatApiError } from "@/lib/api";
 import { notifyError, notifySuccess } from "@/lib/feedback";
@@ -54,7 +54,7 @@ const TYPE_LABELS = {
 };
 
 const field =
-    "w-full rounded-md border border-tint/10 bg-tint/[0.03] px-3 py-2 text-sm " +
+    "w-full rounded-md border border-border bg-tint/[0.03] px-3 py-2 text-meta " +
     "text-foreground outline-none transition-colors duration-150 focus:border-primary/60";
 
 function Row({ label, hint, children }) {
@@ -299,7 +299,7 @@ function Editor({ study, onSaved, onClose }) {
                 label="Creators"
                 hint="Only creators who opted into public featuring. Withdrawing consent removes them from the live page immediately."
             >
-                <p data-testid={IDS.roster} className="text-sm text-muted-foreground">
+                <p data-testid={IDS.roster} className="text-meta text-muted-foreground">
                     {preview?.creators?.length
                         ? preview.creators
                               .map((c) => c.name || c.instagram_handle)
@@ -311,10 +311,10 @@ function Editor({ study, onSaved, onClose }) {
             {missing.length > 0 && (
                 <div
                     data-testid={IDS.missing}
-                    className="rounded-md border border-state-pending/30 bg-state-pending/10 p-4"
+                    className="rounded-md border border-state-pending/30 bg-state-pending-wash p-4"
                 >
-                    <p className="text-sm text-state-pending">Before this can go live:</p>
-                    <ul className="mt-2 list-disc pl-5 text-sm text-state-pending">
+                    <p className="text-meta text-state-pending">Before this can go live:</p>
+                    <ul className="mt-2 list-disc pl-5 text-meta text-state-pending">
                         {missing.map((m) => (
                             <li key={m}>{m}</li>
                         ))}
@@ -322,7 +322,7 @@ function Editor({ study, onSaved, onClose }) {
                 </div>
             )}
 
-            <div className="flex flex-wrap items-center gap-3 border-t border-tint/10 pt-4">
+            <div className="flex flex-wrap items-center gap-3 border-t border-border pt-4">
                 <Button onClick={save} disabled={pending} data-testid={IDS.save}>
                     {pending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                     Save
@@ -354,7 +354,7 @@ function Editor({ study, onSaved, onClose }) {
                         target="_blank"
                         rel="noopener noreferrer"
                         data-testid={IDS.viewLive}
-                        className="inline-flex items-center gap-1.5 text-sm text-primary-ink"
+                        className="inline-flex items-center gap-1.5 text-meta text-primary-ink"
                     >
                         <ExternalLink className="h-3.5 w-3.5" /> View live
                     </a>
@@ -473,7 +473,7 @@ export default function CaseStudies() {
     return (
         <div className="grid gap-4" data-testid={IDS.section}>
             <div className="flex flex-wrap items-center gap-3">
-                <h1 className="font-serif text-fluid-2xl leading-tight">Case studies</h1>
+                <h1 className="font-serif text-h3 leading-tight">Case studies</h1>
                 <div className="ml-auto flex gap-2">
                     {/* The primary action, and the whole argument for the
                         feature: a closed campaign already knows nine tenths
@@ -551,7 +551,7 @@ export default function CaseStudies() {
                                 type="button"
                                 onClick={() => createFrom(c.id)}
                                 data-testid={IDS.campaignOption(c.id)}
-                                className={`w-full rounded-md border border-tint/10 bg-tint/[0.02] ${DENSITY.row} text-left text-sm transition-colors duration-150 hover:border-primary/40`}
+                                className={`w-full rounded-md border border-border bg-tint/[0.02] ${DENSITY.row} text-left text-meta transition-colors duration-150 hover:border-primary/40`}
                             >
                                 <span className="block truncate">{c.title}</span>
                                 <span className={`${TEXT.meta} text-muted-foreground`}>

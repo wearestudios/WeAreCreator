@@ -33,7 +33,7 @@ export default function SuspensionPrompts({ data }) {
     return (
         <section
             data-testid={IDS.panel}
-            className="mb-4 rounded-md border border-state-pending/30 bg-state-pending/10 p-4"
+            className="mb-4 rounded-md border border-state-pending/30 bg-state-pending-wash p-4"
         >
             <div className="flex flex-wrap items-center gap-2">
                 <UserX aria-hidden="true" className="h-4 w-4 text-state-pending" />
@@ -58,7 +58,7 @@ export default function SuspensionPrompts({ data }) {
                         <Link
                             to={p.href}
                             data-testid={IDS.suspend(p.user_id)}
-                            className={`min-w-0 flex-1 truncate text-sm hover:text-primary-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${CALM}`}
+                            className={`min-w-0 flex-1 truncate text-meta hover:text-primary-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${CALM}`}
                         >
                             {p.name}
                             {p.reference ? (

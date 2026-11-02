@@ -132,13 +132,13 @@ export function CommandPalette() {
                 type="button"
                 onClick={() => setOpen(true)}
                 data-testid={IDS.trigger}
-                className="inline-flex min-h-[2.75rem] w-full items-center gap-2.5 rounded-md border border-tint/10 bg-card px-3.5 text-sm text-muted-foreground transition-colors duration-150 hover:border-tint/25 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background md:min-h-0 md:h-10 md:w-72"
+                className="inline-flex min-h-[2.75rem] w-full items-center gap-2.5 rounded-md border border-border bg-card px-3.5 text-meta text-muted-foreground transition-colors duration-150 hover:border-tint/25 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background md:min-h-0 md:h-10 md:w-72"
             >
                 <Search className="h-4 w-4 flex-none" />
                 <span className="min-w-0 flex-1 truncate text-left">
                     Search everything
                 </span>
-                <kbd className="hidden flex-none rounded border border-tint/15 px-1.5 py-0.5 font-sans text-[10px] tracking-wider text-muted-foreground md:inline">
+                <kbd className="hidden flex-none rounded border border-border px-1.5 py-0.5 font-sans text-eyebrow tracking-wider text-muted-foreground md:inline">
                     ⌘K
                 </kbd>
             </button>
@@ -149,11 +149,11 @@ export function CommandPalette() {
                     aria-describedby={undefined}
                     // Anchored high rather than centred: the list grows
                     // downwards, and a centred box jumps as results arrive.
-                    className="top-[8%] max-w-xl translate-y-0 gap-0 overflow-hidden rounded-md border border-tint/10 bg-card p-0"
+                    className="top-[8%] max-w-xl translate-y-0 gap-0 overflow-hidden rounded-md border border-border bg-card p-0"
                 >
                     <DialogTitle className="sr-only">Search everything</DialogTitle>
 
-                    <div className="flex items-center gap-3 border-b border-tint/10 px-4">
+                    <div className="flex items-center gap-3 border-b border-border px-4">
                         <Search className="h-4 w-4 flex-none text-muted-foreground" />
                         <input
                             ref={inputRef}
@@ -164,7 +164,7 @@ export function CommandPalette() {
                             data-testid={IDS.input}
                             aria-label="Search creators, brands, campaigns and phone numbers"
                             placeholder="Name, business, campaign, phone number, or an id like CMP-0034…"
-                            className="h-14 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+                            className="h-14 min-w-0 flex-1 bg-transparent text-meta outline-none placeholder:text-muted-foreground"
                         />
                     </div>
 
@@ -172,18 +172,18 @@ export function CommandPalette() {
                         {term.length < MIN_CHARS ? (
                             <p
                                 data-testid={IDS.hint}
-                                className="px-4 py-8 text-sm leading-relaxed text-muted-foreground"
+                                className="px-4 py-8 text-body leading-relaxed text-muted-foreground"
                             >
                                 Type at least {MIN_CHARS} characters. A phone number works —
                                 paste the one they messaged from, with or without the country
                                 code.
                             </p>
                         ) : loading && !data ? (
-                            <p className="px-4 py-8 text-sm text-muted-foreground">Looking…</p>
+                            <p className="px-4 py-8 text-meta text-muted-foreground">Looking…</p>
                         ) : flat.length === 0 ? (
                             <p
                                 data-testid={IDS.empty}
-                                className="px-4 py-8 text-sm leading-relaxed text-muted-foreground"
+                                className="px-4 py-8 text-body leading-relaxed text-muted-foreground"
                             >
                                 Nothing matches “{term}”.
                                 {data && data.matched_phone === false && /^\+?[\d\s-]+$/.test(term)
@@ -195,7 +195,7 @@ export function CommandPalette() {
                                 const Icon = GROUP_ICON[g.key] || Search;
                                 return (
                                     <div key={g.key} data-testid={IDS.group(g.key)}>
-                                        <p className="sticky top-0 bg-card/95 px-4 py-2 text-[10px] uppercase tracking-[0.2em] text-muted-foreground backdrop-blur-sm">
+                                        <p className="sticky top-0 bg-card/95 px-4 py-2 text-eyebrow uppercase tracking-eyebrow text-muted-foreground backdrop-blur-sm">
                                             {g.label}
                                             <span className="ml-2 text-primary-ink">
                                                 {g.items.length}
@@ -230,25 +230,25 @@ export function CommandPalette() {
                                                             />
                                                             <span className="min-w-0 flex-1">
                                                                 <span className="flex items-baseline gap-2">
-                                                                    <span className="min-w-0 truncate text-sm">
+                                                                    <span className="min-w-0 truncate text-meta">
                                                                         {item.label}
                                                                     </span>
                                                                     {/* The name somebody types to
                                                                         get back here. */}
                                                                     {item.reference && (
-                                                                        <span className="flex-none font-mono text-[10px] tracking-wider text-muted-foreground/70">
+                                                                        <span className="flex-none font-mono text-eyebrow tracking-wider text-muted-foreground/70">
                                                                             {item.reference}
                                                                         </span>
                                                                     )}
                                                                 </span>
                                                                 {item.sublabel && (
-                                                                    <span className="block truncate text-sm text-muted-foreground">
+                                                                    <span className="block truncate text-meta text-muted-foreground">
                                                                         {item.sublabel}
                                                                     </span>
                                                                 )}
                                                             </span>
                                                             {item.badge && (
-                                                                <span className="flex-none rounded-full border border-tint/10 px-2 py-0.5 text-[10px] uppercase tracking-[0.15em] text-muted-foreground">
+                                                                <span className="flex-none rounded-full border border-border px-2 py-0.5 text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                                                                     {item.badge}
                                                                 </span>
                                                             )}
@@ -266,7 +266,7 @@ export function CommandPalette() {
                         )}
                     </div>
 
-                    <div className="flex items-center gap-4 border-t border-tint/10 px-4 py-2.5 text-[10px] uppercase tracking-[0.15em] text-muted-foreground">
+                    <div className="flex items-center gap-4 border-t border-border px-4 py-2.5 text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                         <span>↑↓ move</span>
                         <span>⏎ open</span>
                         <span>esc close</span>

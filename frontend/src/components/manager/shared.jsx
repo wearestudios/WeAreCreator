@@ -26,15 +26,15 @@ export const CAMPAIGN_TYPE_META = {
 export const ATTENDANCE_META = {
     expected: {
         label: "Expected",
-        tone: "border-white/15 bg-white/5 text-muted-foreground",
+        tone: "border-input bg-muted text-muted-foreground",
     },
     attended: {
         label: "Checked in",
-        tone: "border-state-approved/30 bg-state-approved/15 text-state-approved",
+        tone: "border-state-approved/30 bg-state-approved-wash text-state-approved",
     },
     no_show: {
         label: "No-show",
-        tone: "border-state-rejected/25 bg-state-rejected/10 text-state-rejected/80",
+        tone: "border-state-rejected/25 bg-state-rejected-wash text-state-rejected/80",
     },
 };
 
@@ -80,13 +80,13 @@ export const whenText = (campaign) => {
 export const Pill = ({ meta, value, testid, className = "" }) => {
     const m = meta[value] || {
         label: value || "—",
-        tone: "border-white/15 bg-white/5 text-muted-foreground",
+        tone: "border-input bg-muted text-muted-foreground",
     };
     return (
         <span
             data-testid={testid}
             className={
-                "inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.18em] " +
+                "inline-flex items-center rounded-full border px-2.5 py-1 text-eyebrow font-medium uppercase tracking-eyebrow " +
                 m.tone +
                 " " +
                 className
@@ -101,7 +101,7 @@ export const Pill = ({ meta, value, testid, className = "" }) => {
 export const CallLink = ({ phone, testid, label, className = "" }) => {
     if (!phone) {
         return (
-            <span className="text-xs text-muted-foreground">No number on file</span>
+            <span className="text-meta text-muted-foreground">No number on file</span>
         );
     }
     return (
@@ -109,7 +109,7 @@ export const CallLink = ({ phone, testid, label, className = "" }) => {
             href={`tel:${phone.replace(/\s+/g, "")}`}
             data-testid={testid}
             className={
-                "inline-flex items-center justify-center gap-2 rounded-md border border-white/15 px-4 text-sm transition-colors duration-200 hover:border-primary/40 hover:text-primary " +
+                "inline-flex items-center justify-center gap-2 rounded-md border border-input px-4 text-meta transition-colors duration-200 hover:border-primary/40 hover:text-primary " +
                 TOUCH +
                 " " +
                 className
@@ -124,14 +124,14 @@ export const ManagerHeader = ({ kicker, title, sub, onRefresh, refreshTestId, ch
     <header className="flex flex-col gap-4">
         <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
-                <p className="text-xs uppercase tracking-[0.2em] text-primary">
+                <p className="text-eyebrow uppercase tracking-eyebrow text-primary">
                     {kicker}
                 </p>
-                <h1 className="mt-2 font-serif text-fluid-4xl leading-none tracking-tight">
+                <h1 className="mt-2 font-serif text-h1 leading-none tracking-tight">
                     {title}
                 </h1>
                 {sub && (
-                    <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
+                    <p className="mt-3 text-body leading-relaxed text-muted-foreground">
                         {sub}
                     </p>
                 )}
@@ -143,7 +143,7 @@ export const ManagerHeader = ({ kicker, title, sub, onRefresh, refreshTestId, ch
                     aria-label="Refresh"
                     data-testid={refreshTestId}
                     className={
-                        "grid w-14 flex-none place-items-center rounded-md border border-white/10 text-muted-foreground transition-colors duration-200 hover:text-primary " +
+                        "grid w-14 flex-none place-items-center rounded-md border border-border text-muted-foreground transition-colors duration-200 hover:text-primary " +
                         TOUCH
                     }
                 >
@@ -158,7 +158,7 @@ export const ManagerHeader = ({ kicker, title, sub, onRefresh, refreshTestId, ch
 export const EmptyState = ({ Icon, children, testid }) => (
     <div
         data-testid={testid}
-        className="flex flex-col items-center gap-4 rounded-md border border-white/10 bg-card px-6 py-12 text-center text-sm text-muted-foreground grain-surface"
+        className="flex flex-col items-center gap-4 rounded-md border border-border bg-card px-6 py-12 text-center text-meta text-muted-foreground grain-surface"
     >
         {Icon && <Icon className="h-6 w-6 text-primary" />}
         <p className="max-w-xs leading-relaxed">{children}</p>
@@ -166,7 +166,7 @@ export const EmptyState = ({ Icon, children, testid }) => (
 );
 
 export const CardSkeleton = () => (
-    <div className="rounded-md border border-white/10 bg-card p-6 grain-surface">
+    <div className="rounded-md border border-border bg-card p-6 grain-surface">
         <Skeleton className="h-3 w-24" />
         <Skeleton className="mt-4 h-5 w-3/4" />
         <div className="mt-6 flex gap-3">
@@ -185,7 +185,7 @@ export const CardListSkeleton = ({ cards = 3, testid }) => (
 );
 
 export const RowSkeleton = () => (
-    <div className="flex items-center gap-4 rounded-md border border-white/10 bg-card p-5 grain-surface">
+    <div className="flex items-center gap-4 rounded-md border border-border bg-card p-5 grain-surface">
         <Skeleton className="h-10 w-16 flex-none rounded-md" />
         <div className="min-w-0 flex-1 space-y-2">
             <Skeleton className="h-4 w-1/2" />
@@ -208,7 +208,7 @@ export const BigButton = ({ children, busy, className = "", ...props }) => (
     <Button
         {...props}
         disabled={busy || props.disabled}
-        className={`w-full rounded-md text-base ${TOUCH} ${className}`}
+        className={`w-full rounded-md text-body ${TOUCH} ${className}`}
     >
         {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
         {children}
@@ -328,7 +328,7 @@ export function attentionFor(campaign, now = new Date()) {
 }
 
 export const SEVERITY_TONE = {
-    urgent: "border-state-rejected/30 bg-state-rejected/10 text-state-rejected",
-    warn: "border-state-pending/30 bg-state-pending/10 text-state-pending",
-    info: "border-white/10 bg-white/5 text-muted-foreground",
+    urgent: "border-state-rejected/30 bg-state-rejected-wash text-state-rejected",
+    warn: "border-state-pending/30 bg-state-pending-wash text-state-pending",
+    info: "border-border bg-muted text-muted-foreground",
 };

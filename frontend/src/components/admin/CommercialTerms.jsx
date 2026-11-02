@@ -86,8 +86,8 @@ export function CommissionControl({
                 <Percent aria-hidden="true" className="h-3 w-3" />
                 {label}
             </p>
-            <p data-testid={IDS.commissionEffective} className="text-sm">
-                <span className="text-base font-medium tabular-nums">
+            <p data-testid={IDS.commissionEffective} className="text-meta">
+                <span className="text-body font-medium tabular-nums">
                     {effective?.percent ?? "—"}%
                 </span>{" "}
                 <span className="text-muted-foreground">
@@ -248,14 +248,14 @@ export function CampaignFeePanel({ campaignId, campaignFee, refund, onSaved }) {
             {refund && refund.state !== "none" && (
                 <div
                     data-testid={IDS.refund}
-                    className="rounded-lg border border-tint/10 bg-card p-4"
+                    className="rounded-lg border border-border bg-card p-4"
                 >
                     <p className={`${TEXT.meta} flex items-center gap-1.5 text-muted-foreground`}>
                         <Receipt aria-hidden="true" className="h-3 w-3" />
                         Campaign fee — {money(refund.campaign_fee)}
                     </p>
                     {/* The server's sentence, drawn rather than rebuilt. */}
-                    <p data-testid={IDS.refundReason} className="mt-2 text-sm">
+                    <p data-testid={IDS.refundReason} className="mt-2 text-meta">
                         {refund.reason}
                     </p>
 

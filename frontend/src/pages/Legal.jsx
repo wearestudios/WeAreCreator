@@ -115,7 +115,7 @@ const Shell = ({ kicker, title, standfirst, children }) => (
 
             <div
                 data-testid="legal-draft-notice"
-                className="mt-8 rounded-md border border-state-pending/30 bg-state-pending/10 p-4 text-sm leading-relaxed text-state-pending"
+                className="mt-8 rounded-md border border-state-pending/30 bg-state-pending-wash p-4 text-sm leading-relaxed text-state-pending"
             >
                 This is a plain-English summary of how WeAre Creators works today,
                 published so you can see what you're agreeing to. The full legal
@@ -131,7 +131,7 @@ const Shell = ({ kicker, title, standfirst, children }) => (
 
             {children}
 
-            <div className="mt-14 flex items-center gap-2 border-t border-white/10 pt-8 text-sm text-muted-foreground">
+            <div className="mt-14 flex items-center gap-2 border-t border-border pt-8 text-sm text-muted-foreground">
                 <Mail className="h-4 w-4 text-primary" />
                 Questions about any of this:{" "}
                 <a
@@ -364,8 +364,21 @@ export function Privacy() {
                     WhatsApp messages are delivered through AiSensy. Instagram data comes
                     to us from Meta through the official API when you connect your
                     account — we read, and send nothing back. We share what is necessary
-                    with tax authorities and our payment providers. Nobody else, and we
-                    do not sell any of it.
+                    with tax authorities and our payment providers. Microsoft Clarity
+                    receives masked recordings of visits to our public pages, described
+                    below. Nobody else, and we do not sell any of it.
+                </p>
+            </Section>
+
+            <Section title="Analytics on our public pages">
+                <p>
+                    The public pages — the home page, the pages for brands and for
+                    creators, contact, and these terms — use Microsoft Clarity to
+                    count which sections are read and which buttons are pressed, and
+                    to record sessions so we can see where a page is confusing. Every
+                    form field is masked before it is recorded, and so is the message
+                    you send us from the contact page. Nothing is recorded once you
+                    are signed in, or on any page that needs you to be.
                 </p>
             </Section>
 

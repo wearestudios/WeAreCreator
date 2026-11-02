@@ -135,8 +135,8 @@ export default function ImageUploadField({
 
     const frame =
         shape === "square"
-            ? "media-frame grid aspect-square h-20 w-20 flex-none place-items-center overflow-hidden rounded-md border border-tint/10"
-            : "media-frame relative w-full overflow-hidden rounded-lg border border-tint/10 aspect-[16/9] sm:max-w-sm";
+            ? "media-frame grid aspect-square h-20 w-20 flex-none place-items-center overflow-hidden rounded-md border border-border"
+            : "media-frame relative w-full overflow-hidden rounded-lg border border-border aspect-[16/9] sm:max-w-sm";
 
     return (
         <div className={shape === "square" ? "flex flex-wrap items-center gap-5" : ""}>
@@ -166,7 +166,7 @@ export default function ImageUploadField({
 
             <div className={shape === "square" ? "min-w-0" : "mt-3"}>
                 {label && (
-                    <Label className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                    <Label className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                         {label}
                     </Label>
                 )}
@@ -186,7 +186,7 @@ export default function ImageUploadField({
                         disabled={disabled || busy}
                         data-testid={testids.choose}
                         onClick={() => inputRef.current?.click()}
-                        className="h-11 rounded-full border-tint/15 bg-transparent hover:bg-tint/5"
+                        className="h-11 rounded-full border-border bg-transparent hover:bg-tint/5"
                     >
                         {busy ? (
                             <>
@@ -206,7 +206,7 @@ export default function ImageUploadField({
                             disabled={disabled || busy}
                             onClick={remove}
                             data-testid={testids.remove}
-                            className="min-h-[2.75rem] px-2 text-xs uppercase tracking-[0.15em] text-muted-foreground transition-colors duration-200 hover:text-state-rejected disabled:opacity-40"
+                            className="min-h-[2.75rem] px-2 text-eyebrow uppercase tracking-eyebrow text-muted-foreground transition-colors duration-200 hover:text-state-rejected disabled:opacity-40"
                         >
                             Remove
                         </button>
@@ -214,13 +214,13 @@ export default function ImageUploadField({
                 </div>
                 {/* A disabled control with no explanation is a support ticket. */}
                 {disabled && disabledReason && (
-                    <p className="mt-2 text-xs text-muted-foreground">{disabledReason}</p>
+                    <p className="mt-2 text-meta text-muted-foreground">{disabledReason}</p>
                 )}
                 {hint && !error && (
-                    <p className="mt-2 text-xs text-muted-foreground">{hint}</p>
+                    <p className="mt-2 text-meta text-muted-foreground">{hint}</p>
                 )}
                 {error && (
-                    <p data-testid={testids.error} className="mt-2 text-xs text-state-rejected">
+                    <p data-testid={testids.error} className="mt-2 text-meta text-state-rejected">
                         {error}
                     </p>
                 )}

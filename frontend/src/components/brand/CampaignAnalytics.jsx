@@ -55,7 +55,7 @@ function RangePicker({ value, onChange }) {
             role="radiogroup"
             aria-label="Date range"
             data-testid="brand-analytics-range"
-            className="inline-flex rounded-lg border border-tint/10 bg-tint/[0.03] p-0.5"
+            className="inline-flex rounded-lg border border-border bg-tint/[0.03] p-0.5"
         >
             {BRAND_WINDOWS.map((w) => (
                 <button
@@ -66,7 +66,7 @@ function RangePicker({ value, onChange }) {
                     data-testid={`brand-analytics-range-${w.days ?? "all"}`}
                     onClick={() => onChange(w.days)}
                     className={
-                        "rounded-md px-3 py-1.5 text-sm transition-colors " +
+                        "rounded-md px-3 py-1.5 text-meta transition-colors " +
                         (value === w.days
                             ? "bg-primary text-primary-foreground"
                             : "text-muted-foreground hover:text-foreground")
@@ -81,14 +81,14 @@ function RangePicker({ value, onChange }) {
 
 function Figure({ label, value, note }) {
     return (
-        <div className="rounded-lg border border-tint/10 bg-card grain-surface p-5">
-            <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+        <div className="rounded-lg border border-border bg-card grain-surface p-5">
+            <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                 {label}
             </p>
-            <p className="mt-2 font-serif text-fluid-2xl leading-none tracking-tight">
+            <p className="mt-2 font-serif text-h3 leading-none tracking-tight">
                 {value}
             </p>
-            {note && <p className="mt-1.5 text-xs text-muted-foreground">{note}</p>}
+            {note && <p className="mt-1.5 text-meta text-muted-foreground">{note}</p>}
         </div>
     );
 }
@@ -107,12 +107,12 @@ function Change({ label, block, format = num }) {
     const Icon = change === 0 ? Minus : change > 0 ? ArrowUpRight : ArrowDownRight;
     return (
         <div className="flex items-baseline justify-between gap-4 py-2.5">
-            <span className="text-sm text-muted-foreground">{label}</span>
+            <span className="text-meta text-muted-foreground">{label}</span>
             <span className="flex items-baseline gap-2">
                 <span className="tabular-nums">{format(value)}</span>
                 <span
                     className={
-                        "inline-flex items-center gap-0.5 text-xs tabular-nums " +
+                        "inline-flex items-center gap-0.5 text-meta tabular-nums " +
                         (change === 0
                             ? "text-muted-foreground"
                             : better
@@ -123,7 +123,7 @@ function Change({ label, block, format = num }) {
                     <Icon className="h-3 w-3" aria-hidden="true" />
                     {Math.abs(change)}%
                 </span>
-                <span className="text-xs text-muted-foreground">
+                <span className="text-meta text-muted-foreground">
                     was {format(previous)}
                 </span>
             </span>
@@ -139,17 +139,17 @@ export function VersusHistory({ comparison, heading = "Against your last campaig
             data-testid="brand-analytics-comparison"
             className="rounded-lg border border-primary/30 bg-primary/[0.06] p-6"
         >
-            <p className="text-[10px] uppercase tracking-[0.2em] text-primary-ink">
+            <p className="text-eyebrow uppercase tracking-eyebrow text-primary-ink">
                 {heading}
             </p>
-            <p className="mt-2 text-sm text-muted-foreground">
+            <p className="mt-2 text-meta text-muted-foreground">
                 Measured against your previous{" "}
                 {comparison.campaigns_before === 1
                     ? "campaign"
                     : `${comparison.campaigns_before} campaigns`}
                 .
             </p>
-            <div className="mt-4 divide-y divide-tint/10">
+            <div className="mt-4 divide-y divide-divider">
                 <Change label="People reached" block={comparison.reach} />
                 <Change label="Engagement rate" block={comparison.engagement_rate} format={pct} />
                 <Change
@@ -189,7 +189,7 @@ export default function CampaignAnalytics({
         return (
             <div className={`grid gap-4 sm:grid-cols-4 ${className}`} aria-hidden="true">
                 {[0, 1, 2, 3].map((i) => (
-                    <div key={i} className="h-28 animate-pulse rounded-lg bg-tint/5" />
+                    <div key={i} className="h-28 animate-pulse rounded-lg bg-muted" />
                 ))}
             </div>
         );
@@ -238,14 +238,14 @@ export default function CampaignAnalytics({
 
             {d.counted && (
                 <section data-testid="brand-analytics-deliverables">
-                    <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+                    <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                         Promised against delivered
                     </p>
                     <div className="mt-3 space-y-2">
                         {d.rows.map((r) => (
                             <div
                                 key={r.type}
-                                className="flex items-center justify-between rounded-md border border-tint/10 bg-tint/[0.03] px-3 py-2 text-sm"
+                                className="flex items-center justify-between rounded-md border border-border bg-tint/[0.03] px-3 py-2 text-meta"
                             >
                                 <span>{r.label}</span>
                                 <span className="tabular-nums text-muted-foreground">
@@ -262,7 +262,7 @@ export default function CampaignAnalytics({
                     {/* A brand reading "18 of 18 delivered" deserves to know
                         whether anybody counted. */}
                     {d.creators_counted < d.creators_taken && (
-                        <p className="mt-2 text-xs text-muted-foreground">
+                        <p className="mt-2 text-meta text-muted-foreground">
                             {d.creators_counted} of {d.creators_taken} counted; the rest
                             are taken from the approval.
                         </p>
@@ -273,7 +273,7 @@ export default function CampaignAnalytics({
             {data.creators.length > 0 && (
                 <section data-testid="brand-analytics-creators">
                     <div className="flex items-baseline justify-between">
-                        <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+                        <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                             Who performed
                         </p>
                         <Button
@@ -291,9 +291,9 @@ export default function CampaignAnalytics({
                         </Button>
                     </div>
                     <div className="mt-3 overflow-x-auto">
-                        <table className="w-full min-w-[34rem] text-sm">
+                        <table className="w-full min-w-[34rem] text-meta">
                             <thead>
-                                <tr className="border-b border-tint/10 text-left text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                                <tr className="border-b border-border text-left text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                                     <th className="py-2 pr-4 font-normal">Creator</th>
                                     <th className="py-2 pr-4 text-right font-normal">Reach</th>
                                     <th className="py-2 pr-4 text-right font-normal">Engagement</th>
@@ -301,13 +301,13 @@ export default function CampaignAnalytics({
                                     <th className="py-2 text-right font-normal">Per 1,000</th>
                                 </tr>
                             </thead>
-                            <tbody className="divide-y divide-tint/5">
+                            <tbody className="divide-y divide-divider">
                                 {data.creators.map((c) => (
                                     <tr key={c.creator_id}>
                                         <td className="py-2.5 pr-4">
                                             <span className="block">{c.name}</span>
                                             {c.instagram_handle && (
-                                                <span className="block text-xs text-muted-foreground">
+                                                <span className="block text-meta text-muted-foreground">
                                                     @{c.instagram_handle}
                                                 </span>
                                             )}
@@ -368,10 +368,10 @@ export function BrandAnalyticsSummary() {
                 at 390. */}
             <div className="flex flex-wrap items-baseline justify-between gap-4">
                 <div>
-                    <p className="text-xs uppercase tracking-[0.2em] text-primary-ink">
+                    <p className="text-eyebrow uppercase tracking-eyebrow text-primary-ink">
                         Your results
                     </p>
-                    <h2 className="mt-3 font-serif text-fluid-4xl leading-none tracking-tight">
+                    <h2 className="mt-3 font-serif text-h1 leading-none tracking-tight">
                         Everything you've run.
                     </h2>
                 </div>
@@ -418,7 +418,7 @@ export function BrandAnalyticsSummary() {
                 // the range themselves a second ago.
                 <p
                     data-testid="brand-analytics-empty-window"
-                    className="rounded-lg border border-tint/10 bg-card grain-surface p-6 text-sm text-muted-foreground"
+                    className="rounded-lg border border-border bg-card grain-surface p-6 text-meta text-muted-foreground"
                 >
                     No campaigns finished in this window. Widen the range to see
                     everything you've run.

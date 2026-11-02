@@ -136,10 +136,26 @@ def test_the_table_has_a_skeleton_shaped_like_itself():
 
 
 def test_one_row_height_and_the_two_forms_of_it_agree():
-    """`ROW_PX` is what virtualisation measures with; `ROW_H` is what renders."""
+    """`ROW_H` is what renders; the windowing reads the same number.
+
+    **The height lives in CSS now, because it depends on the density.** It is
+    `--row-h` — 70px comfortable, 42px compact — and `ROW_H` is the class that
+    reads it. `DataTable` reads the value off its own element for its
+    arithmetic, so there is no second copy to drift; `ROW_PX` is only the
+    fallback before the element exists, and has to equal the comfortable value.
+    """
+    import re
+
     code = code_of(CONSOLE / "tokens.js")
-    assert 'ROW_H = "h-11"' in code
-    assert "ROW_PX = 44" in code  # h-11 is 2.75rem is 44px
+    assert 'ROW_H = "h-list-row"' in code
+    css = (FRONTEND / "src" / "index.css").read_text()
+    comfortable = re.search(r"--row-h:\s*(\d+)px", css)
+    assert comfortable and f"ROW_PX = {comfortable.group(1)}" in code
+    table = code_of(CONSOLE / "DataTable.jsx")
+    assert 'getPropertyValue("--row-h")' in table
+    assert "/ ROW_PX" not in table and "* ROW_PX" not in table, (
+        "the windowing multiplies by the fallback instead of the measured height"
+    )
 
 
 def test_text_xs_in_the_console_is_only_ever_metadata():

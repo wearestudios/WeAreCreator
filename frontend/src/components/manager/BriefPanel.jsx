@@ -44,8 +44,8 @@ export default function BriefPanel({ campaign }) {
         <section data-testid={IDS.section} className="space-y-4">
             {/* The ask first, because it is the thing being checked against on
                 the day. The paragraph is context; the counts are the job. */}
-            <div className="rounded-md border border-white/10 bg-card p-5 grain-surface">
-                <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+            <div className="rounded-md border border-border bg-card p-5 grain-surface">
+                <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                     Each creator delivers
                 </p>
                 <div className="mt-3" data-testid={IDS.deliverables}>
@@ -58,7 +58,7 @@ export default function BriefPanel({ campaign }) {
 
                 <p
                     data-testid={IDS.fee}
-                    className="mt-4 border-t border-white/10 pt-4 text-sm text-muted-foreground"
+                    className="mt-4 border-t border-border pt-4 text-meta text-muted-foreground"
                 >
                     {/* Through `formatCompensation`, so a barter shoot says so
                         rather than printing the vestigial budget as money the
@@ -90,15 +90,15 @@ export default function BriefPanel({ campaign }) {
             <BriefChecklist details={campaign.brief_details} />
 
             {brief && (
-                <div className="rounded-md border border-white/10 bg-card p-5 grain-surface">
-                    <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+                <div className="rounded-md border border-border bg-card p-5 grain-surface">
+                    <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                         The brief
                     </p>
                     {/* `whitespace-pre-wrap`: a brand writes these with line
                         breaks and losing them turns a list into a paragraph. */}
                     <p
                         data-testid={IDS.text}
-                        className="mt-3 whitespace-pre-wrap text-sm leading-relaxed"
+                        className="mt-3 whitespace-pre-wrap text-body leading-relaxed"
                     >
                         {brief}
                     </p>

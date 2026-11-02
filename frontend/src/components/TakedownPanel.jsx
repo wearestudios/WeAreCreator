@@ -103,8 +103,8 @@ export default function TakedownPanel({
             data-testid={IDS.panel}
             className={`rounded-md border p-4 ${
                 pending
-                    ? "border-state-pending/40 bg-state-pending/10"
-                    : "border-white/10 bg-card"
+                    ? "border-state-pending/40 bg-state-pending-wash"
+                    : "border-border bg-card"
             }`}
         >
             <div className="flex flex-wrap items-center gap-2">
@@ -112,11 +112,11 @@ export default function TakedownPanel({
                     aria-hidden="true"
                     className={`h-4 w-4 ${pending ? "text-state-pending" : "text-muted-foreground"}`}
                 />
-                <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                     Takedown
                 </p>
                 {takedown && (
-                    <span className="text-xs text-muted-foreground">
+                    <span className="text-meta text-muted-foreground">
                         {OUTCOME[takedown.state] || takedown.state}
                     </span>
                 )}
@@ -124,7 +124,7 @@ export default function TakedownPanel({
                     stored flag would need a sweep, and a rule that depends on
                     cron is true on Tuesdays. */}
                 {takedown?.overdue && (
-                    <span className="inline-flex items-center gap-1 rounded bg-destructive/20 px-2 py-0.5 text-xs text-destructive-foreground">
+                    <span className="inline-flex items-center gap-1 rounded bg-destructive/20 px-2 py-0.5 text-meta text-destructive-foreground">
                         <Clock aria-hidden="true" className="h-3 w-3" />
                         Past the window
                     </span>
@@ -132,7 +132,7 @@ export default function TakedownPanel({
             </div>
 
             {takedown && (
-                <div className="mt-3 space-y-2 text-sm">
+                <div className="mt-3 space-y-2 text-meta">
                     <p className="text-muted-foreground">
                         {takedown.requested_by_name || "Somebody"} asked
                         {takedown.requested_at
@@ -142,12 +142,12 @@ export default function TakedownPanel({
                     </p>
                     <p className="whitespace-pre-wrap">{takedown.detail}</p>
                     {pending && takedown.respond_by && (
-                        <p className="text-xs text-muted-foreground">
+                        <p className="text-meta text-muted-foreground">
                             An answer is due by {formatDateTime(takedown.respond_by)}.
                         </p>
                     )}
                     {takedown.response_note && (
-                        <p className="rounded border border-white/10 bg-background/40 p-3 whitespace-pre-wrap">
+                        <p className="rounded border border-border bg-background/40 p-3 whitespace-pre-wrap">
                             {takedown.response_note}
                         </p>
                     )}
@@ -160,7 +160,7 @@ export default function TakedownPanel({
                     size="sm"
                     onClick={() => setAsking(true)}
                     data-testid={IDS.open}
-                    className="mt-4 min-h-[2.75rem] border-state-pending/30 bg-transparent text-state-pending hover:bg-state-pending/10 sm:min-h-0"
+                    className="mt-4 min-h-[2.75rem] border-state-pending/30 bg-transparent text-state-pending hover:bg-state-pending-wash sm:min-h-0"
                 >
                     Ask for it to come down
                 </Button>
@@ -175,10 +175,10 @@ export default function TakedownPanel({
                                 type="button"
                                 onClick={() => setCode(r.code)}
                                 data-testid={IDS.reason(r.code)}
-                                className={`rounded border px-3 py-2 text-sm transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+                                className={`rounded border px-3 py-2 text-meta transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
                                     code === r.code
                                         ? "border-primary bg-primary/10 text-foreground"
-                                        : "border-white/10 text-muted-foreground hover:border-white/20"
+                                        : "border-border text-muted-foreground hover:border-tint/30"
                                 }`}
                             >
                                 {r.label}
@@ -192,7 +192,7 @@ export default function TakedownPanel({
                         onChange={(e) => setDetail(e.target.value)}
                         placeholder="What exactly is wrong with it. The creator reads this."
                         data-testid={IDS.detail}
-                        className="rounded-md border-white/10 bg-background/60 text-base focus-visible:ring-primary"
+                        className="rounded-md border-border bg-background/60 text-body focus-visible:ring-primary"
                     />
                     <div className="flex flex-wrap gap-2">
                         <Button
@@ -230,7 +230,7 @@ export default function TakedownPanel({
                         onChange={(e) => setNote(e.target.value)}
                         placeholder="Anything you want to say about it — required if it's staying up."
                         data-testid={IDS.note}
-                        className="rounded-md border-white/10 bg-background/60 text-base focus-visible:ring-primary"
+                        className="rounded-md border-border bg-background/60 text-body focus-visible:ring-primary"
                     />
                     <div className="flex flex-wrap gap-2">
                         <Button
@@ -249,7 +249,7 @@ export default function TakedownPanel({
                             onClick={() => respond(false)}
                             disabled={busy || !note.trim()}
                             data-testid={IDS.declined}
-                            className="min-h-[2.75rem] border-white/20 bg-transparent sm:min-h-0"
+                            className="min-h-[2.75rem] border-input bg-transparent sm:min-h-0"
                         >
                             It's staying up
                         </Button>

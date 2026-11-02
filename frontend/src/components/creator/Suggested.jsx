@@ -27,7 +27,7 @@ export default function Suggested({ campaigns }) {
                 title="Briefs that match your work."
                 aside={
                     rows.length > 0 && (
-                        <span data-testid={IDS.count} className="text-xs text-muted-foreground">
+                        <span data-testid={IDS.count} className="text-meta text-muted-foreground">
                             {rows.length} {rows.length === 1 ? "match" : "matches"}
                         </span>
                     )
@@ -65,7 +65,7 @@ export default function Suggested({ campaigns }) {
                                 data-testid={IDS.tile(c.id)}
                                 whileHover={still ? undefined : { y: -3 }}
                                 transition={{ duration: 0.2, ease: "easeOut" }}
-                                className="flex flex-col overflow-hidden rounded-md border border-white/10 bg-card transition-colors duration-200 hover:border-white/20 grain-surface"
+                                className="flex flex-col overflow-hidden rounded-md border border-border bg-card transition-colors duration-200 hover:border-tint/30 grain-surface"
                             >
                                 <CampaignCover
                                     campaign={c}
@@ -73,20 +73,20 @@ export default function Suggested({ campaigns }) {
                                     className="border-0 border-b"
                                 />
                                 <div className="flex flex-1 flex-col p-6">
-                                <p className="flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                                <p className="flex items-center gap-2 text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                                     <BrandAvatar brand={c} size="h-5 w-5" />
                                     <span className="truncate">{c.brand_name || "Brand"}</span>
                                 </p>
                                 <Link
                                     to={`/campaigns/${c.id}`}
-                                    className="mt-2 font-serif text-xl leading-tight transition-colors duration-200 hover:text-primary"
+                                    className="mt-2 font-serif text-h3 leading-tight transition-colors duration-200 hover:text-primary"
                                 >
                                     {c.title}
                                 </Link>
 
                                 <p
                                     data-testid={IDS.reason(c.id)}
-                                    className="mt-4 inline-flex items-start gap-2 rounded-md border border-primary/25 bg-primary/10 px-3 py-2 text-xs leading-relaxed text-primary"
+                                    className="mt-4 inline-flex items-start gap-2 rounded-md border border-primary/25 bg-primary/10 px-3 py-2 text-meta leading-relaxed text-primary"
                                 >
                                     <Sparkles className="mt-0.5 h-3.5 w-3.5 flex-none" />
                                     {c.match_reason}
@@ -94,10 +94,10 @@ export default function Suggested({ campaigns }) {
 
                                 <DeliverableSummary
                                     campaign={c}
-                                    className="mt-4 line-clamp-3 block text-sm leading-relaxed text-muted-foreground"
+                                    className="mt-4 line-clamp-3 block text-body leading-relaxed text-muted-foreground"
                                 />
 
-                                <div className="mt-5 flex flex-wrap items-center gap-x-3 gap-y-2 text-xs text-muted-foreground">
+                                <div className="mt-5 flex flex-wrap items-center gap-x-3 gap-y-2 text-meta text-muted-foreground">
                                     {c.area && (
                                         <span className="inline-flex items-center gap-1.5">
                                             <MapPin className="h-3.5 w-3.5" />
@@ -105,7 +105,7 @@ export default function Suggested({ campaigns }) {
                                         </span>
                                     )}
                                     {c.category && (
-                                        <span className="rounded-full bg-white/5 px-2.5 py-0.5 uppercase tracking-[0.15em]">
+                                        <span className="rounded-full bg-muted px-2.5 py-0.5 uppercase tracking-[0.15em]">
                                             {CAT_LABEL[c.category] || c.category}
                                         </span>
                                     )}
@@ -119,14 +119,14 @@ export default function Suggested({ campaigns }) {
                                     {isBarter(c) ? (
                                         <span
                                             data-testid={IDS.budget(c.id)}
-                                            className="font-serif text-2xl leading-none"
+                                            className="font-serif text-h3 leading-none"
                                         >
                                             Barter
                                         </span>
                                     ) : (
                                         <Money
                                             symbolClass="h-4 w-4"
-                                            className="font-serif text-2xl leading-none"
+                                            className="font-serif text-h3 leading-none"
                                         >
                                             <span data-testid={IDS.budget(c.id)}>
                                                 {formatRupees(c.budget_per_creator)}

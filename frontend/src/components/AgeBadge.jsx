@@ -28,19 +28,19 @@ import { AlertTriangle, Clock } from "lucide-react";
  */
 const TONES = {
     calm: {
-        wrap: "border-tint/10 text-muted-foreground",
+        wrap: "border-border text-muted-foreground",
         Icon: Clock,
     },
     due: {
-        wrap: "border-tint/15 text-foreground/80",
+        wrap: "border-border text-foreground/80",
         Icon: Clock,
     },
     overdue: {
-        wrap: "border-state-pending/30 bg-state-pending/10 text-state-pending",
+        wrap: "border-state-pending/30 bg-state-pending-wash text-state-pending",
         Icon: AlertTriangle,
     },
     critical: {
-        wrap: "border-state-rejected/40 bg-state-rejected/10 text-state-rejected",
+        wrap: "border-state-rejected/40 bg-state-rejected-wash text-state-rejected",
         Icon: AlertTriangle,
     },
 };
@@ -71,7 +71,7 @@ export default function AgeBadge({ ageing, iconOnly = false, className = "", tes
             title={[ageing.label, target].filter(Boolean).join(" · ")}
             className={
                 "inline-flex max-w-full items-center gap-1.5 rounded border px-1.5 py-0.5 " +
-                `text-xs leading-tight ${tone.wrap} ${className}`
+                `text-meta leading-tight ${tone.wrap} ${className}`
             }
         >
             <Icon aria-hidden="true" className="h-3 w-3 shrink-0" />

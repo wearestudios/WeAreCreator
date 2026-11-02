@@ -831,21 +831,30 @@ class TestEveryEndpointHasACallerAndEveryCallerHasAMount:
             "components", "marketing", "BrandWall.jsx"
         )
 
-    def test_the_wall_is_mounted_on_home(self):
-        landing = read("pages", "Landing.jsx")
-        assert "import BrandWall" in landing
-        assert "<BrandWall />" in landing
+    def test_the_wall_is_unmounted_pending_a_decision(self):
+        """**Unmounted by the public-site rebuild, deliberately, and pinned that
+        way so it cannot happen by accident in either direction.** The rebuilt
+        home is the brief's eight sections and the wall is not one of them; the
+        component and its endpoint are kept intact for the product decision
+        the PR names — remount it, or retire the feature. Until then this
+        asserts the component still exists and that no page mounts a second,
+        unreviewed copy of it."""
+        home = read("pages", "Home.jsx")
+        assert "BrandWall" not in home
+        assert (FRONTEND / "components" / "marketing" / "BrandWall.jsx").exists()
+        assert "/public/brand-wall" in read("components", "marketing", "BrandWall.jsx")
 
-    def test_it_sits_below_the_proof_strip_and_above_the_case_studies(self):
-        """**The order is the argument.** The figures say there is an
-        operation, the logos say businesses like theirs use it, and the
-        write-ups say it works. Logos before the proof would be decoration;
-        logos after the write-ups would be a footnote."""
-        landing = read("pages", "Landing.jsx")
-        proof = landing.index("<ProofStrip")
-        wall = landing.index("<BrandWall />")
-        studies = landing.index("<CaseStudyStrip />")
-        assert proof < wall < studies
+    def test_if_remounted_it_sits_between_the_proof_and_the_case_studies(self):
+        """**The order was the argument, and it is recorded for the remount.**
+        The figures say there is an operation, the logos say businesses like
+        theirs use it, and the write-ups say it works. None of the three is on
+        the rebuilt home, so this holds the order where it would be rebuilt:
+        nothing mounts the wall anywhere without the other two above and below
+        it."""
+        for page in (FRONTEND / "pages").glob("*.jsx"):
+            src = page.read_text()
+            if "<BrandWall" in src:
+                assert src.index("<ProofStrip") < src.index("<BrandWall") < src.index("<CaseStudyStrip"), page.name
 
     def test_the_admin_decisions_have_a_caller(self):
         panel = read("components", "admin", "BrandHomepageLogo.jsx")

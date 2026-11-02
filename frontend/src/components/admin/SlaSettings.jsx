@@ -132,7 +132,7 @@ export default function SlaSettings() {
                             className={`${PANEL} flex flex-wrap items-center gap-x-4 gap-y-2 p-4`}
                         >
                             <div className="min-w-0 flex-1">
-                                <p className="text-sm">{meta.label}</p>
+                                <p className="text-meta">{meta.label}</p>
                                 {/* Half of these measure our delay and half
                                     somebody else's, and an operator setting a
                                     number has to know which. */}
@@ -152,7 +152,7 @@ export default function SlaSettings() {
                                         setForm((f) => ({ ...f, [key]: e.target.value }))
                                     }
                                     data-testid={IDS.input(key)}
-                                    className="h-9 w-24 border-tint/10 bg-background/60 text-right tabular-nums"
+                                    className="h-9 w-24 border-border bg-background/60 text-right tabular-nums"
                                 />
                                 <span className={`${TEXT.meta} w-20 text-muted-foreground`}>
                                     hrs · {inWords(Number(form[key]))}
@@ -168,7 +168,7 @@ export default function SlaSettings() {
                                     }
                                     data-testid={IDS.reset(key)}
                                     title={`Back to the default, ${inWords(defaults[key])}`}
-                                    className={`rounded border border-tint/10 p-1.5 ${CALM} ${
+                                    className={`rounded border border-border p-1.5 ${CALM} ${
                                         isDefault
                                             ? "opacity-30"
                                             : "text-muted-foreground hover:border-primary/40 hover:text-primary-ink"

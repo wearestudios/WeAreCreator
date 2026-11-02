@@ -131,12 +131,17 @@ class TestTheHeroEyebrow:
     def test_it_is_one_constant_and_not_a_string_per_page(self):
         """It read "Vol. 01 · Bengaluru · Influencer studio", inlined
         separately on the home page and the brief feed — two strings that had
-        to be edited together and were not."""
+        to be edited together and were not. **Home no longer has an eyebrow**
+        — it came out of the hero in the calm pass — so the brief feed and the
+        sign-in screen are the pages left reading it, and home must not grow a
+        string of its own in its place."""
         nav = (FRONTEND / "lib" / "siteNav.js").read_text()
         assert "export const HERO_EYEBROW" in nav
-        for rel in ("pages/Landing.jsx", "pages/Campaigns.jsx"):
+        for rel in ("pages/Campaigns.jsx", "pages/Login.jsx"):
             body = no_comments(FRONTEND / rel)
             assert "HERO_EYEBROW" in body, rel
+        home = no_comments(FRONTEND / "pages/Home.jsx")
+        assert "HERO_EYEBROW" not in home and "eyebrow" not in home.lower()
 
     def test_it_carries_no_volume_number(self):
         """Magazine furniture. It implies a second volume that does not exist
@@ -158,7 +163,7 @@ class TestTheHeroEyebrow:
             assert banned not in value, banned
 
     def test_the_pages_do_not_still_hold_the_old_line(self):
-        for rel in ("pages/Landing.jsx", "pages/Campaigns.jsx"):
+        for rel in ("pages/Home.jsx", "pages/Campaigns.jsx"):
             body = no_comments(FRONTEND / rel)
             assert "Influencer studio" not in body, rel
 

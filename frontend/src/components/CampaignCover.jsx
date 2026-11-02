@@ -33,7 +33,7 @@ export default function CampaignCover({
     const src = campaign?.cover_image_url ? mediaUrl(campaign.cover_image_url) : null;
     const initial = initialOf(campaign?.brand_name, campaign?.business_name, campaign?.title);
 
-    const frame = `relative w-full overflow-hidden border border-tint/10 ${ratio} ${rounded} ${className}`;
+    const frame = `relative w-full overflow-hidden border border-border ${ratio} ${rounded} ${className}`;
 
     if (src && !broken) {
         return (

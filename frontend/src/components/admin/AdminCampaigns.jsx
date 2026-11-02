@@ -537,7 +537,7 @@ export default function AdminCampaigns({
 
     return (
         <section data-testid={IDS.section}>
-            <header className="mb-3 flex flex-wrap items-center justify-between gap-3">
+            <header className="mb-section flex flex-wrap items-center justify-between gap-3">
                 <div>
                     <h1 className={TEXT.heading}>Campaigns</h1>
                     <p data-testid={IDS.count} className={`${TEXT.meta} text-muted-foreground`}>
@@ -574,7 +574,7 @@ export default function AdminCampaigns({
 
             <div
                 data-testid={TABLE_IDS.toolbar}
-                className={`mb-3 flex flex-wrap items-center gap-2 ${PANEL} ${DENSITY.row}`}
+                className={`mb-section flex flex-wrap items-center gap-2 ${PANEL} ${DENSITY.row}`}
             >
                 <div className="relative min-w-[9rem] flex-1">
                     <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
@@ -584,7 +584,7 @@ export default function AdminCampaigns({
                         data-testid={IDS.search}
                         placeholder="Campaign title"
                         aria-label="Search campaigns"
-                        className={`h-8 border-tint/10 bg-transparent pl-8 ${TEXT.body}`}
+                        className={`h-8 border-border bg-transparent pl-8 ${TEXT.body}`}
                     />
                 </div>
                 <FilterSelect
@@ -615,7 +615,7 @@ export default function AdminCampaigns({
                         `inline-flex h-8 flex-none items-center gap-1.5 rounded border px-2 ${TEXT.body} ${CALM} ${FOCUS} ` +
                         (showcase
                             ? "border-primary bg-primary/10 text-primary-ink"
-                            : "border-tint/10 text-muted-foreground hover:border-tint/25")
+                            : "border-border text-muted-foreground hover:border-tint/25")
                     }
                 >
                     <Star className={"h-3.5 w-3.5 " + (showcase ? "fill-current" : "")} />
@@ -816,7 +816,7 @@ export default function AdminCampaigns({
                         {peek.review_reason && peek.status === "draft" && (
                             <p
                                 data-testid={IDS.reviewReason(peek.id)}
-                                className={`mt-3 rounded border border-state-pending/25 bg-state-pending/5 p-3 ${TEXT.body} text-state-pending`}
+                                className={`mt-3 rounded border border-state-pending/25 bg-state-pending-wash p-3 ${TEXT.body} text-state-pending`}
                             >
                                 Sent back: {peek.review_reason}
                             </p>
@@ -838,7 +838,7 @@ export default function AdminCampaigns({
                                     <li
                                         key={c.collaboration_id}
                                         data-testid={IDS.creatorRow(c.collaboration_id)}
-                                        className="flex items-center justify-between gap-3 border-b border-tint/5 py-2"
+                                        className="flex items-center justify-between gap-3 border-b border-divider py-2"
                                     >
                                         <span className="min-w-0">
                                             <span className={`block truncate ${TEXT.body}`}>

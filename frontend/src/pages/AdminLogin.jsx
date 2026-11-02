@@ -39,11 +39,11 @@ export default function AdminLogin() {
                 <Link to="/" className="mb-8 inline-block">
                     <Logo variant="horizontal" height={30} />
                 </Link>
-                <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Team admin</p>
-                <h1 className="mt-3 font-serif text-fluid-4xl leading-none tracking-tight">
+                <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">Team admin</p>
+                <h1 className="mt-3 font-serif text-h1 leading-none tracking-tight">
                     Sign in to the console
                 </h1>
-                <p className="mt-4 text-sm text-muted-foreground">
+                <p className="mt-4 text-meta text-muted-foreground">
                     Creators and brands, please{" "}
                     <Link to="/login" data-testid="link-to-login" className="text-primary underline-offset-4 hover:underline">
                         log in with WhatsApp
@@ -53,7 +53,7 @@ export default function AdminLogin() {
 
                 <form onSubmit={onSubmit} className="mt-10 space-y-5">
                     <div>
-                        <Label htmlFor="email" className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                        <Label htmlFor="email" className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                             Email
                         </Label>
                         <Input
@@ -64,12 +64,12 @@ export default function AdminLogin() {
                             required
                             value={email}
                             onChange={(e) => setEmail(e.target.value)}
-                            className="mt-2 h-11 border-white/10 bg-card/60 text-foreground focus-visible:ring-primary"
+                            className="mt-2 h-11 border-border bg-card/60 text-foreground focus-visible:ring-primary"
                             placeholder="you@wearemonk.in"
                         />
                     </div>
                     <div>
-                        <Label htmlFor="password" className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                        <Label htmlFor="password" className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                             Password
                         </Label>
                         <Input
@@ -80,13 +80,13 @@ export default function AdminLogin() {
                             required
                             value={password}
                             onChange={(e) => setPassword(e.target.value)}
-                            className="mt-2 h-11 border-white/10 bg-card/60 text-foreground focus-visible:ring-primary"
+                            className="mt-2 h-11 border-border bg-card/60 text-foreground focus-visible:ring-primary"
                             placeholder="••••••••"
                         />
                     </div>
 
                     {error && (
-                        <p data-testid="admin-login-error" className="text-sm text-destructive">
+                        <p data-testid="admin-login-error" className="text-meta text-destructive">
                             {error}
                         </p>
                     )}

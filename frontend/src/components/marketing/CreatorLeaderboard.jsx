@@ -102,13 +102,13 @@ function CreatorCard({ creator, i }) {
             <article
                 data-testid={IDS.leaderboardCard(creator.id)}
                 style={{ transform: `rotate(${tilt}deg)` }}
-                className={`flex flex-1 flex-col overflow-hidden rounded-lg border border-white/10 bg-card grain-surface ${CARD_SHADOW} ${CARD_HOVER}`}
+                className={`flex flex-1 flex-col overflow-hidden rounded-lg border border-border bg-card grain-surface ${CARD_SHADOW} ${CARD_HOVER}`}
             >
                 {/* The ratio is on the container, never on the `<img>`, so a
                     photograph that never arrives still occupies the space it
                     claimed — the design foundations' rule, and what keeps the
                     monogram and the photo the same size. */}
-                <div className="aspect-[4/5] w-full overflow-hidden bg-white/5">
+                <div className="aspect-[4/5] w-full overflow-hidden bg-muted">
                     {creator.profile_image_url ? (
                         <img
                             src={creator.profile_image_url}
@@ -245,7 +245,7 @@ export function CreatorLeaderboard() {
             ref={anchor}
             data-testid={loading ? IDS.leaderboardSkeleton : IDS.leaderboard}
             aria-hidden={loading || undefined}
-            className="border-t border-white/10 py-16 md:py-24"
+            className="border-t border-border py-16 md:py-24"
         >
             <div className="mx-auto max-w-7xl px-6">
                 {/* **The heading is not skeletoned.** It is static copy that
@@ -270,7 +270,7 @@ export function CreatorLeaderboard() {
                               <li key={i} className="flex">
                                   {/* The same box the card occupies: the 4:5
                                       frame and four lines under it. */}
-                                  <div className="flex flex-1 flex-col overflow-hidden rounded-lg border border-white/10 bg-card">
+                                  <div className="flex flex-1 flex-col overflow-hidden rounded-lg border border-border bg-card">
                                       {/* The frame reserves itself: 4:5 on
                                           the container is exact at every
                                           width, which is why the ratio lives

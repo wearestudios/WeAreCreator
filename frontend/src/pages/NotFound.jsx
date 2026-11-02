@@ -25,9 +25,9 @@ const WAYS_ON = [
         body: "Everything open right now, from brands we checked.",
     },
     {
-        to: "/how-it-works",
-        label: "How it works",
-        body: "The whole journey, from both sides.",
+        to: "/for-brands",
+        label: "For brands",
+        body: "How a campaign runs here, from brief to payment.",
     },
     {
         to: "/",
@@ -63,7 +63,7 @@ export default function NotFound() {
                                 <Link
                                     to={w.to}
                                     data-testid={`not-found-link-${w.to.replace(/\W+/g, "-").replace(/^-|-$/g, "") || "home"}`}
-                                    className={`group block rounded-lg border border-white/10 bg-card grain-surface p-5 ${CARD_HOVER}`}
+                                    className={`group block rounded-lg border border-border bg-card grain-surface p-5 ${CARD_HOVER}`}
                                 >
                                     <p className="font-serif text-fluid-xl leading-tight tracking-tight transition-colors duration-200 group-hover:text-primary">
                                         {w.label}
@@ -82,7 +82,7 @@ export default function NotFound() {
                         // PLACEHOLDER IMAGE: an empty venue between shoots —
                         // chairs stacked, light through a window. Quiet rather
                         // than apologetic. Portrait-friendly 4:3.
-                        note="Empty venue between shoots, chairs stacked, light through a window, 4:3"
+                        slot="not-found"
                         ratio="4/3"
                         zoom
                     />

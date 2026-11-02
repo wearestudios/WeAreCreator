@@ -57,7 +57,7 @@ export function PerformanceRollup({ performance: p, scope = "campaign", action }
             {nothing ? (
                 <p
                     data-testid={IDS.empty}
-                    className="rounded-md border border-tint/10 bg-card px-6 py-8 text-sm leading-relaxed text-muted-foreground"
+                    className="rounded-md border border-border bg-card px-6 py-8 text-body leading-relaxed text-muted-foreground"
                 >
                     Nothing measured yet. Once a creator submits content, record what the
                     post did — from Instagram where they've connected it, or by hand from
@@ -84,7 +84,7 @@ export function PerformanceRollup({ performance: p, scope = "campaign", action }
                         client should see them at the same moment. */}
                     <div data-testid={IDS.note} className="mt-4 space-y-1.5">
                         {p.barter_reach > 0 && (
-                            <p className="text-sm leading-relaxed text-muted-foreground">
+                            <p className="text-body leading-relaxed text-muted-foreground">
                                 {p.barter_deliveries} barter{" "}
                                 {p.barter_deliveries === 1 ? "delivery" : "deliveries"}{" "}
                                 contributed {num(p.barter_reach)} reach at no cost. Cost per
@@ -92,7 +92,7 @@ export function PerformanceRollup({ performance: p, scope = "campaign", action }
                             </p>
                         )}
                         {p.awaiting_payment_deliveries > 0 && (
-                            <p className="text-sm leading-relaxed text-muted-foreground">
+                            <p className="text-body leading-relaxed text-muted-foreground">
                                 {p.awaiting_payment_deliveries}{" "}
                                 {p.awaiting_payment_deliveries === 1 ? "delivery is" : "deliveries are"}{" "}
                                 waiting on payment, so {p.awaiting_payment_deliveries === 1 ? "its" : "their"}{" "}
@@ -100,7 +100,7 @@ export function PerformanceRollup({ performance: p, scope = "campaign", action }
                             </p>
                         )}
                         {p.creators_delivered > p.with_reach && (
-                            <p className="text-sm leading-relaxed text-muted-foreground">
+                            <p className="text-body leading-relaxed text-muted-foreground">
                                 {p.with_reach} of {p.creators_delivered} deliveries have reach
                                 figures — {scope === "brand" ? "these totals are" : "the totals above are"} a
                                 floor, not a final number.
@@ -149,7 +149,7 @@ export function PerformancePanel({ collaborationId, performance, delivered, onSa
     if (!delivered) {
         return (
             <Panel data-testid={IDS.panel}>
-                <p className="text-sm leading-relaxed text-muted-foreground">
+                <p className="text-body leading-relaxed text-muted-foreground">
                     Nothing to measure yet — performance is recorded once content has been
                     submitted.
                 </p>
@@ -165,17 +165,17 @@ export function PerformancePanel({ collaborationId, performance, delivered, onSa
                         <dl className="grid gap-5 sm:grid-cols-3 lg:grid-cols-6">
                             {METRICS.map((m) => (
                                 <div key={m.key}>
-                                    <dt className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+                                    <dt className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                                         {m.label}
                                     </dt>
-                                    <dd className="mt-1.5 font-serif text-xl">
+                                    <dd className="mt-1.5 font-serif text-h3">
                                         {num(performance[m.key])}
                                     </dd>
                                 </div>
                             ))}
                         </dl>
-                        <div className="mt-6 flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-tint/10 pt-5 text-sm text-muted-foreground">
-                            <span className="text-sm text-foreground">
+                        <div className="mt-6 flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-border pt-5 text-meta text-muted-foreground">
+                            <span className="text-meta text-foreground">
                                 {pct(performance.engagement_rate)} engagement
                             </span>
                             <span data-testid={IDS.source}>
@@ -187,7 +187,7 @@ export function PerformancePanel({ collaborationId, performance, delivered, onSa
                         </div>
                     </>
                 ) : (
-                    <p className="text-sm leading-relaxed text-muted-foreground">
+                    <p className="text-body leading-relaxed text-muted-foreground">
                         No reading yet. Pull it from Instagram if they've connected their
                         account, or type in what they can see.
                     </p>
@@ -199,7 +199,7 @@ export function PerformancePanel({ collaborationId, performance, delivered, onSa
                         onClick={tryInstagram}
                         disabled={fetching}
                         data-testid={IDS.fetch}
-                        className="rounded-full border-tint/15 bg-transparent hover:bg-tint/5"
+                        className="rounded-full border-border bg-transparent hover:bg-tint/5"
                     >
                         {fetching ? (
                             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -212,7 +212,7 @@ export function PerformancePanel({ collaborationId, performance, delivered, onSa
                         variant="outline"
                         onClick={() => setOpen(true)}
                         data-testid={IDS.edit}
-                        className="rounded-full border-tint/15 bg-transparent hover:bg-tint/5"
+                        className="rounded-full border-border bg-transparent hover:bg-tint/5"
                     >
                         <BarChart3 className="mr-2 h-4 w-4" />
                         {performance ? "Correct by hand" : "Enter by hand"}
@@ -292,16 +292,16 @@ function PerformanceDialog({ open, onOpenChange, collaborationId, performance, o
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent
                 data-testid={IDS.dialog}
-                className="max-w-lg rounded-md border border-tint/10 bg-card"
+                className="max-w-lg rounded-md border border-border bg-card"
             >
                 <DialogHeader className="text-left">
-                    <p className="text-xs uppercase tracking-[0.2em] text-primary-ink">
+                    <p className="text-eyebrow uppercase tracking-eyebrow text-primary-ink">
                         Performance
                     </p>
-                    <DialogTitle className="mt-3 font-serif text-2xl leading-tight">
+                    <DialogTitle className="mt-3 font-serif text-h3 leading-tight">
                         What did the post do?
                     </DialogTitle>
-                    <DialogDescription className="mt-2 text-sm leading-relaxed text-muted-foreground">
+                    <DialogDescription className="mt-2 text-body leading-relaxed text-muted-foreground">
                         Fill in whatever you can see. Leave anything you can't blank —
                         blank means "not known", which is different from zero and is
                         reported differently.
@@ -314,7 +314,7 @@ function PerformanceDialog({ open, onOpenChange, collaborationId, performance, o
                             <div key={m.key}>
                                 <Label
                                     htmlFor={`perf-${m.key}`}
-                                    className="text-xs uppercase tracking-[0.15em] text-muted-foreground"
+                                    className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground"
                                 >
                                     {m.label}
                                 </Label>
@@ -329,26 +329,26 @@ function PerformanceDialog({ open, onOpenChange, collaborationId, performance, o
                                         setValues((v) => ({ ...v, [m.key]: e.target.value }))
                                     }
                                     placeholder="—"
-                                    className="mt-2 h-11 rounded-md border-tint/10 bg-background/60 focus-visible:ring-ring"
+                                    className="mt-2 h-11 rounded-md border-border bg-background/60 focus-visible:ring-ring"
                                 />
                             </div>
                         ))}
                     </div>
 
-                    <p className="text-sm leading-relaxed text-muted-foreground">
+                    <p className="text-body leading-relaxed text-muted-foreground">
                         Engagement rate is worked out from likes, comments and saves
                         against reach — you don't enter it, so it can never disagree with
                         the numbers above it.
                     </p>
 
-                    {err && <p className="text-sm text-destructive">{err}</p>}
+                    {err && <p className="text-meta text-destructive">{err}</p>}
 
                     <DialogFooter className="gap-2">
                         <DialogClose asChild>
                             <Button
                                 type="button"
                                 variant="outline"
-                                className="rounded-full border-tint/15 bg-transparent hover:bg-tint/5"
+                                className="rounded-full border-border bg-transparent hover:bg-tint/5"
                             >
                                 Cancel
                             </Button>
@@ -379,7 +379,7 @@ export function ReportActions({ campaignId, showcase, onToggleShowcase, busy }) 
             <a href={href("csv")} data-testid={IDS.reportCsv}>
                 <Button
                     variant="outline"
-                    className="rounded-full border-tint/15 bg-transparent hover:bg-tint/5"
+                    className="rounded-full border-border bg-transparent hover:bg-tint/5"
                 >
                     <Download className="mr-2 h-4 w-4" />
                     CSV
@@ -393,7 +393,7 @@ export function ReportActions({ campaignId, showcase, onToggleShowcase, busy }) 
             >
                 <Button
                     variant="outline"
-                    className="rounded-full border-tint/15 bg-transparent hover:bg-tint/5"
+                    className="rounded-full border-border bg-transparent hover:bg-tint/5"
                 >
                     <Printer className="mr-2 h-4 w-4" />
                     Printable report
@@ -408,7 +408,7 @@ export function ReportActions({ campaignId, showcase, onToggleShowcase, busy }) 
                     "rounded-full bg-transparent " +
                     (showcase
                         ? "border-primary/50 text-primary-ink hover:bg-primary/10"
-                        : "border-tint/15 hover:bg-tint/5")
+                        : "border-border hover:bg-tint/5")
                 }
             >
                 <Star className={"mr-2 h-4 w-4 " + (showcase ? "fill-current" : "")} />

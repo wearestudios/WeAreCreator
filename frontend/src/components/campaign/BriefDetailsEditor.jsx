@@ -91,11 +91,11 @@ function LineList({ field, rows, onChange }) {
         <div>
             <Label
                 htmlFor={`brief-${field}`}
-                className="text-xs uppercase tracking-[0.15em] text-muted-foreground"
+                className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground"
             >
                 {BRIEF_LIST_FIELDS[field]}
             </Label>
-            <p className="mt-1 text-xs text-muted-foreground">
+            <p className="mt-1 text-meta text-muted-foreground">
                 {BRIEF_FIELD_HINTS[field]}
             </p>
             {rows.length > 0 && (
@@ -103,7 +103,7 @@ function LineList({ field, rows, onChange }) {
                     {rows.map((line, i) => (
                         <li
                             key={line}
-                            className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-card/60 py-1 pl-3 pr-1.5 text-sm"
+                            className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card/60 py-1 pl-3 pr-1.5 text-meta"
                         >
                             {line}
                             <button
@@ -137,7 +137,7 @@ function LineList({ field, rows, onChange }) {
                             add();
                         }
                     }}
-                    className="h-11 border-white/10 bg-card/60 focus-visible:ring-primary"
+                    className="h-11 border-border bg-card/60 focus-visible:ring-primary"
                     placeholder={full ? "That's the maximum" : sigil ? `${sigil}…` : "Add one"}
                 />
                 <button
@@ -145,7 +145,7 @@ function LineList({ field, rows, onChange }) {
                     data-testid={IDS.add(field)}
                     onClick={add}
                     disabled={full || !draft.trim()}
-                    className="inline-flex min-h-[2.75rem] items-center gap-1.5 rounded-full border border-white/10 px-4 text-xs uppercase tracking-[0.15em] text-muted-foreground transition-colors duration-150 hover:border-primary/40 hover:text-primary disabled:opacity-40"
+                    className="inline-flex min-h-[2.75rem] items-center gap-1.5 rounded-full border border-border px-4 text-eyebrow uppercase tracking-eyebrow text-muted-foreground transition-colors duration-150 hover:border-primary/40 hover:text-primary disabled:opacity-40"
                 >
                     <Plus aria-hidden="true" className="h-3.5 w-3.5" />
                     Add
@@ -171,13 +171,13 @@ export default function BriefDetailsEditor({ value, onChange }) {
                 type="button"
                 onClick={() => setOpen((o) => !o)}
                 aria-expanded={open}
-                className="flex min-h-[2.75rem] w-full items-center justify-between gap-3 rounded-md border border-white/10 bg-card/60 px-4 text-left transition-colors duration-150 hover:border-primary/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                className="flex min-h-[2.75rem] w-full items-center justify-between gap-3 rounded-md border border-border bg-card/60 px-4 text-left transition-colors duration-150 hover:border-primary/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
             >
                 <span>
-                    <span className="block text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                    <span className="block text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                         Rules and tags (optional)
                     </span>
-                    <span className="block text-sm text-muted-foreground">
+                    <span className="block text-meta text-muted-foreground">
                         {filled > 0
                             ? `${filled} thing${filled === 1 ? "" : "s"} a creator can tick off`
                             : "Do's, don'ts, hashtags, who to tag, caption, assets"}
@@ -192,8 +192,8 @@ export default function BriefDetailsEditor({ value, onChange }) {
             </button>
 
             {open && (
-                <div className="mt-4 space-y-5 rounded-md border border-white/10 bg-card/40 p-4 sm:p-5">
-                    <p className="text-xs leading-relaxed text-muted-foreground">
+                <div className="mt-4 space-y-5 rounded-md border border-border bg-card/40 p-4 sm:p-5">
+                    <p className="text-meta leading-relaxed text-muted-foreground">
                         Anything here shows on the brief as a checklist, before a
                         creator applies — and again on the screen where their draft
                         is reviewed. It is what stops a mismatch turning up after
@@ -214,11 +214,11 @@ export default function BriefDetailsEditor({ value, onChange }) {
                     <div>
                         <Label
                             htmlFor="brief-caption"
-                            className="text-xs uppercase tracking-[0.15em] text-muted-foreground"
+                            className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground"
                         >
                             Caption guidance
                         </Label>
-                        <p className="mt-1 text-xs text-muted-foreground">
+                        <p className="mt-1 text-meta text-muted-foreground">
                             {BRIEF_FIELD_HINTS.caption_guidance}
                         </p>
                         <Textarea
@@ -228,16 +228,16 @@ export default function BriefDetailsEditor({ value, onChange }) {
                             maxLength={2000}
                             value={v.caption_guidance || ""}
                             onChange={(e) => set({ caption_guidance: e.target.value })}
-                            className="mt-2 border-white/10 bg-card/60 focus-visible:ring-primary"
+                            className="mt-2 border-border bg-card/60 focus-visible:ring-primary"
                             placeholder="Mention the offer runs to the end of the month, and keep it short."
                         />
                     </div>
 
                     <div data-testid={IDS.assets}>
-                        <Label className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                        <Label className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                             Brand assets
                         </Label>
-                        <p className="mt-1 text-xs text-muted-foreground">
+                        <p className="mt-1 text-meta text-muted-foreground">
                             Links to a logo, a pack shot, a font. The label is what a
                             creator sees.
                         </p>
@@ -255,7 +255,7 @@ export default function BriefDetailsEditor({ value, onChange }) {
                                                 ),
                                             })
                                         }
-                                        className="h-11 border-white/10 bg-card/60 focus-visible:ring-primary sm:w-1/3"
+                                        className="h-11 border-border bg-card/60 focus-visible:ring-primary sm:w-1/3"
                                         placeholder="Logo pack"
                                     />
                                     <div className="flex flex-1 gap-2">
@@ -272,7 +272,7 @@ export default function BriefDetailsEditor({ value, onChange }) {
                                                     ),
                                                 })
                                             }
-                                            className="h-11 flex-1 border-white/10 bg-card/60 focus-visible:ring-primary"
+                                            className="h-11 flex-1 border-border bg-card/60 focus-visible:ring-primary"
                                             placeholder="https://…"
                                         />
                                         <button
@@ -299,7 +299,7 @@ export default function BriefDetailsEditor({ value, onChange }) {
                             onClick={() =>
                                 set({ brand_assets: [...assets, { label: "", url: "" }] })
                             }
-                            className="mt-2 inline-flex min-h-[2.75rem] items-center gap-1.5 rounded-full border border-white/10 px-4 text-xs uppercase tracking-[0.15em] text-muted-foreground transition-colors duration-150 hover:border-primary/40 hover:text-primary disabled:opacity-40"
+                            className="mt-2 inline-flex min-h-[2.75rem] items-center gap-1.5 rounded-full border border-border px-4 text-eyebrow uppercase tracking-eyebrow text-muted-foreground transition-colors duration-150 hover:border-primary/40 hover:text-primary disabled:opacity-40"
                         >
                             <Plus aria-hidden="true" className="h-3.5 w-3.5" />
                             Add a link

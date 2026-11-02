@@ -43,35 +43,35 @@ export function BriefTerms({ disclosure, usage }) {
             className="grid gap-3 sm:grid-cols-2"
         >
             {disclosure && (
-                <div className="rounded-md border border-white/10 bg-card/60 p-4">
-                    <p className="flex items-center gap-2 text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+                <div className="rounded-md border border-border bg-card/60 p-4">
+                    <p className="flex items-center gap-2 text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                         <Megaphone aria-hidden="true" className="h-3.5 w-3.5" />
                         Must carry
                     </p>
                     <p
                         data-testid={IDS.disclosure}
-                        className="mt-2 text-sm leading-relaxed text-foreground"
+                        className="mt-2 text-body leading-relaxed text-foreground"
                     >
                         {disclosure.label}
                     </p>
-                    <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                    <p className="mt-1 text-meta leading-relaxed text-muted-foreground">
                         Up front in the post itself, not in the comments.
                     </p>
                 </div>
             )}
             {usage && (
-                <div className="rounded-md border border-white/10 bg-card/60 p-4">
-                    <p className="flex items-center gap-2 text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+                <div className="rounded-md border border-border bg-card/60 p-4">
+                    <p className="flex items-center gap-2 text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                         <ShieldCheck aria-hidden="true" className="h-3.5 w-3.5" />
                         Usage rights
                     </p>
                     <p
                         data-testid={IDS.usage}
-                        className="mt-2 text-sm leading-relaxed text-foreground"
+                        className="mt-2 text-body leading-relaxed text-foreground"
                     >
                         {usage.text}
                     </p>
-                    <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                    <p className="mt-1 text-meta leading-relaxed text-muted-foreground">
                         {usage.kind === "organic_only"
                             ? "They can repost it. Running it as an ad needs a separate agreement."
                             : usage.kind === "full_buyout"
@@ -88,11 +88,11 @@ export function BriefTerms({ disclosure, usage }) {
 function Line({ label, children, testId }) {
     if (!children) return null;
     return (
-        <div className="border-t border-white/10 pt-3 first:border-0 first:pt-0">
-            <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+        <div className="border-t border-border pt-3 first:border-0 first:pt-0">
+            <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                 {label}
             </p>
-            <p data-testid={testId} className="mt-1 text-sm leading-relaxed">
+            <p data-testid={testId} className="mt-1 text-body leading-relaxed">
                 {children}
             </p>
         </div>
@@ -132,13 +132,13 @@ export function TermsCard({ terms, collabId, canAccept = false, onAccepted }) {
     return (
         <section
             data-testid={IDS.card}
-            className="rounded-md border border-white/10 bg-card p-5 grain-surface sm:p-6"
+            className="rounded-md border border-border bg-card p-5 grain-surface sm:p-6"
         >
-            <p className="flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-primary">
+            <p className="flex items-center gap-2 text-eyebrow uppercase tracking-eyebrow text-primary">
                 <FileText aria-hidden="true" className="h-4 w-4" />
                 What was agreed
             </p>
-            <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+            <p className="mt-2 text-meta leading-relaxed text-muted-foreground">
                 Frozen when this was accepted on {formatDate(terms.issued_at)}. The
                 campaign can be edited afterwards; this cannot.
             </p>
@@ -196,7 +196,7 @@ export function TermsCard({ terms, collabId, canAccept = false, onAccepted }) {
             {terms.accepted ? (
                 <p
                     data-testid={IDS.accepted}
-                    className="mt-5 flex items-center gap-2 rounded-md border border-state-approved/30 bg-state-approved/10 px-4 py-3 text-sm text-state-approved"
+                    className="mt-5 flex items-center gap-2 rounded-md border border-state-approved/30 bg-state-approved-wash px-4 py-3 text-meta text-state-approved"
                 >
                     <Check aria-hidden="true" className="h-4 w-4 flex-none" />
                     Accepted by the creator on {formatDate(terms.accepted_at)}.
@@ -212,7 +212,7 @@ export function TermsCard({ terms, collabId, canAccept = false, onAccepted }) {
                         {busy && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
                         I agree to these terms
                     </Button>
-                    <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+                    <p className="mt-2 text-meta leading-relaxed text-muted-foreground">
                         One tap, timestamped. It records that you read this — anything
                         you want changed is a message to whoever runs the campaign.
                     </p>
@@ -220,7 +220,7 @@ export function TermsCard({ terms, collabId, canAccept = false, onAccepted }) {
             ) : (
                 <p
                     data-testid={IDS.awaiting}
-                    className="mt-5 text-xs uppercase tracking-[0.15em] text-muted-foreground"
+                    className="mt-5 text-eyebrow uppercase tracking-eyebrow text-muted-foreground"
                 >
                     Waiting for the creator to accept
                 </p>
@@ -247,7 +247,7 @@ export function DisclosureChecks({ disclosure }) {
             {rows.map(([label, row]) => (
                 <p
                     key={label}
-                    className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground"
+                    className="flex flex-wrap items-center gap-x-2 text-meta text-muted-foreground"
                 >
                     <Check aria-hidden="true" className="h-3.5 w-3.5 text-state-approved" />
                     <span className="uppercase tracking-[0.15em]">{label}</span>
@@ -284,23 +284,23 @@ export function DisclosureConfirmDialog({ open, onOpenChange, label, busy, onCon
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent
                 data-testid="approve-content-dialog"
-                className="max-w-md rounded-md border border-white/10 bg-card"
+                className="max-w-md rounded-md border border-border bg-card"
             >
                 <DialogHeader className="text-left">
-                    <p className="text-xs uppercase tracking-[0.2em] text-primary">
+                    <p className="text-eyebrow uppercase tracking-eyebrow text-primary">
                         Approve the content
                     </p>
-                    <DialogTitle className="mt-2 font-serif text-fluid-2xl leading-tight">
+                    <DialogTitle className="mt-2 font-serif text-h3 leading-tight">
                         One check before you sign this off
                     </DialogTitle>
-                    <DialogDescription className="mt-2 text-sm text-muted-foreground">
+                    <DialogDescription className="mt-2 text-meta text-muted-foreground">
                         Approving releases payment, and nobody looks at the post
                         again afterwards.
                     </DialogDescription>
                 </DialogHeader>
                 <label
                     data-testid="approve-content-disclosure-check"
-                    className="flex cursor-pointer items-start gap-3 rounded-md border border-white/10 bg-background/60 p-4 text-sm leading-relaxed"
+                    className="flex cursor-pointer items-start gap-3 rounded-md border border-border bg-background/60 p-4 text-body leading-relaxed"
                 >
                     <input
                         type="checkbox"

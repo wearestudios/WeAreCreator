@@ -35,12 +35,12 @@ import {
 } from "@/lib/shootWindows";
 
 const chip = (on) =>
-    "min-h-[2.75rem] rounded-full border px-4 text-sm transition-colors duration-200 " +
+    "min-h-[2.75rem] rounded-full border px-4 text-meta transition-colors duration-200 " +
     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary " +
     "focus-visible:ring-offset-2 focus-visible:ring-offset-background " +
     (on
         ? "border-primary bg-primary/15 text-primary"
-        : "border-white/10 bg-card/60 text-muted-foreground hover:border-white/25");
+        : "border-border bg-card/60 text-muted-foreground hover:border-tint/30");
 
 export default function ShootPreferences({ days, windows, onChange }) {
     const [customStart, setCustomStart] = useState("");
@@ -108,7 +108,7 @@ export default function ShootPreferences({ days, windows, onChange }) {
     return (
         <div data-testid={IDS.section} className="space-y-6">
             <div>
-                <Label className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                <Label className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                     Days that don't work
                 </Label>
                 <div className="mt-3 flex flex-wrap gap-2">
@@ -131,7 +131,7 @@ export default function ShootPreferences({ days, windows, onChange }) {
                     one. */}
                 <p
                     data-testid={IDS.openDays}
-                    className="mt-2 text-xs leading-relaxed text-muted-foreground"
+                    className="mt-2 text-meta leading-relaxed text-muted-foreground"
                 >
                     {shut.size === 0
                         ? "Any day works. Tap the ones you can't take anybody."
@@ -140,7 +140,7 @@ export default function ShootPreferences({ days, windows, onChange }) {
             </div>
 
             <div>
-                <Label className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                <Label className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                     Hours that work
                 </Label>
                 <div className="mt-3 flex flex-wrap gap-2">
@@ -156,7 +156,7 @@ export default function ShootPreferences({ days, windows, onChange }) {
                             className={chip(presetOn(p.key)) + " disabled:opacity-40"}
                         >
                             {p.label}
-                            <span className="ml-2 text-xs opacity-70">
+                            <span className="ml-2 text-meta opacity-70">
                                 {readableTime(p.start)}–{readableTime(p.end)}
                             </span>
                         </button>
@@ -169,7 +169,7 @@ export default function ShootPreferences({ days, windows, onChange }) {
                             <li
                                 key={`${w.start}-${w.end}-${i}`}
                                 data-testid={IDS.customRow(i)}
-                                className="flex items-center justify-between gap-3 rounded-md border border-primary/25 bg-primary/10 px-4 py-2.5 text-sm text-primary"
+                                className="flex items-center justify-between gap-3 rounded-md border border-primary/25 bg-primary/10 px-4 py-2.5 text-meta text-primary"
                             >
                                 <span>
                                     {readableTime(w.start)} – {readableTime(w.end)}
@@ -179,7 +179,7 @@ export default function ShootPreferences({ days, windows, onChange }) {
                                     aria-label="Remove this window"
                                     data-testid={IDS.customRemove(i)}
                                     onClick={() => removeCustom(i)}
-                                    className="rounded-full p-1.5 transition-colors duration-200 hover:bg-white/10"
+                                    className="rounded-full p-1.5 transition-colors duration-200 hover:bg-muted"
                                 >
                                     <X className="h-3.5 w-3.5" />
                                 </button>
@@ -192,7 +192,7 @@ export default function ShootPreferences({ days, windows, onChange }) {
                     <div className="flex-1">
                         <Label
                             htmlFor="pc-window-start"
-                            className="text-[10px] uppercase tracking-[0.15em] text-muted-foreground"
+                            className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground"
                         >
                             Or a custom window — from
                         </Label>
@@ -202,13 +202,13 @@ export default function ShootPreferences({ days, windows, onChange }) {
                             type="time"
                             value={customStart}
                             onChange={(e) => setCustomStart(e.target.value)}
-                            className="mt-1 h-12 border-white/10 bg-background/60 focus-visible:ring-primary"
+                            className="mt-1 h-12 border-border bg-background/60 focus-visible:ring-primary"
                         />
                     </div>
                     <div className="flex-1">
                         <Label
                             htmlFor="pc-window-end"
-                            className="text-[10px] uppercase tracking-[0.15em] text-muted-foreground"
+                            className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground"
                         >
                             to
                         </Label>
@@ -218,7 +218,7 @@ export default function ShootPreferences({ days, windows, onChange }) {
                             type="time"
                             value={customEnd}
                             onChange={(e) => setCustomEnd(e.target.value)}
-                            className="mt-1 h-12 border-white/10 bg-background/60 focus-visible:ring-primary"
+                            className="mt-1 h-12 border-border bg-background/60 focus-visible:ring-primary"
                         />
                     </div>
                     <button
@@ -226,7 +226,7 @@ export default function ShootPreferences({ days, windows, onChange }) {
                         data-testid={IDS.customAdd}
                         onClick={addCustom}
                         disabled={full}
-                        className="inline-flex min-h-[3rem] items-center justify-center gap-1.5 rounded-full border border-white/10 px-4 text-sm text-muted-foreground transition-colors duration-200 hover:border-primary/40 hover:text-primary disabled:opacity-40"
+                        className="inline-flex min-h-[3rem] items-center justify-center gap-1.5 rounded-full border border-border px-4 text-meta text-muted-foreground transition-colors duration-200 hover:border-primary/40 hover:text-primary disabled:opacity-40"
                     >
                         <Plus className="h-4 w-4" />
                         Add
@@ -234,9 +234,9 @@ export default function ShootPreferences({ days, windows, onChange }) {
                 </div>
 
                 {customError && (
-                    <p className="mt-2 text-sm text-destructive">{customError}</p>
+                    <p className="mt-2 text-meta text-destructive">{customError}</p>
                 )}
-                <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+                <p className="mt-2 text-meta leading-relaxed text-muted-foreground">
                     {picked.length === 0
                         ? "Any time of day works. Pick windows if only some hours suit you."
                         : "Slots can only be created inside these windows, so nobody books a shoot across your busiest hour."}

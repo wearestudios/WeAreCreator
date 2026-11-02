@@ -9,7 +9,6 @@
 // The score's breakdown is one click away on every card. A brand that cannot
 // see why somebody was suggested has been handed an oracle.
 import React, { useCallback, useEffect, useState } from "react";
-import { toast } from "sonner";
 import { notifyError, notifyInfo, notifySuccess } from "@/lib/feedback";
 import {
     ChevronDown,
@@ -71,7 +70,7 @@ function ScoreBreakdown({ row }) {
                 type="button"
                 onClick={() => setOpen((v) => !v)}
                 aria-expanded={open}
-                className="-my-2 inline-flex min-h-[2.75rem] items-center gap-1 py-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground transition-colors duration-200 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background md:my-0 md:min-h-0 md:py-0"
+                className="-my-2 inline-flex min-h-[2.75rem] items-center gap-1 py-2 text-eyebrow uppercase tracking-eyebrow text-muted-foreground transition-colors duration-200 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background md:my-0 md:min-h-0 md:py-0"
             >
                 Why this score
                 <ChevronDown
@@ -81,7 +80,7 @@ function ScoreBreakdown({ row }) {
             {open && (
                 <dl
                     data-testid={T.breakdown(row.user_id)}
-                    className="mt-2 grid grid-cols-[1fr_auto] gap-x-4 gap-y-1 border-l-2 border-white/10 pl-3 text-xs"
+                    className="mt-2 grid grid-cols-[1fr_auto] gap-x-4 gap-y-1 border-l-2 border-border pl-3 text-meta"
                 >
                     {entries.map(([key, value]) => (
                         <React.Fragment key={key}>
@@ -194,22 +193,22 @@ export function SuggestedCreators({ campaignId, canInvite = false }) {
     return (
         <section
             data-testid={T.section}
-            className="border-t border-white/10 py-12 md:py-16"
+            className="border-t border-border py-12 md:py-16"
         >
             <div className="flex flex-wrap items-end justify-between gap-4">
                 <div>
-                    <div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+                    <div className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                         Go and ask
                     </div>
                     <h2
                         data-testid={T.heading}
-                        className="mt-2 font-serif text-fluid-4xl tracking-tight"
+                        className="mt-2 font-serif text-h1 tracking-tight"
                     >
                         Suggested creators
                     </h2>
                     <p
                         data-testid={T.explainer}
-                        className="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground"
+                        className="mt-2 max-w-2xl text-body leading-relaxed text-muted-foreground"
                     >
                         Verified creators ranked against this brief — what they cover, where
                         they are, how their audience fits the budget, and whether they've
@@ -220,9 +219,9 @@ export function SuggestedCreators({ campaignId, canInvite = false }) {
                 {tier?.label && (
                     <div
                         data-testid={T.tier}
-                        className="rounded-md border border-white/10 bg-background/40 px-4 py-3 text-xs text-muted-foreground"
+                        className="rounded-md border border-border bg-background/40 px-4 py-3 text-meta text-muted-foreground"
                     >
-                        <div className="text-[10px] uppercase tracking-[0.2em]">
+                        <div className="text-eyebrow uppercase tracking-eyebrow">
                             {/* Whether the brand told us, or we read it off
                                 the fee. One of those is worth arguing with;
                                 the other is worth correcting on the profile,
@@ -256,7 +255,7 @@ export function SuggestedCreators({ campaignId, canInvite = false }) {
                 className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5"
             >
                 <div className="flex flex-col gap-1.5">
-                    <Label htmlFor="sc-city" className="text-[10px] uppercase tracking-[0.2em]">
+                    <Label htmlFor="sc-city" className="text-eyebrow uppercase tracking-eyebrow">
                         City
                     </Label>
                     <Input
@@ -268,7 +267,7 @@ export function SuggestedCreators({ campaignId, canInvite = false }) {
                     />
                 </div>
                 <div className="flex flex-col gap-1.5">
-                    <Label htmlFor="sc-niche" className="text-[10px] uppercase tracking-[0.2em]">
+                    <Label htmlFor="sc-niche" className="text-eyebrow uppercase tracking-eyebrow">
                         Niche
                     </Label>
                     <Input
@@ -284,7 +283,7 @@ export function SuggestedCreators({ campaignId, canInvite = false }) {
                     labelled micro / mid / macro. A brand that told us "micro"
                     in onboarding had to work out which numbers meant that. */}
                 <div className="flex flex-col gap-1.5">
-                    <Label htmlFor="sc-tier" className="text-[10px] uppercase tracking-[0.2em]">
+                    <Label htmlFor="sc-tier" className="text-eyebrow uppercase tracking-eyebrow">
                         Audience size
                     </Label>
                     <Select
@@ -344,13 +343,13 @@ export function SuggestedCreators({ campaignId, canInvite = false }) {
             </form>
 
             {error ? (
-                <p data-testid={T.error} className="mt-8 text-sm text-state-pending">
+                <p data-testid={T.error} className="mt-8 text-meta text-state-pending">
                     {error}
                 </p>
             ) : loading && !data ? (
                 <div
                     data-testid={T.loading}
-                    className="mt-8 flex items-center gap-2 text-sm text-muted-foreground"
+                    className="mt-8 flex items-center gap-2 text-meta text-muted-foreground"
                 >
                     <Loader2 className="h-4 w-4 animate-spin" />
                     Ranking the roster…
@@ -358,7 +357,7 @@ export function SuggestedCreators({ campaignId, canInvite = false }) {
             ) : rows.length === 0 ? (
                 <p
                     data-testid={T.empty}
-                    className="mt-8 max-w-xl text-sm leading-relaxed text-muted-foreground"
+                    className="mt-8 max-w-xl text-body leading-relaxed text-muted-foreground"
                 >
                     Nobody left to suggest for this brief. Either everyone who fits has
                     already applied or been invited, or the filters are narrower than the
@@ -379,7 +378,7 @@ export function SuggestedCreators({ campaignId, canInvite = false }) {
                                 <li
                                     key={row.user_id}
                                     data-testid={T.card(row.user_id)}
-                                    className="flex flex-col gap-4 rounded-lg border border-white/10 bg-card p-5 grain-surface"
+                                    className="flex flex-col gap-4 rounded-lg border border-border bg-card p-5 grain-surface"
                                 >
                                     <div className="flex items-start gap-3">
                                         {row.profile_image_url ? (
@@ -387,16 +386,16 @@ export function SuggestedCreators({ campaignId, canInvite = false }) {
                                                 src={mediaUrl(row.profile_image_url)}
                                                 alt=""
                                                 loading="lazy"
-                                                className="aspect-square h-11 w-11 flex-none rounded-full border border-white/10 object-cover"
+                                                className="aspect-square h-11 w-11 flex-none rounded-full border border-border object-cover"
                                             />
                                         ) : (
-                                            <span className="h-11 w-11 flex-none rounded-full border border-white/10 bg-white/5" />
+                                            <span className="h-11 w-11 flex-none rounded-full border border-border bg-muted" />
                                         )}
                                         <div className="min-w-0 flex-1">
-                                            <div className="font-serif text-xl leading-tight">
+                                            <div className="font-serif text-h3 leading-tight">
                                                 {row.name || "Creator"}
                                             </div>
-                                            <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                                            <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-meta text-muted-foreground">
                                                 {row.instagram_handle && (
                                                     <a
                                                         href={
@@ -439,7 +438,7 @@ export function SuggestedCreators({ campaignId, canInvite = false }) {
                                             className="flex-none text-right"
                                             title="Match score out of 100"
                                         >
-                                            <div className="inline-flex items-baseline gap-0.5 font-serif text-2xl text-primary">
+                                            <div className="inline-flex items-baseline gap-0.5 font-serif text-h3 text-primary">
                                                 <Sparkles className="h-3.5 w-3.5" />
                                                 {Math.round(row.match_score)}
                                             </div>
@@ -448,7 +447,7 @@ export function SuggestedCreators({ campaignId, canInvite = false }) {
 
                                     <p
                                         data-testid={T.reason(row.user_id)}
-                                        className="text-sm leading-relaxed text-foreground/85"
+                                        className="text-body leading-relaxed text-foreground/85"
                                     >
                                         {row.match_reason}
                                     </p>

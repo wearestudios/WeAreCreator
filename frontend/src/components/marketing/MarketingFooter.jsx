@@ -43,7 +43,7 @@ export function MarketingFooter() {
     return (
         <footer
             data-testid={IDS.root}
-            className="border-t border-white/10 bg-card/40"
+            className="border-t border-border bg-card/40"
         >
             <div className="mx-auto max-w-7xl px-6 py-14 md:py-16">
                 <div className="grid gap-10 md:grid-cols-12">
@@ -69,7 +69,7 @@ export function MarketingFooter() {
                     >
                         {FOOTER_COLUMNS.map((col) => (
                             <div key={col.heading}>
-                                <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground/70">
+                                <p className="text-meta font-medium text-foreground">
                                     {col.heading}
                                 </p>
                                 <ul className="mt-4 space-y-3">
@@ -84,7 +84,7 @@ export function MarketingFooter() {
                     </nav>
                 </div>
 
-                <div className="mt-12 flex flex-col gap-3 border-t border-white/10 pt-7 sm:flex-row sm:items-center sm:justify-between">
+                <div className="mt-12 flex flex-col gap-3 border-t border-border pt-7 sm:flex-row sm:items-center sm:justify-between">
                     {/* **WeAre Studios, linked, and this overrides a note
                         that argued the other way.** The line named "WeAre
                         Monk" on the reasoning that who owns the thing is a

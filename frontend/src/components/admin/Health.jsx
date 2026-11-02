@@ -14,18 +14,16 @@ import {
     ArrowRight,
     CheckCircle2,
     Download,
-    Loader2,
 } from "lucide-react";
 
 import { api, API_BASE } from "@/lib/api";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Button } from "@/components/ui/button";
 import {
     ADMIN_EXPORTS as EXPORT_IDS,
     ADMIN_HEALTH as IDS,
     ADMIN_INTEL as INTEL_IDS,
 } from "@/constants/testIds";
-import { Panel, Section, Stat } from "@/components/admin/DetailPage";
+import { Panel, Section } from "@/components/admin/DetailPage";
 import { DateFilter, endOfDay, formatCompact } from "@/components/admin/shared";
 import { TEXT } from "@/components/admin/console/tokens";
 
@@ -77,7 +75,7 @@ export function HealthPanel() {
                 data.critical > 0 && (
                     <span
                         data-testid={IDS.total}
-                        className="inline-flex items-center gap-1.5 rounded-full border border-destructive/30 bg-destructive/10 px-2.5 py-1 text-[10px] uppercase tracking-[0.18em] text-destructive"
+                        className="inline-flex items-center gap-1.5 rounded-full border border-destructive/30 bg-destructive/10 px-2.5 py-1 text-eyebrow uppercase tracking-eyebrow text-destructive"
                     >
                         <AlertTriangle className="h-3 w-3" />
                         {data.critical} urgent
@@ -91,7 +89,7 @@ export function HealthPanel() {
                     className="flex items-center gap-4 rounded-md border border-state-approved/25 bg-state-approved/[0.07] px-6 py-8"
                 >
                     <CheckCircle2 className="h-5 w-5 flex-none text-state-approved" />
-                    <p className="text-sm leading-relaxed text-muted-foreground">
+                    <p className="text-body leading-relaxed text-muted-foreground">
                         Nothing is overdue. Every campaign is filling, every accepted
                         creator has a slot, and nobody is waiting on us.
                     </p>
@@ -118,9 +116,9 @@ function HealthCheck({ check }) {
     // it the console overflowed 24px at 375px.
     return (
         <Panel data-testid={IDS.check(check.key)} className="min-w-0 overflow-hidden p-0">
-            <div className="flex items-start justify-between gap-4 border-b border-tint/10 px-5 py-4">
+            <div className="flex items-start justify-between gap-4 border-b border-border px-5 py-4">
                 <div className="min-w-0">
-                    <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                    <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                         {check.label}
                         <span
                             data-testid={IDS.checkCount(check.key)}
@@ -134,13 +132,13 @@ function HealthCheck({ check }) {
                     {/* The threshold, said out loud. Otherwise the only way to
                         know why something is on this list is to read the
                         server. */}
-                    <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
+                    <p className="mt-1.5 text-body leading-relaxed text-muted-foreground">
                         {check.blurb}
                     </p>
                 </div>
             </div>
 
-            <ul className="divide-y divide-tint/5">
+            <ul className="divide-y divide-divider">
                 {shown.map((item) => (
                     // **A stretched link, not a wrapping one.** A row can now
                     // carry its own actions — "invite creators", "extend the
@@ -167,11 +165,11 @@ function HealthCheck({ check }) {
                                 <Link
                                     to={item.href}
                                     data-testid={IDS.item(item.id)}
-                                    className="block truncate text-sm after:absolute after:inset-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                                    className="block truncate text-meta after:absolute after:inset-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
                                 >
                                     {item.label}
                                 </Link>
-                                <span className="block truncate text-sm text-muted-foreground">
+                                <span className="block truncate text-meta text-muted-foreground">
                                     {item.detail}
                                 </span>
                             </span>
@@ -183,7 +181,7 @@ function HealthCheck({ check }) {
                             {item.slots_short > 0 && (
                                 <span
                                     data-testid={IDS.shortfall(item.id)}
-                                    className={`flex-none rounded border border-state-pending/30 bg-state-pending/10 px-1.5 py-0.5 ${TEXT.meta} text-state-pending`}
+                                    className={`flex-none rounded border border-state-pending/30 bg-state-pending-wash px-1.5 py-0.5 ${TEXT.meta} text-state-pending`}
                                 >
                                     {item.slots_short} short
                                     {item.days_left != null ? ` · ${item.days_left}d` : ""}
@@ -205,7 +203,7 @@ function HealthCheck({ check }) {
                                         // `text-sm`, not the metadata step:
                                         // these are things to press, and the
                                         // console reserves 12px for facts.
-                                        className="rounded border border-tint/10 px-2 py-1 text-sm text-muted-foreground transition-colors duration-150 hover:border-primary/40 hover:text-primary-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                        className="rounded border border-border px-2 py-1 text-meta text-muted-foreground transition-colors duration-150 hover:border-primary/40 hover:text-primary-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                                     >
                                         {action.label}
                                     </Link>
@@ -221,7 +219,7 @@ function HealthCheck({ check }) {
                     type="button"
                     onClick={() => setExpanded(true)}
                     data-testid={IDS.more(check.key)}
-                    className="min-h-[2.75rem] w-full border-t border-tint/10 px-5 py-3 text-left text-xs uppercase tracking-[0.18em] text-muted-foreground transition-colors duration-150 hover:text-primary-ink md:min-h-0"
+                    className="min-h-[2.75rem] w-full border-t border-border px-5 py-3 text-left text-eyebrow uppercase tracking-eyebrow text-muted-foreground transition-colors duration-150 hover:text-primary-ink md:min-h-0"
                 >
                     {hidden} more
                 </button>
@@ -336,7 +334,7 @@ function SplitBar({ a, b, labelA, labelB }) {
             <div className="mt-4 flex h-2 w-full overflow-hidden rounded-full bg-tint/10">
                 <div className="bg-primary" style={{ width: `${pct}%` }} />
             </div>
-            <div className="mt-3 flex items-baseline justify-between text-sm">
+            <div className="mt-3 flex items-baseline justify-between text-meta">
                 <span className="text-primary-ink">
                     {formatCompact(a)} {labelA}
                 </span>
@@ -350,9 +348,9 @@ function SplitBar({ a, b, labelA, labelB }) {
 
 const Card = ({ title, sub, testid, children }) => (
     <Panel data-testid={testid}>
-        <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">{title}</p>
+        <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">{title}</p>
         {children}
-        {sub && <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{sub}</p>}
+        {sub && <p className="mt-2 text-body leading-relaxed text-muted-foreground">{sub}</p>}
     </Panel>
 );
 
@@ -478,7 +476,7 @@ export function ExportsPanel() {
                                 setTo(null);
                             }}
                             data-testid={EXPORT_IDS.clearDates}
-                            className="min-h-[2.75rem] text-xs uppercase tracking-[0.18em] text-muted-foreground transition-colors duration-150 hover:text-primary-ink md:min-h-0"
+                            className="min-h-[2.75rem] text-eyebrow uppercase tracking-eyebrow text-muted-foreground transition-colors duration-150 hover:text-primary-ink md:min-h-0"
                         >
                             Clear dates
                         </button>
@@ -495,12 +493,12 @@ export function ExportsPanel() {
                         key={e.key}
                         href={href(e.key)}
                         data-testid={EXPORT_IDS.kind(e.key)}
-                        className="group flex min-h-[2.75rem] items-center gap-3 rounded-md border border-tint/10 bg-card px-4 py-3.5 transition-colors duration-150 hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                        className="group flex min-h-[2.75rem] items-center gap-3 rounded-md border border-border bg-card px-4 py-3.5 transition-colors duration-150 hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                     >
                         <Download className="h-4 w-4 flex-none text-muted-foreground transition-colors duration-150 group-hover:text-primary-ink" />
                         <span className="min-w-0 flex-1">
-                            <span className="block text-sm">{e.label}</span>
-                            <span className="block truncate text-sm text-muted-foreground">
+                            <span className="block text-meta">{e.label}</span>
+                            <span className="block truncate text-meta text-muted-foreground">
                                 {e.note}
                             </span>
                         </span>
@@ -512,7 +510,7 @@ export function ExportsPanel() {
                 the building; the person clicking should know what is in them. */}
             <p
                 data-testid={EXPORT_IDS.note}
-                className="mt-4 text-sm leading-relaxed text-muted-foreground"
+                className="mt-4 text-body leading-relaxed text-muted-foreground"
             >
                 {from || to
                     ? "Filtered to the dates above. "

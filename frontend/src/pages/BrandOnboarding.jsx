@@ -64,8 +64,6 @@ import {
     CONTENT_TYPES,
     FOLLOWER_TIERS,
 } from "@/lib/followerTiers";
-
-const FOLLOWER_TIER_OPTIONS = [...FOLLOWER_TIERS, ANY_TIER];
 import ImageUploadField, {
     FALLBACK_IMAGE_MIMES,
     FALLBACK_MAX_IMAGE_BYTES,
@@ -78,6 +76,8 @@ import { IST } from "@/lib/time";
 import { CATEGORY_OPTIONS } from "@/lib/categories";
 import DeleteAccount from "@/components/account/DeleteAccount";
 import HomepageLogoConsent from "@/components/brand/HomepageLogoConsent";
+
+const FOLLOWER_TIER_OPTIONS = [...FOLLOWER_TIERS, ANY_TIER];
 
 // Mirrors the server's `BusinessType`. A value not in this list is a 422.
 const BUSINESS_TYPE_OPTIONS = [
@@ -122,7 +122,7 @@ const looksLikeEmail = (v) => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v.trim());
 const STATE_PRESENTATION = {
     unsubmitted: {
         Icon: ShieldCheck,
-        tone: "border-white/10 bg-card/60 text-muted-foreground",
+        tone: "border-border bg-card/60 text-muted-foreground",
         accent: "text-primary",
         title: "Not sent for verification yet",
         body: "Fill in the business details below and upload one document. We usually come back within 48 hours.",
@@ -136,7 +136,7 @@ const STATE_PRESENTATION = {
     },
     verified: {
         Icon: CheckCircle2,
-        tone: "border-state-approved/30 bg-state-approved/10 text-state-approved",
+        tone: "border-state-approved/30 bg-state-approved-wash text-state-approved",
         accent: "text-state-approved",
         title: "Verified",
         body: "Your briefs can go live and you can reach creators directly.",
@@ -162,20 +162,20 @@ function StateBanner({ state, reason, submittedAt }) {
             <div className="flex items-start gap-3">
                 <Icon className={"mt-0.5 h-4 w-4 flex-none " + p.accent} />
                 <div className="min-w-0">
-                    <p className="text-xs uppercase tracking-[0.2em]">{p.title}</p>
-                    <p className="mt-2 text-sm leading-relaxed">{p.body}</p>
+                    <p className="text-eyebrow uppercase tracking-eyebrow">{p.title}</p>
+                    <p className="mt-2 text-body leading-relaxed">{p.body}</p>
                     {/* The reason we refused, quoted. "Not verified" on its own
                       * just generates a support email. */}
                     {state === "rejected" && reason && (
                         <p
                             data-testid={IDS.rejectionReason}
-                            className="mt-3 rounded-md bg-destructive/10 p-3 text-sm leading-relaxed"
+                            className="mt-3 rounded-md bg-destructive/10 p-3 text-body leading-relaxed"
                         >
                             {reason}
                         </p>
                     )}
                     {state === "pending_verification" && submittedAt && (
-                        <p className="mt-2 text-xs opacity-80">
+                        <p className="mt-2 text-meta opacity-80">
                             Sent{" "}
                             {new Date(submittedAt).toLocaleDateString("en-IN", {
                                 day: "2-digit",
@@ -209,7 +209,7 @@ function Field({
         <div>
             <Label
                 htmlFor={`bv-${name}`}
-                className="text-xs uppercase tracking-[0.15em] text-muted-foreground"
+                className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground"
             >
                 {label}
             </Label>
@@ -227,8 +227,8 @@ function Field({
                     aria-describedby={problem ? `bv-${name}-error` : undefined}
                     className={
                         (multiline
-                            ? "min-h-[92px] border-white/10 bg-card/60 "
-                            : "h-11 border-white/10 bg-card/60 ") +
+                            ? "min-h-[92px] border-border bg-card/60 "
+                            : "h-11 border-border bg-card/60 ") +
                         (Icon && !multiline ? "pl-9 " : "") +
                         (problem
                             ? "border-destructive/60 focus-visible:ring-destructive"
@@ -241,12 +241,12 @@ function Field({
                 <p
                     id={`bv-${name}-error`}
                     data-testid={IDS.fieldError(name)}
-                    className="mt-2 text-xs text-destructive"
+                    className="mt-2 text-meta text-destructive"
                 >
                     {problem}
                 </p>
             ) : (
-                hint && <p className="mt-2 text-xs text-muted-foreground">{hint}</p>
+                hint && <p className="mt-2 text-meta text-muted-foreground">{hint}</p>
             )}
         </div>
     );
@@ -563,7 +563,7 @@ export default function BrandOnboarding() {
                         sections={[{ fields: 2 }, { fields: 1 }]}
                         actions={1}
                     />
-                    <div className="mt-8 border-t border-white/10 pt-8">
+                    <div className="mt-8 border-t border-border pt-8">
                         <VerificationDocumentsSkeleton />
                     </div>
                 </main>
@@ -596,13 +596,13 @@ export default function BrandOnboarding() {
         >
             <Navbar />
             <main className="mx-auto max-w-3xl px-6 py-14 md:py-20">
-                <p className="text-xs uppercase tracking-[0.2em] text-primary">
+                <p className="text-eyebrow uppercase tracking-eyebrow text-primary">
                     Brand · Onboarding
                 </p>
-                <h1 className="mt-4 font-serif text-fluid-5xl leading-none tracking-tight">
+                <h1 className="mt-4 font-serif text-h1 leading-none tracking-tight">
                     Tell us about your brand.
                 </h1>
-                <p className="mt-6 max-w-xl text-sm leading-relaxed text-muted-foreground">
+                <p className="mt-6 max-w-xl text-body leading-relaxed text-muted-foreground">
                     The first two fields are enough to start drafting a brief.
                     Verification is what lets one go live in front of creators —
                     do it now or come back to it.
@@ -615,9 +615,9 @@ export default function BrandOnboarding() {
                     <a
                         href={brandPageUrl(user.id)}
                         target="_blank"
-                        rel="noopener"
+                        rel="noopener noreferrer"
                         data-testid={BRAND_PAGE.preview}
-                        className="mt-6 inline-flex min-h-[2.75rem] items-center gap-2 text-sm text-primary transition-colors duration-200 hover:text-primary-hover"
+                        className="mt-6 inline-flex min-h-[2.75rem] items-center gap-2 text-meta text-primary transition-colors duration-200 hover:text-primary-hover"
                     >
                         <ExternalLink className="h-4 w-4" />
                         View your public page
@@ -625,7 +625,7 @@ export default function BrandOnboarding() {
                 )}
 
                 {loadError && (
-                    <p className="mt-6 text-sm text-destructive">{loadError}</p>
+                    <p className="mt-6 text-meta text-destructive">{loadError}</p>
                 )}
 
                 <div className="mt-10 space-y-4">
@@ -649,7 +649,7 @@ export default function BrandOnboarding() {
 
                 <form onSubmit={onSave} noValidate className="mt-10 space-y-10">
                     <section className="space-y-5">
-                        <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                        <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                             Basics
                         </p>
 
@@ -697,7 +697,7 @@ export default function BrandOnboarding() {
                         />
 
                         <div>
-                            <Label className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                            <Label className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                                 Category
                             </Label>
                             <Select
@@ -707,7 +707,7 @@ export default function BrandOnboarding() {
                             >
                                 <SelectTrigger
                                     data-testid="brand-onb-category-trigger"
-                                    className="mt-2 h-11 border-white/10 bg-card/60"
+                                    className="mt-2 h-11 border-border bg-card/60"
                                 >
                                     <SelectValue placeholder="Pick a category" />
                                 </SelectTrigger>
@@ -728,7 +728,7 @@ export default function BrandOnboarding() {
                         <div>
                             <Label
                                 htmlFor="brand-tagline"
-                                className="text-xs uppercase tracking-[0.15em] text-muted-foreground"
+                                className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground"
                             >
                                 In one line
                             </Label>
@@ -738,14 +738,14 @@ export default function BrandOnboarding() {
                                 maxLength={90}
                                 value={tagline}
                                 onChange={(e) => setTagline(e.target.value)}
-                                className="mt-2 h-11 border-white/10 bg-card/60 focus-visible:ring-primary"
+                                className="mt-2 h-11 border-border bg-card/60 focus-visible:ring-primary"
                                 placeholder="Independent running store, two shops and a weekly club run"
                             />
                             {/* This is the line that goes on every campaign
                                 card you post. A card carrying only a name
                                 makes every unfamiliar brand look the same,
                                 which is most of them to most creators. */}
-                            <p className="mt-2 flex items-baseline justify-between gap-3 text-xs text-muted-foreground">
+                            <p className="mt-2 flex items-baseline justify-between gap-3 text-meta text-muted-foreground">
                                 <span>Shown on every campaign card you post.</span>
                                 <span className="flex-none tabular-nums">
                                     {tagline.length}/90
@@ -756,7 +756,7 @@ export default function BrandOnboarding() {
                         <div>
                             <Label
                                 htmlFor="brand-about"
-                                className="text-xs uppercase tracking-[0.15em] text-muted-foreground"
+                                className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground"
                             >
                                 About your business
                             </Label>
@@ -767,17 +767,17 @@ export default function BrandOnboarding() {
                                 maxLength={1500}
                                 value={about}
                                 onChange={(e) => setAbout(e.target.value)}
-                                className="mt-2 min-h-[120px] border-white/10 bg-card/60 focus-visible:ring-primary"
+                                className="mt-2 min-h-[120px] border-border bg-card/60 focus-visible:ring-primary"
                                 placeholder="What you make or serve, how long you've been going, what you're known for. Creators read this before deciding whether to pitch."
                             />
-                            <p className="mt-2 text-xs text-muted-foreground">
+                            <p className="mt-2 text-meta text-muted-foreground">
                                 Shown on your public page. Not part of verification —
                                 write it in your own words.
                             </p>
                         </div>
 
                         <div>
-                            <Label className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                            <Label className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                                 Home city
                             </Label>
                             {/* A closed list, the same one creators and campaigns
@@ -786,7 +786,7 @@ export default function BrandOnboarding() {
                             <Select value={city} onValueChange={setCity}>
                                 <SelectTrigger
                                     data-testid={BRAND_PAGE.city}
-                                    className="mt-2 h-11 border-white/10 bg-card/60"
+                                    className="mt-2 h-11 border-border bg-card/60"
                                 >
                                     <SelectValue placeholder="Pick a city" />
                                 </SelectTrigger>
@@ -803,14 +803,14 @@ export default function BrandOnboarding() {
 
                     <section className="space-y-4">
                         <div className="flex flex-wrap items-baseline justify-between gap-2">
-                            <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                            <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                                 Outlets
                             </p>
-                            <span className="text-xs text-muted-foreground">
+                            <span className="text-meta text-muted-foreground">
                                 Shown publicly — optional
                             </span>
                         </div>
-                        <p className="text-sm leading-relaxed text-muted-foreground">
+                        <p className="text-body leading-relaxed text-muted-foreground">
                             The places a creator would actually turn up to. Your
                             registered address stays private and is never shown here.
                         </p>
@@ -819,7 +819,7 @@ export default function BrandOnboarding() {
                             <div
                                 key={i}
                                 data-testid={BRAND_PAGE.outlet(i)}
-                                className="rounded-md border border-white/10 bg-card/60 p-4 space-y-4"
+                                className="rounded-md border border-border bg-card/60 p-4 space-y-4"
                             >
                                 <div className="flex items-start gap-3">
                                     <Input
@@ -827,7 +827,7 @@ export default function BrandOnboarding() {
                                         value={o.name || ""}
                                         maxLength={140}
                                         onChange={(e) => patchOutlet(i, { name: e.target.value })}
-                                        className="h-11 border-white/10 bg-transparent focus-visible:ring-primary"
+                                        className="h-11 border-border bg-transparent focus-visible:ring-primary"
                                         placeholder="e.g. Indiranagar"
                                     />
                                     <button
@@ -866,14 +866,14 @@ export default function BrandOnboarding() {
                                         value={o.area || ""}
                                         maxLength={120}
                                         onChange={(e) => patchOutlet(i, { area: e.target.value })}
-                                        className="h-11 border-white/10 bg-transparent focus-visible:ring-primary"
+                                        className="h-11 border-border bg-transparent focus-visible:ring-primary"
                                         placeholder="Neighbourhood"
                                     />
                                     <Select
                                         value={o.city || ""}
                                         onValueChange={(v) => patchOutlet(i, { city: v })}
                                     >
-                                        <SelectTrigger className="h-11 border-white/10 bg-transparent">
+                                        <SelectTrigger className="h-11 border-border bg-transparent">
                                             <SelectValue placeholder="City" />
                                         </SelectTrigger>
                                         <SelectContent>
@@ -893,7 +893,7 @@ export default function BrandOnboarding() {
                             variant="outline"
                             data-testid={BRAND_PAGE.outletAdd}
                             onClick={addOutlet}
-                            className="h-11 rounded-full border-white/15 bg-transparent hover:bg-white/5"
+                            className="h-11 rounded-full border-input bg-transparent hover:bg-muted"
                         >
                             <MapPin className="mr-2 h-4 w-4" />
                             Add an outlet
@@ -914,7 +914,7 @@ export default function BrandOnboarding() {
                         profile, which is the half it is about. */}
                     <section className="space-y-5">
                         <div>
-                            <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                            <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                                 Being named as a customer
                             </p>
                         </div>
@@ -932,10 +932,10 @@ export default function BrandOnboarding() {
                         inferred from a budget. */}
                     <section className="space-y-5">
                         <div>
-                            <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                            <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                                 What you're looking for
                             </p>
-                            <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+                            <p className="mt-2 text-meta leading-relaxed text-muted-foreground">
                                 All optional. Answer what you know and we'll rank
                                 creator suggestions on it — you can change any of it
                                 later.
@@ -943,7 +943,7 @@ export default function BrandOnboarding() {
                         </div>
 
                         <div>
-                            <Label className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                            <Label className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                                 Content you need
                             </Label>
                             <div className="mt-3 flex flex-wrap gap-2">
@@ -964,10 +964,10 @@ export default function BrandOnboarding() {
                                                 )
                                             }
                                             className={
-                                                "min-h-[2.75rem] rounded-full border px-4 text-sm transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background " +
+                                                "min-h-[2.75rem] rounded-full border px-4 text-meta transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background " +
                                                 (on
                                                     ? "border-primary bg-primary/15 text-primary"
-                                                    : "border-white/10 bg-card/60 text-muted-foreground hover:border-white/25")
+                                                    : "border-border bg-card/60 text-muted-foreground hover:border-tint/30")
                                             }
                                         >
                                             {c.label}
@@ -979,13 +979,13 @@ export default function BrandOnboarding() {
 
                         <div className="grid gap-5 md:grid-cols-2">
                             <div>
-                                <Label className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                                <Label className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                                     Creator size you work with
                                 </Label>
                                 <Select value={followerTier} onValueChange={setFollowerTier}>
                                     <SelectTrigger
                                         data-testid="brand-onb-tier-trigger"
-                                        className="mt-2 h-11 border-white/10 bg-card/60 focus:ring-primary"
+                                        className="mt-2 h-11 border-border bg-card/60 focus:ring-primary"
                                     >
                                         <SelectValue placeholder="No preference yet" />
                                     </SelectTrigger>
@@ -1007,13 +1007,13 @@ export default function BrandOnboarding() {
                             </div>
 
                             <div>
-                                <Label className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                                <Label className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                                     Typical budget per creator
                                 </Label>
                                 <Select value={budgetBand} onValueChange={setBudgetBand}>
                                     <SelectTrigger
                                         data-testid="brand-onb-budget-trigger"
-                                        className="mt-2 h-11 border-white/10 bg-card/60 focus:ring-primary"
+                                        className="mt-2 h-11 border-border bg-card/60 focus:ring-primary"
                                     >
                                         <SelectValue placeholder="Not sure yet" />
                                     </SelectTrigger>
@@ -1033,7 +1033,7 @@ export default function BrandOnboarding() {
                                     read as a commitment and get argued about.
                                     It stands in for the fee when a brief has
                                     none of its own. */}
-                                <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+                                <p className="mt-2 text-meta leading-relaxed text-muted-foreground">
                                     A guide for ranking, never quoted to a creator.
                                 </p>
                             </div>
@@ -1042,23 +1042,23 @@ export default function BrandOnboarding() {
 
                     <section className="space-y-4">
                         <div className="flex items-baseline justify-between">
-                            <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                            <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                                 Cities &amp; areas you operate in
                             </p>
-                            <span className="text-xs text-muted-foreground">
+                            <span className="text-meta text-muted-foreground">
                                 Pick or type — add several
                             </span>
                         </div>
                         <div
                             data-testid="brand-onb-areas-editor"
-                            className="rounded-md border border-white/10 bg-card/60 p-3 focus-within:border-primary/50"
+                            className="rounded-md border border-border bg-card/60 p-3 focus-within:border-primary/50"
                         >
                             <div className="flex flex-wrap gap-2">
                                 {areas.map((a) => (
                                     <span
                                         key={a}
                                         data-testid={`brand-onb-area-chip-${a}`}
-                                        className="group inline-flex items-center gap-1.5 rounded-full bg-primary/15 px-3 py-1 text-xs uppercase tracking-[0.15em] text-primary"
+                                        className="group inline-flex items-center gap-1.5 rounded-full bg-primary/15 px-3 py-1 text-eyebrow uppercase tracking-eyebrow text-primary"
                                     >
                                         <MapPin className="h-3 w-3" />
                                         {a}
@@ -1083,7 +1083,7 @@ export default function BrandOnboarding() {
                                         areaInput.trim() && addArea(areaInput)
                                     }
                                     disabled={fieldsLocked}
-                                    className="min-w-[140px] flex-1 bg-transparent px-2 py-1 text-sm outline-none placeholder:text-muted-foreground"
+                                    className="min-w-[140px] flex-1 bg-transparent px-2 py-1 text-meta outline-none placeholder:text-muted-foreground"
                                     placeholder={
                                         areas.length === 0
                                             ? "Add a city — press Enter"
@@ -1096,7 +1096,7 @@ export default function BrandOnboarding() {
                           * real state on a page where the field looks like a
                           * text box that swallowed the input. */}
                         {areas.length === 0 && suggestions.length === 0 && (
-                            <p className="text-xs text-muted-foreground">
+                            <p className="text-meta text-muted-foreground">
                                 Type a city and press Enter to add it.
                             </p>
                         )}
@@ -1108,7 +1108,7 @@ export default function BrandOnboarding() {
                                         type="button"
                                         onClick={() => addArea(s)}
                                         data-testid={`brand-onb-area-suggest-${s.replace(/\s+/g, "-")}`}
-                                        className="rounded-full border border-white/10 bg-transparent px-3 py-1 text-xs uppercase tracking-[0.15em] text-muted-foreground transition-colors duration-200 hover:border-primary/40 hover:text-primary"
+                                        className="rounded-full border border-border bg-transparent px-3 py-1 text-eyebrow uppercase tracking-eyebrow text-muted-foreground transition-colors duration-200 hover:border-primary/40 hover:text-primary"
                                     >
                                         + {s}
                                     </button>
@@ -1117,12 +1117,12 @@ export default function BrandOnboarding() {
                         )}
                     </section>
 
-                    <section className="space-y-5 border-t border-white/10 pt-10">
+                    <section className="space-y-5 border-t border-border pt-10">
                         <div>
-                            <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                            <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                                 The business
                             </p>
-                            <p className="mt-2 max-w-xl text-xs leading-relaxed text-muted-foreground">
+                            <p className="mt-2 max-w-xl text-meta leading-relaxed text-muted-foreground">
                                 What a reviewer checks your documents against.
                                 The name on the paperwork is often not the name
                                 on the door — we need both.
@@ -1141,7 +1141,7 @@ export default function BrandOnboarding() {
                         />
 
                         <div>
-                            <Label className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                            <Label className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                                 Business type
                             </Label>
                             <Select
@@ -1151,7 +1151,7 @@ export default function BrandOnboarding() {
                             >
                                 <SelectTrigger
                                     data-testid={IDS.field("business_type")}
-                                    className="mt-2 h-11 border-white/10 bg-card/60"
+                                    className="mt-2 h-11 border-border bg-card/60"
                                 >
                                     <SelectValue placeholder="Pick one" />
                                 </SelectTrigger>
@@ -1204,12 +1204,12 @@ export default function BrandOnboarding() {
                         </div>
                     </section>
 
-                    <section className="space-y-5 border-t border-white/10 pt-10">
+                    <section className="space-y-5 border-t border-border pt-10">
                         <div>
-                            <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                            <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                                 Who's asking
                             </p>
-                            <p className="mt-2 max-w-xl text-xs leading-relaxed text-muted-foreground">
+                            <p className="mt-2 max-w-xl text-meta leading-relaxed text-muted-foreground">
                                 This account is one named person at the
                                 business. Your WhatsApp number is already your
                                 login — this is the rest of it.
@@ -1254,15 +1254,15 @@ export default function BrandOnboarding() {
                     {error && (
                         <p
                             data-testid={IDS.saveError}
-                            className="text-sm text-destructive"
+                            className="text-meta text-destructive"
                         >
                             {error}
                         </p>
                     )}
 
                     {!fieldsLocked && (
-                        <div className="flex flex-col-reverse items-stretch gap-3 border-t border-white/10 pt-8 md:flex-row md:items-center md:justify-between">
-                            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <div className="flex flex-col-reverse items-stretch gap-3 border-t border-border pt-8 md:flex-row md:items-center md:justify-between">
+                            <div className="flex items-center gap-2 text-meta text-muted-foreground">
                                 <ShieldCheck className="h-4 w-4 flex-none text-primary" />
                                 Saving keeps what you've filled in — you don't
                                 have to finish in one go.
@@ -1297,7 +1297,7 @@ export default function BrandOnboarding() {
                 {/* Documents sit outside the form: each one uploads on its own
                   * the moment it is chosen, so putting them inside a form with
                   * a Save button would imply they are waiting for it. */}
-                <div className="mt-12 border-t border-white/10 pt-10">
+                <div className="mt-12 border-t border-border pt-10">
                     {verification ? (
                         <VerificationDocuments
                             verification={verification}
@@ -1310,8 +1310,8 @@ export default function BrandOnboarding() {
                 </div>
 
                 {!isVerified && (
-                    <div className="mt-10 border-t border-white/10 pt-10">
-                        <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                    <div className="mt-10 border-t border-border pt-10">
+                        <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                             {isPending ? "Already with us" : "Send it to us"}
                         </p>
 
@@ -1321,9 +1321,9 @@ export default function BrandOnboarding() {
                         {missing.length > 0 && (
                             <div
                                 data-testid={IDS.missingList}
-                                className="mt-4 rounded-md border border-state-pending/30 bg-state-pending/10 p-4"
+                                className="mt-4 rounded-md border border-state-pending/30 bg-state-pending-wash p-4"
                             >
-                                <p className="text-xs uppercase tracking-[0.15em] text-state-pending">
+                                <p className="text-eyebrow uppercase tracking-eyebrow text-state-pending">
                                     Still needed before we can check you
                                 </p>
                                 <ul className="mt-3 space-y-1.5">
@@ -1331,7 +1331,7 @@ export default function BrandOnboarding() {
                                         <li
                                             key={m.field}
                                             data-testid={IDS.missingField(m.field)}
-                                            className="text-sm text-state-pending/90"
+                                            className="text-meta text-state-pending/90"
                                         >
                                             · {m.label}
                                         </li>
@@ -1346,7 +1346,7 @@ export default function BrandOnboarding() {
                         {unsavedCount > 0 && (
                             <p
                                 data-testid={IDS.unsavedNote}
-                                className="mt-4 text-sm text-muted-foreground"
+                                className="mt-4 text-meta text-muted-foreground"
                             >
                                 {unsavedCount === 1
                                     ? "One detail is filled in but not saved yet"
@@ -1359,7 +1359,7 @@ export default function BrandOnboarding() {
                             (verification?.document_count || 0) === 0 && (
                                 <p
                                     data-testid={IDS.submitBlocked}
-                                    className="mt-4 text-sm text-state-pending"
+                                    className="mt-4 text-meta text-state-pending"
                                 >
                                     Everything's filled in — upload one document
                                     above and you're ready to send.
@@ -1369,7 +1369,7 @@ export default function BrandOnboarding() {
                         {submitError && (
                             <p
                                 data-testid={IDS.submitError}
-                                className="mt-4 text-sm text-destructive"
+                                className="mt-4 text-meta text-destructive"
                             >
                                 {submitError}
                             </p>

@@ -39,13 +39,14 @@ import React from "react";
 
 import { BANDS, LAYOUTS, RATIOS } from "./paths";
 
-/** The ink, where it is forced. Mirrored by `--weare-logo-ink` in index.css. */
-export const LOGO_INK = "#FF2731";
+/** The ink, where it is forced: the brand red (#FF2731), read from the one
+ *  constant `--weare-logo-ink` also reads, so the two cannot disagree. */
+export const LOGO_INK = "hsl(var(--brand-red))";
 
 const TONE_CLASS = {
     // Both rules live in index.css, keyed on the surface attribute.
     auto: "weare-logo",
-    white: "text-white",
+    white: "text-brand-white",
     brand: "",
 };
 

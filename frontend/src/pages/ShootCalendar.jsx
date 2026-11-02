@@ -80,19 +80,19 @@ function EntryRow({ entry }) {
         <li data-testid={IDS.entry(entry.id)}>
             <Link
                 to={entry.href}
-                className="flex items-start gap-3 rounded-md border border-white/10 bg-card/60 p-4 transition-colors duration-200 hover:border-primary/40"
+                className="flex items-start gap-3 rounded-md border border-border bg-card/60 p-4 transition-colors duration-200 hover:border-primary/40"
             >
-                <span className="w-16 flex-none font-serif text-sm leading-tight text-primary">
+                <span className="w-16 flex-none font-serif text-meta leading-tight text-primary">
                     {timeOf(entry.starts_at)}
                 </span>
                 <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm">{entry.creator_name}</span>
-                    <span className="mt-1 block truncate text-xs text-muted-foreground">
+                    <span className="block truncate text-meta">{entry.creator_name}</span>
+                    <span className="mt-1 block truncate text-meta text-muted-foreground">
                         {entry.campaign_title}
                         {entry.brand_name ? ` · ${entry.brand_name}` : ""}
                     </span>
                     {entry.area && (
-                        <span className="mt-1.5 inline-flex items-center gap-1 text-xs text-muted-foreground/80">
+                        <span className="mt-1.5 inline-flex items-center gap-1 text-meta text-muted-foreground/80">
                             <MapPin className="h-3 w-3" />
                             {entry.area}
                         </span>
@@ -101,8 +101,8 @@ function EntryRow({ entry }) {
                 {meta.label && (
                     <span
                         className={
-                            "flex-none rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-[0.15em] " +
-                            (meta.tone || "border-white/15 text-muted-foreground")
+                            "flex-none rounded-full border px-2 py-0.5 text-eyebrow uppercase tracking-eyebrow " +
+                            (meta.tone || "border-input text-muted-foreground")
                         }
                     >
                         {meta.label}
@@ -177,10 +177,10 @@ export default function ShootCalendar() {
             <main className="mx-auto max-w-6xl px-6 py-12 md:py-16">
                 <header className="flex flex-wrap items-end justify-between gap-4">
                     <div>
-                        <p className="text-xs uppercase tracking-[0.2em] text-primary">
+                        <p className="text-eyebrow uppercase tracking-eyebrow text-primary">
                             Calendar
                         </p>
-                        <h1 className="mt-3 font-serif text-fluid-4xl leading-none tracking-tight">
+                        <h1 className="mt-3 font-serif text-h1 leading-none tracking-tight">
                             Every shoot on the books.
                         </h1>
                     </div>
@@ -192,13 +192,13 @@ export default function ShootCalendar() {
                             onClick={() =>
                                 setMonth((m) => new Date(m.getFullYear(), m.getMonth() - 1, 1))
                             }
-                            className="grid h-11 w-11 place-items-center rounded-full border border-white/15 text-muted-foreground transition-colors duration-200 hover:text-primary"
+                            className="grid h-11 w-11 place-items-center rounded-full border border-input text-muted-foreground transition-colors duration-200 hover:text-primary"
                         >
                             <ChevronLeft className="h-4 w-4" />
                         </button>
                         <span
                             data-testid={IDS.monthLabel}
-                            className="min-w-[9rem] text-center font-serif text-lg"
+                            className="min-w-[9rem] text-center font-serif text-body-lg"
                         >
                             {monthLabel}
                         </span>
@@ -209,7 +209,7 @@ export default function ShootCalendar() {
                             onClick={() =>
                                 setMonth((m) => new Date(m.getFullYear(), m.getMonth() + 1, 1))
                             }
-                            className="grid h-11 w-11 place-items-center rounded-full border border-white/15 text-muted-foreground transition-colors duration-200 hover:text-primary"
+                            className="grid h-11 w-11 place-items-center rounded-full border border-input text-muted-foreground transition-colors duration-200 hover:text-primary"
                         >
                             <ChevronRight className="h-4 w-4" />
                         </button>
@@ -218,7 +218,7 @@ export default function ShootCalendar() {
                             variant="outline"
                             data-testid={IDS.today}
                             onClick={() => setMonth(startOfMonth(istCalendarDate()))}
-                            className="h-11 rounded-full border-white/15 bg-transparent hover:bg-white/5"
+                            className="h-11 rounded-full border-input bg-transparent hover:bg-muted"
                         >
                             Today
                         </Button>
@@ -230,7 +230,7 @@ export default function ShootCalendar() {
                         <Select value={campaign} onValueChange={setCampaign}>
                             <SelectTrigger
                                 data-testid={IDS.campaignFilter}
-                                className="h-11 border-white/10 bg-card/60 focus:ring-primary"
+                                className="h-11 border-border bg-card/60 focus:ring-primary"
                             >
                                 <SelectValue placeholder="All campaigns" />
                             </SelectTrigger>
@@ -247,7 +247,7 @@ export default function ShootCalendar() {
                 )}
 
                 {error && (
-                    <p data-testid={IDS.error} className="mt-8 text-sm text-destructive">
+                    <p data-testid={IDS.error} className="mt-8 text-meta text-destructive">
                         {error}
                     </p>
                 )}
@@ -269,11 +269,11 @@ export default function ShootCalendar() {
                             data-testid={IDS.grid}
                             className="mt-10 hidden md:block"
                         >
-                            <div className="grid grid-cols-7 gap-px rounded-md border border-white/10 bg-white/10 overflow-hidden">
+                            <div className="grid grid-cols-7 gap-px rounded-md border border-border bg-muted overflow-hidden">
                                 {WEEKDAY_HEADS.map((d) => (
                                     <div
                                         key={d}
-                                        className="bg-background px-3 py-2 text-[10px] uppercase tracking-[0.18em] text-muted-foreground"
+                                        className="bg-background px-3 py-2 text-eyebrow uppercase tracking-eyebrow text-muted-foreground"
                                     >
                                         {d}
                                     </div>
@@ -295,13 +295,13 @@ export default function ShootCalendar() {
                                             }
                                         >
                                             <div className="flex items-baseline justify-between">
-                                                <span className="text-xs text-muted-foreground">
+                                                <span className="text-meta text-muted-foreground">
                                                     {d.getDate()}
                                                 </span>
                                                 {rows.length > 0 && (
                                                     <span
                                                         data-testid={IDS.dayCount(key)}
-                                                        className="rounded-full bg-primary/15 px-1.5 text-[10px] text-primary"
+                                                        className="rounded-full bg-primary/15 px-1.5 text-eyebrow text-primary"
                                                     >
                                                         {rows.length}
                                                     </span>
@@ -312,7 +312,7 @@ export default function ShootCalendar() {
                                                     <li key={e.id}>
                                                         <Link
                                                             to={e.href}
-                                                            className="block truncate rounded-sm bg-white/5 px-1.5 py-1 text-[11px] leading-tight transition-colors duration-200 hover:bg-primary/15 hover:text-primary"
+                                                            className="block truncate rounded-sm bg-muted px-1.5 py-1 text-eyebrow leading-tight transition-colors duration-200 hover:bg-primary/15 hover:text-primary"
                                                         >
                                                             {timeOf(e.starts_at)}{" "}
                                                             {e.creator_name}
@@ -320,7 +320,7 @@ export default function ShootCalendar() {
                                                     </li>
                                                 ))}
                                                 {rows.length > 3 && (
-                                                    <li className="px-1.5 text-[11px] text-muted-foreground">
+                                                    <li className="px-1.5 text-eyebrow text-muted-foreground">
                                                         +{rows.length - 3} more
                                                     </li>
                                                 )}
@@ -351,7 +351,7 @@ export default function ShootCalendar() {
                                     <section key={key} data-testid={IDS.agendaDay(key)}>
                                         <p
                                             className={
-                                                "text-xs uppercase tracking-[0.2em] " +
+                                                "text-eyebrow uppercase tracking-eyebrow " +
                                                 (key === todayKey
                                                     ? "text-primary"
                                                     : "text-muted-foreground")

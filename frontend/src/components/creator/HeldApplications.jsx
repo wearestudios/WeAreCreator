@@ -51,7 +51,7 @@ export default function HeldApplications({ held, outstanding, onChanged }) {
                 rows. */}
             <p
                 data-testid={IDS.outstanding}
-                className="mt-4 rounded-md border border-primary/30 bg-primary/10 p-4 text-sm leading-relaxed text-primary/90"
+                className="mt-4 rounded-md border border-primary/30 bg-primary/10 p-4 text-body leading-relaxed text-primary/90"
             >
                 {outstanding?.message}
                 {outstanding?.waiting_on === "you" && outstanding?.missing?.length > 0 && (
@@ -72,7 +72,7 @@ export default function HeldApplications({ held, outstanding, onChanged }) {
                 )}
             </p>
 
-            <ul className="mt-4 divide-y divide-white/10 overflow-hidden rounded-md border border-white/10 bg-card grain-surface">
+            <ul className="mt-4 divide-y divide-divider overflow-hidden rounded-md border border-border bg-card grain-surface">
                 {held.map((row) => (
                     <li
                         key={row.id}
@@ -82,17 +82,17 @@ export default function HeldApplications({ held, outstanding, onChanged }) {
                         <span className="min-w-0 flex-1">
                             <Link
                                 to={`/campaigns/${row.campaign_id}`}
-                                className="block truncate text-sm transition-colors duration-200 hover:text-primary"
+                                className="block truncate text-meta transition-colors duration-200 hover:text-primary"
                             >
                                 {row.campaign_title || "A campaign"}
                             </Link>
-                            <span className="mt-0.5 block text-xs text-muted-foreground">
+                            <span className="mt-0.5 block text-meta text-muted-foreground">
                                 {row.brand_name}
                                 {row.created_at ? ` · pitched ${formatDate(row.created_at)}` : ""}
                             </span>
                         </span>
 
-                        <span className="inline-flex flex-none items-center gap-1.5 text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                        <span className="inline-flex flex-none items-center gap-1.5 text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                             <Clock aria-hidden="true" className="h-3.5 w-3.5" />
                             Held
                         </span>
@@ -106,7 +106,7 @@ export default function HeldApplications({ held, outstanding, onChanged }) {
                             onClick={() => cancel(row)}
                             disabled={busy === row.id}
                             data-testid={IDS.cancel(row.id)}
-                            className="inline-flex min-h-[2.75rem] flex-none items-center gap-1.5 text-xs uppercase tracking-[0.15em] text-muted-foreground transition-colors duration-200 hover:text-foreground disabled:opacity-50 sm:min-h-0"
+                            className="inline-flex min-h-[2.75rem] flex-none items-center gap-1.5 text-eyebrow uppercase tracking-eyebrow text-muted-foreground transition-colors duration-200 hover:text-foreground disabled:opacity-50 sm:min-h-0"
                         >
                             {busy === row.id ? (
                                 <Loader2 className="h-3.5 w-3.5 animate-spin" />

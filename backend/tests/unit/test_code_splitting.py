@@ -39,7 +39,9 @@ _EAGER_ALLOWED = set()
 
 # Every audience, and the chunk its code belongs in.
 _SURFACES = {
-    "marketing": ("ForBrands", "ForCreators", "HowItWorks", "WhyWeAre", "NotFound", "Legal"),
+    # /how-it-works and /why-weare are sections of /for-brands now; Home
+    # took Landing's place in the "landing" chunk.
+    "marketing": ("ForBrands", "ForCreators", "Contact", "NotFound", "Legal"),
     "auth": ("Login", "Signup", "AdminLogin"),
     "creator": ("CreatorHome", "CreatorOnboarding", "CreatorProfile", "SelfCheckIn",
                 "InstagramCallback"),

@@ -100,7 +100,7 @@ function CommercialInput({ commercial, value, onChange, disabled }) {
         return (
             <p
                 data-testid={APPLICATION.amountBarter}
-                className="rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm text-muted-foreground"
+                className="rounded-md border border-border bg-muted px-3 py-2 text-meta text-muted-foreground"
             >
                 Barter — there's no amount to agree. A meal, a stay, a product.
             </p>
@@ -110,10 +110,10 @@ function CommercialInput({ commercial, value, onChange, disabled }) {
         return (
             <div
                 data-testid={APPLICATION.amountLocked}
-                className="rounded-md border border-white/10 bg-white/5 px-3 py-2"
+                className="rounded-md border border-border bg-muted px-3 py-2"
             >
-                <p className="text-sm">₹{formatRupees(commercial.locked_amount)}</p>
-                <p className="mt-1 text-xs text-muted-foreground">
+                <p className="text-meta">₹{formatRupees(commercial.locked_amount)}</p>
+                <p className="mt-1 text-meta text-muted-foreground">
                     Fixed by the brief — the same for every creator on this campaign, so
                     it isn't editable here.
                 </p>
@@ -132,7 +132,7 @@ function CommercialInput({ commercial, value, onChange, disabled }) {
                 disabled={disabled}
                 onChange={(e) => onChange(e.target.value)}
             />
-            <p className="mt-1.5 text-xs text-muted-foreground">
+            <p className="mt-1.5 text-meta text-muted-foreground">
                 Negotiated offline. This is the figure the creator is paid and the one
                 the invoice is built from, so it has to be the real one.
             </p>
@@ -400,7 +400,7 @@ export default function ApplicationDetail({
                                 {overBudget !== null && (
                                     <p
                                         data-testid={BUDGET.warning}
-                                        className="text-xs text-state-pending"
+                                        className="text-meta text-state-pending"
                                     >
                                         That is {formatMoney(overBudget)} more than this
                                         brief has left. Raise the campaign budget, or agree
@@ -421,7 +421,7 @@ export default function ApplicationDetail({
                                 {amountMissing && (
                                     <p
                                         data-testid={APPLICATION.amountError}
-                                        className="text-xs text-state-pending"
+                                        className="text-meta text-state-pending"
                                     >
                                         This brief is negotiated, so it has no fee until
                                         somebody agrees one. Enter the amount to continue.
@@ -572,7 +572,7 @@ export default function ApplicationDetail({
                         brief we run never sees it. */}
                     {actions.can_dispatch && (
                         <Section id="dispatch" title="Ready to send">
-                            <p className="text-sm text-muted-foreground">
+                            <p className="text-meta text-muted-foreground">
                                 {app.creator?.name || "The creator"} confirmed their
                                 address
                                 {app.delivery?.address_note ? (
@@ -639,7 +639,7 @@ export default function ApplicationDetail({
                         <Section id="slot" title="Slot to confirm">
                             <p
                                 data-testid={APPLICATION.slotPending}
-                                className="text-sm text-muted-foreground"
+                                className="text-meta text-muted-foreground"
                             >
                                 {app.creator?.name || "The creator"} asked for{" "}
                                 <span className="text-foreground">
@@ -915,12 +915,12 @@ export default function ApplicationDetail({
                     }
                 }}
             >
-                <DialogContent className="max-w-md rounded-md border border-white/10 bg-card">
+                <DialogContent className="max-w-md rounded-md border border-border bg-card">
                     <DialogHeader className="text-left">
-                        <DialogTitle className="font-serif text-2xl leading-tight">
+                        <DialogTitle className="font-serif text-h3 leading-tight">
                             That time doesn't work?
                         </DialogTitle>
-                        <DialogDescription className="text-sm leading-relaxed text-muted-foreground">
+                        <DialogDescription className="text-body leading-relaxed text-muted-foreground">
                             The place goes back on sale and the creator is asked
                             to pick another. Tell them why, or they'll pick the
                             same one.
@@ -932,14 +932,14 @@ export default function ApplicationDetail({
                         onChange={(e) => setSlotReason(e.target.value)}
                         placeholder="e.g. we're shut that afternoon — anything after 6pm works"
                         data-testid={APPLICATION.declineSlotReason}
-                        className="border-white/10 bg-background/60"
+                        className="border-border bg-background/60"
                     />
                     <DialogFooter className="flex-col-reverse gap-2 sm:flex-row sm:justify-end">
                         <Button
                             type="button"
                             variant="outline"
                             onClick={() => setDecliningSlot(false)}
-                            className="h-12 rounded-full border-white/15 bg-transparent px-5 sm:h-11"
+                            className="h-12 rounded-full border-input bg-transparent px-5 sm:h-11"
                         >
                             Back
                         </Button>
@@ -1020,12 +1020,12 @@ export default function ApplicationDetail({
                 open={reviewing === "changes"}
                 onOpenChange={(v) => !v && setReviewing(null)}
             >
-                <DialogContent className="max-w-md rounded-md border border-white/10 bg-card">
+                <DialogContent className="max-w-md rounded-md border border-border bg-card">
                     <DialogHeader className="text-left">
-                        <DialogTitle className="font-serif text-2xl leading-tight">
+                        <DialogTitle className="font-serif text-h3 leading-tight">
                             What needs to change?
                         </DialogTitle>
-                        <DialogDescription className="text-sm leading-relaxed text-muted-foreground">
+                        <DialogDescription className="text-body leading-relaxed text-muted-foreground">
                             The creator gets this note and can resubmit without
                             starting over.
                         </DialogDescription>
@@ -1036,14 +1036,14 @@ export default function ApplicationDetail({
                         onChange={(e) => setChangesReason(e.target.value)}
                         placeholder="e.g. could you add the venue tag to the reel caption?"
                         data-testid={APPLICATION.changesReason}
-                        className="border-white/10 bg-background/60"
+                        className="border-border bg-background/60"
                     />
                     <DialogFooter className="flex-col-reverse gap-2 sm:flex-row sm:justify-end">
                         <Button
                             type="button"
                             variant="outline"
                             onClick={() => setReviewing(null)}
-                            className="h-12 rounded-full border-white/15 bg-transparent px-5 sm:h-11"
+                            className="h-12 rounded-full border-input bg-transparent px-5 sm:h-11"
                         >
                             Back
                         </Button>

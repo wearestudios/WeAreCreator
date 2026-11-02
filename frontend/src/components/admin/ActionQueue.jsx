@@ -268,6 +268,25 @@ export default function ActionQueue({ onChanged, feePercent, allAccess = true })
         load();
     }, [load]);
 
+    /**
+     * **The row leaves on the click, not on the response.**
+     *
+     * Working the queue is "decide, next, decide, next", and the old shape put
+     * a network round trip between those two words: the button went busy, the
+     * row sat there looking undecided, and only after a refetch did it go. On
+     * a slow connection that is indistinguishable from nothing having
+     * happened, which is how a decision gets made twice.
+     *
+     * `settled` is the patch, and the filter below drops it. A failure rolls
+     * the patch back — the row returns — *and* marks it failed, which is what
+     * the flash on the row reads, because a row that silently reappears is a
+     * decision somebody believes they made.
+     *
+     * Declared above `run`, which names `apply` in its dependency array: a
+     * `const` read before its declaration is a ReferenceError on render.
+     */
+    const { rows: patched, failed, apply } = useOptimisticRows(items || []);
+
     const run = useCallback(
         async (item, fn, successMessage) => {
             setBusyId(item.id);
@@ -457,21 +476,6 @@ export default function ActionQueue({ onChanged, feePercent, allAccess = true })
         return out;
     }, [items]);
 
-    /**
-     * **The row leaves on the click, not on the response.**
-     *
-     * Working the queue is "decide, next, decide, next", and the old shape put
-     * a network round trip between those two words: the button went busy, the
-     * row sat there looking undecided, and only after a refetch did it go. On
-     * a slow connection that is indistinguishable from nothing having
-     * happened, which is how a decision gets made twice.
-     *
-     * `settled` is the patch, and the filter below drops it. A failure rolls
-     * the patch back — the row returns — *and* marks it failed, which is what
-     * the flash on the row reads, because a row that silently reappears is a
-     * decision somebody believes they made.
-     */
-    const { rows: patched, failed, apply } = useOptimisticRows(items || []);
 
     const visible = useMemo(
         () => patched.filter((i) => !i.settled && (!kind || i.kind === kind)),
@@ -696,7 +700,7 @@ export default function ActionQueue({ onChanged, feePercent, allAccess = true })
             {items && total > 0 && (
                 <div
                     data-testid={IDS.stats}
-                    className={`mb-3 flex flex-wrap items-center gap-1.5 ${PANEL} ${DENSITY.row}`}
+                    className={`mb-section flex flex-wrap items-center gap-1.5 ${PANEL} ${DENSITY.row}`}
                 >
                     <KindChip
                         on={!kind}
@@ -772,12 +776,12 @@ export default function ActionQueue({ onChanged, feePercent, allAccess = true })
                     {showWaiting && (
                         <ul
                             data-testid={IDS.waitingList}
-                            className={`mt-2 divide-y divide-tint/5 ${PANEL}`}
+                            className={`mt-2 divide-y divide-divider ${PANEL}`}
                         >
                             {waiting.map((row) => (
                                 <li
                                     key={row.id}
-                                    className={`flex items-center justify-between gap-4 ${DENSITY.row} ${ROW_H}`}
+                                    className={`flex items-center justify-between gap-4 ${DENSITY.cell} ${ROW_H}`}
                                 >
                                     <span className="min-w-0">
                                         <span className={`block truncate ${TEXT.body}`}>
@@ -938,7 +942,7 @@ function KindChip({ on, onClick, testid, Icon, label }) {
                 `inline-flex h-7 items-center gap-1.5 rounded border px-2 ${TEXT.meta} ${CALM} ${FOCUS} ` +
                 (on
                     ? "border-primary bg-primary/10 text-primary-ink"
-                    : "border-tint/10 text-muted-foreground hover:border-tint/25 hover:text-foreground")
+                    : "border-border text-muted-foreground hover:border-tint/25 hover:text-foreground")
             }
         >
             {Icon && <Icon className="h-3.5 w-3.5" />}

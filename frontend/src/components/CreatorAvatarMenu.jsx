@@ -52,7 +52,7 @@ export default function CreatorAvatarMenu({ user, profileImageUrl, onLogout }) {
                 aria-expanded={open}
                 aria-label="Your account"
                 onClick={() => setOpen((v) => !v)}
-                className="grid h-10 w-10 place-items-center overflow-hidden rounded-full border border-white/15 bg-card transition-colors duration-200 hover:border-primary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                className="grid h-10 w-10 place-items-center overflow-hidden rounded-full border border-input bg-card transition-colors duration-200 hover:border-primary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             >
                 {profileImageUrl ? (
                     <img
@@ -63,7 +63,7 @@ export default function CreatorAvatarMenu({ user, profileImageUrl, onLogout }) {
                         className="h-full w-full object-cover"
                     />
                 ) : (
-                    <span className="text-xs font-medium tracking-wide text-muted-foreground">
+                    <span className="text-meta font-medium tracking-wide text-muted-foreground">
                         {initials(user?.name)}
                     </span>
                 )}
@@ -73,14 +73,14 @@ export default function CreatorAvatarMenu({ user, profileImageUrl, onLogout }) {
                 <div
                     role="menu"
                     data-testid={NAV.avatarMenu}
-                    className="absolute right-0 z-50 mt-2 w-56 overflow-hidden rounded-md border border-white/10 bg-card shadow-lg"
+                    className="absolute right-0 z-50 mt-2 w-56 overflow-hidden rounded-md border border-border bg-card shadow-lg"
                 >
                     {/* Whose account this is. Two accounts on one laptop is
                         common enough that the menu should say. */}
-                    <div className="border-b border-white/10 px-4 py-3">
-                        <p className="truncate text-sm">{user?.name || "Your account"}</p>
+                    <div className="border-b border-border px-4 py-3">
+                        <p className="truncate text-meta">{user?.name || "Your account"}</p>
                         {user?.phone && (
-                            <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                            <p className="mt-0.5 truncate text-meta text-muted-foreground">
                                 {user.phone}
                             </p>
                         )}
@@ -90,7 +90,7 @@ export default function CreatorAvatarMenu({ user, profileImageUrl, onLogout }) {
                         role="menuitem"
                         data-testid={NAV.myProfile}
                         onClick={() => setOpen(false)}
-                        className="flex min-h-[2.75rem] items-center gap-2.5 px-4 text-sm transition-colors duration-200 hover:bg-white/5 focus-visible:outline-none focus-visible:bg-white/5"
+                        className="flex min-h-[2.75rem] items-center gap-2.5 px-4 text-meta transition-colors duration-200 hover:bg-muted focus-visible:outline-none focus-visible:bg-muted"
                     >
                         <User className="h-4 w-4 text-muted-foreground" />
                         My profile
@@ -103,7 +103,7 @@ export default function CreatorAvatarMenu({ user, profileImageUrl, onLogout }) {
                             setOpen(false);
                             onLogout();
                         }}
-                        className="flex min-h-[2.75rem] w-full items-center gap-2.5 border-t border-white/10 px-4 text-left text-sm transition-colors duration-200 hover:bg-white/5 focus-visible:outline-none focus-visible:bg-white/5"
+                        className="flex min-h-[2.75rem] w-full items-center gap-2.5 border-t border-border px-4 text-left text-meta transition-colors duration-200 hover:bg-muted focus-visible:outline-none focus-visible:bg-muted"
                     >
                         <LogOut className="h-4 w-4 text-muted-foreground" />
                         Log out

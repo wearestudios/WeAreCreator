@@ -131,7 +131,7 @@ const CARDS = [
  * there is one place to read. A test fails any other marketing file that grows
  * a `shadow-*` class of its own, which importing this does not.
  */
-export const CARD_SHADOW = "shadow-[0_28px_70px_-24px_rgba(0,0,0,0.85)]";
+export const CARD_SHADOW = "shadow-[0_28px_70px_-24px_hsl(var(--scrim)/0.85)]";
 
 const SHADOW = CARD_SHADOW;
 

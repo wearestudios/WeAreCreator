@@ -54,14 +54,14 @@ export default function CheckInQr({ slotId }) {
     return (
         <div
             data-testid={IDS.panel}
-            className="rounded-md border border-white/10 bg-card p-6 text-center grain-surface"
+            className="rounded-md border border-border bg-card p-6 text-center grain-surface"
         >
-            <p className="text-xs uppercase tracking-[0.2em] text-primary">
+            <p className="text-eyebrow uppercase tracking-eyebrow text-primary">
                 Scan to check in
             </p>
 
             {error ? (
-                <p className="mt-4 text-sm text-destructive">{error}</p>
+                <p className="mt-4 text-meta text-destructive">{error}</p>
             ) : !code ? (
                 <div className="mt-5 flex h-[220px] items-center justify-center">
                     <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -73,13 +73,13 @@ export default function CheckInQr({ slotId }) {
                         and this is being held up in a badly lit venue. */}
                     <div
                         data-testid={IDS.qr}
-                        className="mx-auto mt-5 w-fit rounded-md bg-white p-3"
+                        className="mx-auto mt-5 w-fit rounded-md bg-brand-white p-3"
                     >
                         <QRCodeSVG value={code.url} size={196} level="M" />
                     </div>
                     <p
                         data-testid={IDS.expiry}
-                        className="mt-4 text-xs leading-relaxed text-muted-foreground"
+                        className="mt-4 text-meta leading-relaxed text-muted-foreground"
                     >
                         Refreshes every minute. Creators can also open{" "}
                         <span data-testid={IDS.link} className="text-foreground/80">
@@ -96,7 +96,7 @@ export default function CheckInQr({ slotId }) {
                 data-testid={IDS.refresh}
                 onClick={load}
                 disabled={busy}
-                className="mt-5 h-11 rounded-full border-white/15 bg-transparent hover:bg-white/5"
+                className="mt-5 h-11 rounded-full border-input bg-transparent hover:bg-muted"
             >
                 {busy ? (
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />

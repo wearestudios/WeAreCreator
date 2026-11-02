@@ -12,40 +12,48 @@
 // two panels shared a rhythm and every screen looked hand-built. Four steps
 // now, and nothing outside them.
 //
-// **Row height is fixed at 44px.** Fixed rather than content-driven because a
-// table whose rows change height cannot be scanned — the eye tracks a rhythm
-// down the left edge and a row that grows breaks it. It is also what makes
-// virtualisation possible without measuring anything.
+// **Row height is fixed, and the fixed value lives in CSS.** Fixed rather
+// than content-driven because a table whose rows change height cannot be
+// scanned — the eye tracks a rhythm down the left edge and a row that grows
+// breaks it — and because it is what makes virtualisation possible without
+// measuring each row. It is `--row-h` in index.css: 70px comfortable, 42px
+// compact, each above what a row's content plus its 22px / 9px padding can
+// reach. `DataTable` reads the number off the element for its windowing
+// arithmetic, so the CSS is the one place it is written.
 //
-// **Base text is `text-sm`.** The console had 160 uses of `text-xs`, most of
-// them on primary content, which is what made it feel like a settings screen
-// rather than a tool. `text-xs` is now for true metadata only: timestamps,
-// ids, column headers, unit labels.
+// **Two text roles, both density-aware.** `text-body` (16px, 14 compact) is
+// primary content; `text-meta` (14px, 13 compact) is true metadata —
+// timestamps, ids, column headers, unit labels. Both read custom properties
+// that `data-density="compact"` redefines on its wrapper, so nothing in the
+// console branches on density to pick a class.
 
 /** Vertical rhythm. Nothing in the console picks its own padding. */
 export const DENSITY = {
     /** Inside a cell, a chip, a compact control. */
     tight: "px-2 py-1",
-    /** The default: table cells, list rows, form fields. */
+    /** Toolbars, filter bars, form fields, sidebar links — controls. */
     row: "px-3 py-2",
+    /** A list or table row's cell: 22px vertical, 9px in compact. */
+    cell: "px-3 py-row",
     /** A panel's inner padding, a dialog's body. */
-    panel: "p-4",
+    panel: "p-inner",
     /** The gap between panels, and a section's own top margin. */
-    section: "gap-4",
+    section: "gap-section",
 };
 
-/** 44px. Every table row, every list row, every toolbar control. */
-export const ROW_H = "h-11";
-export const ROW_PX = 44;
+/** Every table and list row: `--row-h`, 70px comfortable, 42px compact. */
+export const ROW_H = "h-list-row";
+/** What the windowing math falls back to before the element can be read. */
+export const ROW_PX = 70;
 
 /** The one type ramp the console uses. */
 export const TEXT = {
     /** Primary content: names, titles, amounts, states. */
-    body: "text-sm",
+    body: "text-body",
     /** True metadata only — timestamps, ids, column headers, units. */
-    meta: "text-xs",
+    meta: "text-meta",
     /** A panel or page heading. */
-    heading: "text-base font-medium",
+    heading: "text-body font-medium",
 };
 
 // ---------------------------------------------------------------------------
@@ -65,31 +73,31 @@ export const STATUS_TONE = {
         label: "Pending",
         dot: "bg-state-pending",
         text: "text-state-pending",
-        chip: "border-state-pending/30 bg-state-pending/10 text-state-pending",
+        chip: "border-state-pending/30 bg-state-pending-wash text-state-pending",
     },
     good: {
         label: "Approved",
         dot: "bg-state-approved",
         text: "text-state-approved",
-        chip: "border-state-approved/30 bg-state-approved/10 text-state-approved",
+        chip: "border-state-approved/30 bg-state-approved-wash text-state-approved",
     },
     bad: {
         label: "Rejected",
         dot: "bg-state-rejected",
         text: "text-state-rejected",
-        chip: "border-state-rejected/30 bg-state-rejected/10 text-state-rejected",
+        chip: "border-state-rejected/30 bg-state-rejected-wash text-state-rejected",
     },
     active: {
         label: "In progress",
         dot: "bg-state-progress",
         text: "text-state-progress",
-        chip: "border-state-progress/30 bg-state-progress/10 text-state-progress",
+        chip: "border-state-progress/30 bg-state-progress-wash text-state-progress",
     },
     idle: {
         label: "—",
         dot: "bg-tint/30",
         text: "text-muted-foreground",
-        chip: "border-tint/15 bg-tint/5 text-muted-foreground",
+        chip: "border-border bg-muted text-muted-foreground",
     },
 };
 
@@ -172,7 +180,7 @@ export const CALM = "transition-colors duration-150";
 /** The focus ring, identical on every focusable thing in the console. */
 export const FOCUS =
     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring " +
-    "focus-visible:ring-offset-1 focus-visible:ring-offset-background";
+    "focus-visible:ring-offset-2 focus-visible:ring-offset-background";
 
 /** A panel: hairline border, flat surface, no grain, no shadow. */
-export const PANEL = "rounded-md border border-tint/10 bg-card";
+export const PANEL = "rounded-md border border-border bg-card";

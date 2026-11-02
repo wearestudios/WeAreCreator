@@ -92,19 +92,17 @@ const ROLE_LABEL = {
     campaign_manager: "WeAre manager",
 };
 
-// The marketing site's four pages, in the order somebody reads them: which
-// audience am I, then how does it work, then why you.
+// The marketing site's pages, in the order somebody reads them: which
+// audience am I, then how to reach a person. How it works and why us became
+// sections of /for-brands; their old paths redirect.
 //
-// **All four are ordinary routes now.** They used to be two in-page anchors
+// **All of them are ordinary routes.** They used to be two in-page anchors
 // (`#how-it-works`, `#why`) that only resolved on the landing page, plus one
-// real <a> to a page the backend rendered — so "How it works" from anywhere
-// other than home scrolled to nothing, and "For brands" left the app. The
-// pages are in the SPA and these are <Link>s.
+// real <a> to a page the backend rendered. The pages are in the SPA and these
+// are <Link>s. `lib/siteNav.js` holds the same list and a test compares them.
 const MARKETING_LINKS = [
     { to: "/for-brands", label: "For brands", testId: "nav-for-brands" },
     { to: "/for-creators", label: "For creators", testId: "nav-for-creators" },
-    { to: "/how-it-works", label: "How it works", testId: "nav-how" },
-    { to: "/why-weare", label: "Why WeAre Creators", testId: "nav-why" },
     { to: "/contact", label: "Contact", testId: "nav-contact" },
 ];
 
@@ -162,7 +160,7 @@ export const Navbar = () => {
     return (
         <header
             data-testid="site-navbar"
-            className="sticky top-0 z-40 w-full border-b border-tint/10 bg-background/70 backdrop-blur-xl"
+            className="sticky top-0 z-40 w-full border-b border-border bg-background/70 backdrop-blur-xl"
         >
             <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-6">
                 <div className="flex items-center gap-3">
@@ -185,7 +183,7 @@ export const Navbar = () => {
                             key={l.testId}
                             to={l.to}
                             data-testid={l.testId}
-                            className="text-sm text-muted-foreground transition-colors duration-200 hover:text-foreground"
+                            className="text-meta text-muted-foreground transition-colors duration-200 hover:text-foreground"
                         >
                             {l.label}
                         </Link>
@@ -200,7 +198,7 @@ export const Navbar = () => {
                         <div
                             data-testid="nav-auth-loading"
                             aria-hidden
-                            className="h-9 w-28 animate-pulse rounded-full bg-tint/5"
+                            className="h-9 w-28 animate-pulse rounded-full bg-muted"
                         />
                     ) : signedIn ? (
                         <>
@@ -210,7 +208,7 @@ export const Navbar = () => {
                                     to={l.to}
                                     data-testid={l.testId}
                                     className={
-                                        "hidden text-sm transition-colors duration-200 " +
+                                        "hidden text-meta transition-colors duration-200 " +
                                         (l.secondary ? "lg:inline " : "sm:inline ") +
                                         (l.accent
                                             ? "text-primary-ink hover:text-primary-ink"
@@ -249,7 +247,7 @@ export const Navbar = () => {
                                     data-testid="nav-logout-btn"
                                     onClick={handleLogout}
                                     variant="outline"
-                                    className="hidden border-tint/15 bg-transparent text-foreground hover:bg-tint/5 sm:inline-flex"
+                                    className="hidden border-border bg-transparent text-foreground hover:bg-tint/5 sm:inline-flex"
                                 >
                                     Log out
                                 </Button>
@@ -260,7 +258,7 @@ export const Navbar = () => {
                             <Link
                                 to="/login"
                                 data-testid="nav-login-link"
-                                className="hidden text-sm text-muted-foreground transition-colors duration-200 hover:text-foreground sm:inline"
+                                className="hidden text-meta text-muted-foreground transition-colors duration-200 hover:text-foreground sm:inline"
                             >
                                 Log in
                             </Link>
@@ -305,12 +303,12 @@ export const Navbar = () => {
                             // A menu needs no description; opting out explicitly
                             // keeps Radix from warning about a missing one.
                             aria-describedby={undefined}
-                            className="w-[86%] border-l border-tint/10 bg-background p-0 sm:max-w-sm"
+                            className="w-[86%] border-l border-border bg-background p-0 sm:max-w-sm"
                         >
                             <SheetTitle className="sr-only">Menu</SheetTitle>
 
                             <div className="flex h-full flex-col">
-                                <div className="flex flex-col gap-1 border-b border-tint/10 px-6 py-5">
+                                <div className="flex flex-col gap-1 border-b border-border px-6 py-5">
                                     <Logo variant="horizontal" height={30} />
                                 </div>
 
@@ -319,7 +317,7 @@ export const Navbar = () => {
                                         <>
                                             <p
                                                 data-testid="nav-mobile-role"
-                                                className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground"
+                                                className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground"
                                             >
                                                 {ROLE_LABEL[user.role] || user.role}
                                             </p>
@@ -330,7 +328,7 @@ export const Navbar = () => {
                                                             to={l.to}
                                                             data-testid={`${l.testId}-mobile`}
                                                             className={
-                                                                "border-b border-tint/10 py-3.5 font-serif text-2xl leading-tight transition-colors duration-200 " +
+                                                                "border-b border-border py-3.5 font-serif text-h3 leading-tight transition-colors duration-200 " +
                                                                 (l.accent
                                                                     ? "text-primary-ink hover:text-primary-ink"
                                                                     : "text-foreground hover:text-primary-ink")
@@ -352,7 +350,7 @@ export const Navbar = () => {
                                         links are opened from. */}
                                     {!signedIn && (
                                         <>
-                                            <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+                                            <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                                                 Explore
                                             </p>
                                             <div className="mt-4 flex flex-col">
@@ -361,7 +359,7 @@ export const Navbar = () => {
                                                         <Link
                                                             to={l.to}
                                                             data-testid={`${l.testId}-mobile`}
-                                                            className="border-b border-tint/10 py-3.5 font-serif text-2xl leading-tight text-foreground transition-colors duration-200 hover:text-primary-ink"
+                                                            className="border-b border-border py-3.5 font-serif text-h3 leading-tight text-foreground transition-colors duration-200 hover:text-primary-ink"
                                                         >
                                                             {l.label}
                                                         </Link>
@@ -372,18 +370,18 @@ export const Navbar = () => {
                                     )}
                                 </nav>
 
-                                <div className="border-t border-tint/10 px-6 py-6">
+                                <div className="border-t border-border px-6 py-6">
                                     {checking ? (
                                         <div
                                             aria-hidden
-                                            className="h-11 w-full animate-pulse rounded-full bg-tint/5"
+                                            className="h-11 w-full animate-pulse rounded-full bg-muted"
                                         />
                                     ) : signedIn ? (
                                         <Button
                                             data-testid="nav-logout-btn-mobile"
                                             onClick={handleLogout}
                                             variant="outline"
-                                            className="h-11 w-full rounded-full border-tint/15 bg-transparent text-foreground hover:bg-tint/5"
+                                            className="h-11 w-full rounded-full border-border bg-transparent text-foreground hover:bg-tint/5"
                                         >
                                             Log out
                                         </Button>
@@ -403,7 +401,7 @@ export const Navbar = () => {
                                                 <Link
                                                     to="/login"
                                                     data-testid="nav-login-link-mobile"
-                                                    className="py-2 text-center text-sm text-muted-foreground transition-colors duration-200 hover:text-foreground"
+                                                    className="py-2 text-center text-meta text-muted-foreground transition-colors duration-200 hover:text-foreground"
                                                 >
                                                     Log in
                                                 </Link>

@@ -21,7 +21,7 @@ export default function Login() {
             <div className="relative hidden md:block">
                 <PlaceholderImage
                     // PLACEHOLDER IMAGE: Creator and brand manager reviewing a shoot plan on a phone at a venue table, portrait crop for the auth aside.
-                    note="Creator and brand manager reviewing a shoot plan on a phone at a venue table, portrait crop for the auth aside"
+                    slot="auth-login"
                     fill
                     className="opacity-60"
                 />

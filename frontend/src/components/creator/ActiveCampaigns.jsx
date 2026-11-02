@@ -68,7 +68,7 @@ const ACTION_ICON = {
 };
 
 const Detail = ({ Icon, children, testid }) => (
-    <div data-testid={testid} className="flex items-start gap-2 text-sm text-muted-foreground">
+    <div data-testid={testid} className="flex items-start gap-2 text-meta text-muted-foreground">
         <Icon className="mt-0.5 h-4 w-4 flex-none text-primary/80" />
         <span className="min-w-0 leading-relaxed">{children}</span>
     </div>
@@ -230,7 +230,7 @@ const ActiveCard = ({ collab, onBook, onSubmit, onDraft, onRefresh }) => {
             data-testid={IDS.card(collab.id)}
             whileHover={still ? undefined : { y: -2 }}
             transition={{ duration: 0.2, ease: "easeOut" }}
-            className="overflow-hidden rounded-md border border-white/10 bg-card transition-colors duration-200 hover:border-white/20 grain-surface"
+            className="overflow-hidden rounded-md border border-border bg-card transition-colors duration-200 hover:border-tint/30 grain-surface"
         >
             {/* A slim slice of the campaign's own cover, so a card of work
                 reads as a place rather than a form. 16:5, not 16:9 — this is
@@ -252,7 +252,7 @@ const ActiveCard = ({ collab, onBook, onSubmit, onDraft, onRefresh }) => {
             <div className="p-6 md:p-7">
             <div className="flex flex-wrap items-start justify-between gap-4">
                 <div className="min-w-0">
-                    <p className="flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                    <p className="flex items-center gap-2 text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                         <BrandAvatar brand={collab} size="h-6 w-6" />
                         <span className="truncate">
                             {collab.brand_name || "Brand"}
@@ -262,14 +262,14 @@ const ActiveCard = ({ collab, onBook, onSubmit, onDraft, onRefresh }) => {
                     <Link
                         to={`/campaigns/${collab.campaign_id}`}
                         data-testid={IDS.title(collab.id)}
-                        className="mt-2 block font-serif text-2xl leading-tight transition-colors duration-200 hover:text-primary"
+                        className="mt-2 block font-serif text-h3 leading-tight transition-colors duration-200 hover:text-primary"
                     >
                         {collab.campaign_title || "Untitled campaign"}
                     </Link>
                 </div>
                 <Money
                     symbolClass="h-4 w-4"
-                    className="font-serif text-2xl leading-none"
+                    className="font-serif text-h3 leading-none"
                 >
                     <span data-testid={IDS.amount(collab.id)}>{formatRupees(amount)}</span>
                 </Money>
@@ -345,10 +345,10 @@ const ActiveCard = ({ collab, onBook, onSubmit, onDraft, onRefresh }) => {
                 <p
                     data-testid={IDS.nextAction(collab.id)}
                     className={
-                        "mt-6 rounded-md border px-4 py-3 text-sm leading-relaxed " +
+                        "mt-6 rounded-md border px-4 py-3 text-body leading-relaxed " +
                         (next.waiting_on === "you"
                             ? "border-primary/30 bg-primary/10 text-primary"
-                            : "border-white/10 bg-background/60 text-muted-foreground")
+                            : "border-border bg-background/60 text-muted-foreground")
                     }
                 >
                     {next.label}
@@ -366,7 +366,7 @@ const ActiveCard = ({ collab, onBook, onSubmit, onDraft, onRefresh }) => {
                         <Detail Icon={MapPin} testid={IDS.venue(collab.id)}>
                             {collab.venue.address}
                             {collab.venue.instructions && (
-                                <span className="mt-1 block text-xs text-muted-foreground/80">
+                                <span className="mt-1 block text-meta text-muted-foreground/80">
                                     {collab.venue.instructions}
                                 </span>
                             )}
@@ -402,7 +402,7 @@ const ActiveCard = ({ collab, onBook, onSubmit, onDraft, onRefresh }) => {
                             data-testid={IDS.cancelSlot(collab.id)}
                             onClick={cancelSlot}
                             disabled={releasing}
-                            className="inline-flex min-h-[3rem] items-center justify-start gap-2 self-start text-sm text-muted-foreground transition-colors duration-200 hover:text-primary disabled:opacity-50"
+                            className="inline-flex min-h-[3rem] items-center justify-start gap-2 self-start text-meta text-muted-foreground transition-colors duration-200 hover:text-primary disabled:opacity-50"
                         >
                             {releasing && <Loader2 className="h-4 w-4 animate-spin" />}
                             {/* Up to the cutoff. The server refuses inside it and
@@ -434,7 +434,7 @@ export default function ActiveCampaigns({ collaborations, onRefresh }) {
                     rows.length > 0 && (
                         <span
                             data-testid={IDS.count}
-                            className="text-xs text-muted-foreground"
+                            className="text-meta text-muted-foreground"
                         >
                             {rows.length} {rows.length === 1 ? "collaboration" : "collaborations"}
                         </span>

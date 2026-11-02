@@ -119,7 +119,7 @@ function Field({ id, label, help, error, children }) {
 const INPUT =
     "h-11 w-full rounded-lg border border-border bg-card px-3 text-foreground " +
     "transition-colors duration-200 placeholder:text-muted-foreground " +
-    "focus:border-primary focus:outline-none";
+    "focus:border-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background";
 
 export default function Contact() {
     const [values, setValues] = useState({
@@ -220,7 +220,11 @@ export default function Contact() {
                     <div className="mt-12 grid gap-12 lg:grid-cols-12 lg:gap-16">
                         {/* The form first in DOM order, so a phone reaches the
                             thing it came to do before the reference details. */}
-                        <div className="lg:col-span-7">
+                        {/* **Masked for the public-site recorder**, the form
+                            and the confirmation both: the confirmation echoes
+                            the message back, and a message is where somebody
+                            types their number. See `AnalyticsGate`. */}
+                        <div data-clarity-mask="true" className="lg:col-span-7">
                             <h2 className="font-serif text-fluid-2xl leading-tight">
                                 {COPY.formHeading}
                             </h2>

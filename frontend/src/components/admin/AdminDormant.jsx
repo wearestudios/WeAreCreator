@@ -116,7 +116,7 @@ export default function AdminDormant() {
     ];
 
     return (
-        <div data-testid={IDS.page} className="space-y-4">
+        <div data-testid={IDS.page} className="space-y-section">
             <div className="flex flex-wrap items-center gap-3">
                 <MoonStar className="h-4 w-4 text-muted-foreground" />
                 <h1 className={`${TEXT.body} font-medium`}>Gone quiet</h1>
@@ -138,7 +138,7 @@ export default function AdminDormant() {
                             `rounded border px-3 py-1.5 ${TEXT.meta} uppercase tracking-[0.14em] ${CALM} ` +
                             (kind === k.value
                                 ? "border-primary/40 bg-primary/10 text-primary-ink"
-                                : "border-tint/10 text-muted-foreground hover:text-foreground")
+                                : "border-border text-muted-foreground hover:text-foreground")
                         }
                     >
                         {k.label}

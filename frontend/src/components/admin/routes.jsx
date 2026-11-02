@@ -34,6 +34,7 @@ import CircumventionQueue from "@/components/admin/CircumventionQueue";
 import RetentionPanel from "@/components/admin/RetentionPanel";
 import AdminDormant from "@/components/admin/AdminDormant";
 import CaseStudies from "@/components/admin/CaseStudies";
+import { DensityScope } from "@/components/admin/console/density";
 
 /**
  * The overview, with the operational panels above it.
@@ -88,56 +89,102 @@ export const AnalyticsRoute = () => (
 
 export const CreatorReviewsRoute = () => {
     const { reloadCounts } = useAdminConsole();
-    return <CreatorReviews onChanged={reloadCounts} />;
+    return (
+        <DensityScope surface="creator-reviews">
+            <CreatorReviews onChanged={reloadCounts} />
+        </DensityScope>
+    );
 };
 
 export const CampaignReviewsRoute = () => {
     const { reloadCounts } = useAdminConsole();
-    return <CampaignReviews onChanged={reloadCounts} />;
+    return (
+        <DensityScope surface="campaign-reviews">
+            <CampaignReviews onChanged={reloadCounts} />
+        </DensityScope>
+    );
 };
 
 export const BrandReviewsRoute = () => {
     const { reloadCounts } = useAdminConsole();
-    return <BrandReviews onChanged={reloadCounts} />;
+    return (
+        <DensityScope surface="brand-reviews">
+            <BrandReviews onChanged={reloadCounts} />
+        </DensityScope>
+    );
 };
 
 export const QueueRoute = () => {
     const { reloadCounts, feePercent, allAccess } = useAdminConsole();
     return (
-        <ActionQueue
-            onChanged={reloadCounts}
-            feePercent={feePercent}
-            allAccess={allAccess}
-        />
+        <DensityScope surface="queue">
+            <ActionQueue
+                onChanged={reloadCounts}
+                feePercent={feePercent}
+                allAccess={allAccess}
+            />
+        </DensityScope>
     );
 };
 
-export const CreatorsRoute = () => <AdminCreators />;
+export const CreatorsRoute = () => (
+    <DensityScope surface="creators">
+        <AdminCreators />
+    </DensityScope>
+);
 
-export const AuditRoute = () => <AdminAudit />;
+export const AuditRoute = () => (
+    <DensityScope surface="audit">
+        <AdminAudit />
+    </DensityScope>
+);
 
 /** Our own staff, and which brands each of them runs. Admin-only. */
-export const TeamRoute = () => <AdminTeam />;
+export const TeamRoute = () => (
+    <DensityScope surface="team">
+        <AdminTeam />
+    </DensityScope>
+);
 
 /** People asking to be forgotten. Admin-only, and irreversible. */
-export const DeletionsRoute = () => <AdminDeletions />;
+export const DeletionsRoute = () => (
+    <DensityScope surface="deletions">
+        <AdminDeletions />
+    </DensityScope>
+);
 
 export const EnquiriesRoute = () => {
     const { reloadCounts } = useAdminConsole();
-    return <AdminEnquiries onChanged={reloadCounts} />;
+    return (
+        <DensityScope surface="enquiries">
+            <AdminEnquiries onChanged={reloadCounts} />
+        </DensityScope>
+    );
 };
 export const SettingsRoute = () => <PlatformSettings />;
 
 /** Frozen collaborations, worst-waiting first. Scoped like every list. */
-export const DisputesRoute = () => <DisputeQueue />;
+export const DisputesRoute = () => (
+    <DensityScope surface="disputes">
+        <DisputeQueue />
+    </DensityScope>
+);
 
 /** Collaborations flagged as having gone off-platform. Admin-only: a
  *  creator works across every brand, so their account is not scoped work. */
-export const CircumventionRoute = () => <CircumventionQueue />;
+export const CircumventionRoute = () => (
+    <DensityScope surface="circumvention">
+        <CircumventionQueue />
+    </DensityScope>
+);
 
 /** What we keep and for how long, from the same table the code enforces. */
 export const RetentionRoute = () => <RetentionPanel />;
-export const DormantRoute = () => <AdminDormant />;
+export const DormantRoute = () => (
+    <DensityScope surface="dormant">
+        <AdminDormant />
+    </DensityScope>
+);
 
 /**
  * The campaigns list, with "just this brand" in the URL.
@@ -160,12 +207,14 @@ export const CampaignsRoute = () => {
     };
 
     return (
-        <AdminCampaigns
-            brandFilter={brandFilter}
-            onClearBrand={clearBrand}
-            onChanged={reloadCounts}
-            allAccess={allAccess}
-        />
+        <DensityScope surface="campaigns">
+            <AdminCampaigns
+                brandFilter={brandFilter}
+                onClearBrand={clearBrand}
+                onChanged={reloadCounts}
+                allAccess={allAccess}
+            />
+        </DensityScope>
     );
 };
 
@@ -173,13 +222,15 @@ export const BrandsRoute = () => {
     const navigate = useNavigate();
     const { reloadCounts, allAccess } = useAdminConsole();
     return (
-        <AdminBrands
-            onChanged={reloadCounts}
-            allAccess={allAccess}
-            onViewCampaigns={(brandId) =>
-                navigate(`/admin/campaigns?brand=${encodeURIComponent(brandId)}`)
-            }
-        />
+        <DensityScope surface="brands">
+            <AdminBrands
+                onChanged={reloadCounts}
+                allAccess={allAccess}
+                onViewCampaigns={(brandId) =>
+                    navigate(`/admin/campaigns?brand=${encodeURIComponent(brandId)}`)
+                }
+            />
+        </DensityScope>
     );
 };
 

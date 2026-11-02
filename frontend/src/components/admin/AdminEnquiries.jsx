@@ -179,7 +179,7 @@ export default function AdminEnquiries({ onChanged }) {
                 <p className={`${TEXT.eyebrow} uppercase tracking-[0.2em] text-muted-foreground`}>
                     Enquiries
                 </p>
-                <h2 className="mt-1 font-serif text-fluid-2xl leading-tight">
+                <h2 className="mt-1 font-serif text-h3 leading-tight">
                     From the contact form
                 </h2>
             </div>
@@ -211,7 +211,7 @@ export default function AdminEnquiries({ onChanged }) {
             >
                 {peek ? (
                     <div className="space-y-4">
-                        <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">
+                        <p className="whitespace-pre-wrap text-body leading-relaxed text-foreground">
                             {peek.message}
                         </p>
                         <div className="flex flex-wrap gap-2 border-t border-border pt-4">
@@ -219,7 +219,7 @@ export default function AdminEnquiries({ onChanged }) {
                                 href={`https://wa.me/${(peek.whatsapp || "").replace(/\D/g, "")}`}
                                 target="_blank"
                                 rel="noreferrer"
-                                className="inline-flex h-9 items-center gap-2 rounded-lg border border-border px-3 text-sm hover:border-primary/60"
+                                className="inline-flex h-9 items-center gap-2 rounded-lg border border-border px-3 text-meta hover:border-primary/60"
                             >
                                 <MessageCircle className="h-4 w-4" />
                                 Reply on WhatsApp
@@ -227,7 +227,7 @@ export default function AdminEnquiries({ onChanged }) {
                             {peek.email ? (
                                 <a
                                     href={`mailto:${peek.email}`}
-                                    className="inline-flex h-9 items-center gap-2 rounded-lg border border-border px-3 text-sm hover:border-primary/60"
+                                    className="inline-flex h-9 items-center gap-2 rounded-lg border border-border px-3 text-meta hover:border-primary/60"
                                 >
                                     <Mail className="h-4 w-4" />
                                     {peek.email}
@@ -235,7 +235,7 @@ export default function AdminEnquiries({ onChanged }) {
                             ) : null}
                         </div>
                         {peek.handled_note ? (
-                            <p className="text-sm text-muted-foreground">
+                            <p className="text-meta text-muted-foreground">
                                 Note: {peek.handled_note}
                             </p>
                         ) : null}

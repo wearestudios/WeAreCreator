@@ -91,7 +91,7 @@ const Ring = ({ percent }) => {
             className="relative h-16 w-16 flex-none"
         >
             <svg viewBox="0 0 64 64" className="h-full w-full -rotate-90">
-                <circle cx="32" cy="32" r={RADIUS} fill="none" strokeWidth="3" className="stroke-white/10" />
+                <circle cx="32" cy="32" r={RADIUS} fill="none" strokeWidth="3" className="stroke-border" />
                 <motion.circle
                     cx="32"
                     cy="32"
@@ -108,7 +108,7 @@ const Ring = ({ percent }) => {
             </svg>
             <span
                 data-testid={IDS.percent}
-                className="absolute inset-0 grid place-items-center font-serif text-base"
+                className="absolute inset-0 grid place-items-center font-serif text-body"
             >
                 {percent}%
             </span>
@@ -119,8 +119,8 @@ const Ring = ({ percent }) => {
 const Section = ({ id, title, note, children }) => (
     <section data-testid={IDS.section(id)} className="space-y-5">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">{title}</p>
-            {note && <span className="text-xs text-muted-foreground/80">{note}</span>}
+            <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">{title}</p>
+            {note && <span className="text-meta text-muted-foreground/80">{note}</span>}
         </div>
         {children}
     </section>
@@ -155,14 +155,14 @@ const ChipList = ({ values, onChange, suggestions, editorId, inputId, chipId, su
         <div className="space-y-3">
             <div
                 data-testid={editorId}
-                className="rounded-md border border-white/10 bg-card/60 p-3 focus-within:border-primary/50"
+                className="rounded-md border border-border bg-card/60 p-3 focus-within:border-primary/50"
             >
                 <div className="flex flex-wrap gap-2">
                     {values.map((v) => (
                         <span
                             key={v}
                             data-testid={chipId(v)}
-                            className="inline-flex items-center gap-1.5 rounded-full bg-primary/15 px-3 py-1 text-xs uppercase tracking-[0.15em] text-primary"
+                            className="inline-flex items-center gap-1.5 rounded-full bg-primary/15 px-3 py-1 text-eyebrow uppercase tracking-eyebrow text-primary"
                         >
                             {v}
                             <button
@@ -181,7 +181,7 @@ const ChipList = ({ values, onChange, suggestions, editorId, inputId, chipId, su
                         onChange={(e) => setDraft(e.target.value)}
                         onKeyDown={onKeyDown}
                         onBlur={() => draft.trim() && add(draft)}
-                        className="min-h-[2.75rem] min-w-[140px] flex-1 bg-transparent px-2 py-1 text-base outline-none placeholder:text-muted-foreground md:min-h-0 md:text-sm"
+                        className="min-h-[2.75rem] min-w-[140px] flex-1 bg-transparent px-2 py-1 text-body outline-none placeholder:text-muted-foreground md:min-h-0 md:text-meta"
                         placeholder={values.length === 0 ? placeholder : "Add another…"}
                     />
                 </div>
@@ -194,7 +194,7 @@ const ChipList = ({ values, onChange, suggestions, editorId, inputId, chipId, su
                 <div className="space-y-3">
                     {groups.map(([groupName, terms]) => (
                         <div key={groupName}>
-                            <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground/70">
+                            <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground/70">
                                 {groupName}
                             </p>
                             <div className="mt-1.5 flex flex-wrap gap-2">
@@ -204,7 +204,7 @@ const ChipList = ({ values, onChange, suggestions, editorId, inputId, chipId, su
                                         key={s}
                                         onClick={() => add(s)}
                                         data-testid={suggestId(s.replace(/\s+/g, "-"))}
-                                        className="inline-flex min-h-[2.75rem] items-center rounded-full border border-white/10 bg-transparent px-4 py-1 text-xs uppercase tracking-[0.15em] text-muted-foreground transition-colors duration-200 hover:border-primary/40 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background md:min-h-0 md:px-3"
+                                        className="inline-flex min-h-[2.75rem] items-center rounded-full border border-border bg-transparent px-4 py-1 text-eyebrow uppercase tracking-eyebrow text-muted-foreground transition-colors duration-200 hover:border-primary/40 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background md:min-h-0 md:px-3"
                                     >
                                         + {s}
                                     </button>
@@ -220,15 +220,15 @@ const ChipList = ({ values, onChange, suggestions, editorId, inputId, chipId, su
 
 const Field = ({ id, label, hint, children }) => (
     <div>
-        <Label htmlFor={id} className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
+        <Label htmlFor={id} className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
             {label}
         </Label>
         {children}
-        {hint && <p className="mt-2 text-xs text-muted-foreground">{hint}</p>}
+        {hint && <p className="mt-2 text-meta text-muted-foreground">{hint}</p>}
     </div>
 );
 
-const inputClass = "mt-2 h-12 border-white/10 bg-card/60 focus-visible:ring-primary";
+const inputClass = "mt-2 h-12 border-border bg-card/60 focus-visible:ring-primary";
 
 // ---------------------------------------------------------------------------
 
@@ -495,13 +495,13 @@ export default function CreatorOnboarding() {
         <div data-testid={IDS.page} className="min-h-screen bg-background grain-page">
             <Navbar />
             <main className="mx-auto max-w-3xl px-5 py-12 md:px-6 md:py-16">
-                <p className="text-xs uppercase tracking-[0.2em] text-primary">
+                <p className="text-eyebrow uppercase tracking-eyebrow text-primary">
                     Creator · Your profile
                 </p>
-                <h1 className="mt-4 font-serif text-fluid-5xl leading-none tracking-tight">
+                <h1 className="mt-4 font-serif text-h1 leading-none tracking-tight">
                     Tell us about you.
                 </h1>
-                <p className="mt-6 max-w-xl text-sm leading-relaxed text-muted-foreground">
+                <p className="mt-6 max-w-xl text-body leading-relaxed text-muted-foreground">
                     {verificationStatus === "verified"
                         ? "You're verified, so you stay live while you edit. Changing your name, handle or city means we'll take another look — you won't drop off the directory in the meantime."
                         : "Fill in as much as you like and save. Nothing here is required to save, and nobody sees it until you send it to us."}
@@ -510,16 +510,16 @@ export default function CreatorOnboarding() {
                 {/* The gate, made visible. The ring is what decides whether the
                     submit button works, so it sits above the form rather than
                     at the end of it. */}
-                <div className="mt-10 flex flex-col gap-5 rounded-md border border-white/10 bg-card p-6 sm:flex-row sm:items-center grain-surface">
+                <div className="mt-10 flex flex-col gap-5 rounded-md border border-border bg-card p-6 sm:flex-row sm:items-center grain-surface">
                     <Ring percent={percent} />
                     <div className="min-w-0 flex-1">
                         {completeness?.complete ? (
-                            <p className="font-serif text-xl leading-tight">
+                            <p className="font-serif text-h3 leading-tight">
                                 That's everything — send it over when you're ready.
                             </p>
                         ) : (
                             <>
-                                <p className="font-serif text-xl leading-tight">
+                                <p className="font-serif text-h3 leading-tight">
                                     {percent === 0
                                         ? "Let's get you on the directory."
                                         : "Nearly there."}
@@ -529,7 +529,7 @@ export default function CreatorOnboarding() {
                                         <li
                                             key={row.field}
                                             data-testid={IDS.missingItem(row.field)}
-                                            className="rounded-full border border-white/10 bg-background/60 px-3 py-1 text-xs text-muted-foreground"
+                                            className="rounded-full border border-border bg-background/60 px-3 py-1 text-meta text-muted-foreground"
                                         >
                                             {row.label}
                                         </li>
@@ -538,7 +538,7 @@ export default function CreatorOnboarding() {
                             </>
                         )}
                         {submittedAt && verificationStatus === "pending" && (
-                            <p data-testid={IDS.statusNote} className="mt-3 text-xs text-primary">
+                            <p data-testid={IDS.statusNote} className="mt-3 text-meta text-primary">
                                 Already with the team — reviews usually finish within 48 hours.
                             </p>
                         )}
@@ -557,7 +557,7 @@ export default function CreatorOnboarding() {
                         <div className="flex flex-wrap items-center gap-5">
                             <div
                                 data-testid={IDS.photoPreview}
-                                className="media-frame grid aspect-square h-20 w-20 flex-none place-items-center rounded-md border border-white/10"
+                                className="media-frame grid aspect-square h-20 w-20 flex-none place-items-center rounded-md border border-border"
                             >
                                 {profileImageUrl ? (
                                     <img src={mediaUrl(profileImageUrl)} alt="Your profile" className="h-full w-full object-cover" />
@@ -566,7 +566,7 @@ export default function CreatorOnboarding() {
                                 )}
                             </div>
                             <div className="min-w-0">
-                                <Label className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                                <Label className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                                     Profile photo
                                 </Label>
                                 <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -584,7 +584,7 @@ export default function CreatorOnboarding() {
                                         disabled={imageBusy}
                                         data-testid={IDS.photoUpload}
                                         onClick={() => fileInputRef.current?.click()}
-                                        className="h-11 rounded-full border-white/15 bg-transparent hover:bg-white/5"
+                                        className="h-11 rounded-full border-input bg-transparent hover:bg-muted"
                                     >
                                         {imageBusy ? (
                                             <>
@@ -604,17 +604,17 @@ export default function CreatorOnboarding() {
                                             disabled={imageBusy}
                                             onClick={onRemoveImage}
                                             data-testid={IDS.photoRemove}
-                                            className="text-xs uppercase tracking-[0.15em] text-muted-foreground transition-colors duration-200 hover:text-state-rejected disabled:opacity-40"
+                                            className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground transition-colors duration-200 hover:text-state-rejected disabled:opacity-40"
                                         >
                                             Remove
                                         </button>
                                     )}
                                 </div>
-                                <p className="mt-2 text-xs text-muted-foreground">
+                                <p className="mt-2 text-meta text-muted-foreground">
                                     JPEG, PNG, WebP or GIF, up to 5MB. Saves on its own.
                                 </p>
                                 {imageError && (
-                                    <p data-testid={IDS.photoError} className="mt-2 text-xs text-destructive">
+                                    <p data-testid={IDS.photoError} className="mt-2 text-meta text-destructive">
                                         {imageError}
                                     </p>
                                 )}
@@ -687,7 +687,7 @@ export default function CreatorOnboarding() {
                                         value={form.address}
                                         onChange={setText("address")}
                                         maxLength={500}
-                                        className="h-12 border-white/10 bg-card/60 pl-9 focus-visible:ring-primary"
+                                        className="h-12 border-border bg-card/60 pl-9 focus-visible:ring-primary"
                                         placeholder="e.g. Indiranagar"
                                     />
                                 </div>
@@ -773,11 +773,11 @@ export default function CreatorOnboarding() {
                                             "flex min-h-[3.5rem] items-center gap-3 rounded-md border px-4 text-left transition-colors duration-200 " +
                                             (on
                                                 ? "border-primary bg-primary/10 text-primary"
-                                                : "border-white/10 bg-card/60 text-muted-foreground hover:border-white/25")
+                                                : "border-border bg-card/60 text-muted-foreground hover:border-tint/30")
                                         }
                                     >
                                         <Icon className="h-4 w-4 flex-none" />
-                                        <span className="text-sm">{label}</span>
+                                        <span className="text-meta">{label}</span>
                                         {on && <Check className="ml-auto h-4 w-4 flex-none" />}
                                     </button>
                                 );
@@ -803,7 +803,7 @@ export default function CreatorOnboarding() {
                                             data-testid={IDS.igHandle}
                                             value={form.instagram_handle}
                                             onChange={setText("instagram_handle")}
-                                            className="h-12 border-white/10 bg-card/60 pl-9 focus-visible:ring-primary"
+                                            className="h-12 border-border bg-card/60 pl-9 focus-visible:ring-primary"
                                             placeholder="@your.handle"
                                         />
                                     </div>
@@ -843,7 +843,7 @@ export default function CreatorOnboarding() {
                                             type="url"
                                             value={form.youtube_url}
                                             onChange={setText("youtube_url")}
-                                            className="h-12 border-white/10 bg-card/60 pl-9 focus-visible:ring-primary"
+                                            className="h-12 border-border bg-card/60 pl-9 focus-visible:ring-primary"
                                             placeholder="https://youtube.com/@yourchannel"
                                         />
                                     </div>
@@ -868,7 +868,7 @@ export default function CreatorOnboarding() {
                                     type="url"
                                     value={form.facebook_url}
                                     onChange={setText("facebook_url")}
-                                    className="h-12 border-white/10 bg-card/60 pl-9 focus-visible:ring-primary"
+                                    className="h-12 border-border bg-card/60 pl-9 focus-visible:ring-primary"
                                     placeholder="https://facebook.com/yourpage"
                                 />
                             </div>
@@ -892,10 +892,10 @@ export default function CreatorOnboarding() {
                                 onChange={setText("about")}
                                 rows={5}
                                 maxLength={1500}
-                                className="mt-2 border-white/10 bg-card/60 focus-visible:ring-primary"
+                                className="mt-2 border-border bg-card/60 focus-visible:ring-primary"
                                 placeholder="What you make, who watches it, and the kind of work you want more of…"
                             />
-                            <p className="mt-1.5 text-right text-xs text-muted-foreground">
+                            <p className="mt-1.5 text-right text-meta text-muted-foreground">
                                 {(form.about || "").length}/1500
                             </p>
                         </Field>
@@ -916,7 +916,7 @@ export default function CreatorOnboarding() {
                     >
                         <label
                             htmlFor={IDS.homepageOptIn}
-                            className="flex cursor-pointer items-start gap-4 rounded-lg border border-white/10 bg-card/60 p-5"
+                            className="flex cursor-pointer items-start gap-4 rounded-lg border border-border bg-card/60 p-5"
                         >
                             <Switch
                                 id={IDS.homepageOptIn}
@@ -925,11 +925,11 @@ export default function CreatorOnboarding() {
                                 onCheckedChange={set("homepage_opt_in")}
                                 className="mt-0.5 data-[state=checked]:bg-primary"
                             />
-                            <span className="text-sm">
+                            <span className="text-meta">
                                 <span className="block text-foreground">
                                     Show my profile on the WeAre Creators homepage.
                                 </span>
-                                <span className="mt-1.5 block text-xs leading-relaxed text-muted-foreground">
+                                <span className="mt-1.5 block text-meta leading-relaxed text-muted-foreground">
                                     Your name, photo, Instagram handle, city and what you
                                     cover — never your number, your rate or your follower
                                     count. Turn it off any time and you come off straight
@@ -952,7 +952,7 @@ export default function CreatorOnboarding() {
                                         step="100"
                                         value={form.base_rate}
                                         onChange={setText("base_rate")}
-                                        className="h-12 border-white/10 bg-card/60 pl-9 focus-visible:ring-primary"
+                                        className="h-12 border-border bg-card/60 pl-9 focus-visible:ring-primary"
                                         placeholder="e.g. 5000"
                                     />
                                 </div>
@@ -972,7 +972,7 @@ export default function CreatorOnboarding() {
                                         step="100"
                                         value={form.follower_count}
                                         onChange={setText("follower_count")}
-                                        className="h-12 border-white/10 bg-card/60 pl-9 focus-visible:ring-primary"
+                                        className="h-12 border-border bg-card/60 pl-9 focus-visible:ring-primary"
                                         placeholder="e.g. 12400"
                                     />
                                 </div>
@@ -981,7 +981,7 @@ export default function CreatorOnboarding() {
                     </Section>
 
                     <Section id="payout" title="Getting paid" note="Not needed to be reviewed">
-                        <p className="text-sm leading-relaxed text-muted-foreground">
+                        <p className="text-body leading-relaxed text-muted-foreground">
                             {/* Said plainly so nobody thinks bank details are the
                                 price of being looked at. They aren't. */}
                             We can't release a payment without these, but you don't
@@ -1006,11 +1006,11 @@ export default function CreatorOnboarding() {
                                             "min-h-[3.5rem] rounded-md border px-4 py-3 text-left transition-colors duration-200 " +
                                             (form.payout_method === m.value
                                                 ? "border-primary bg-primary/10 text-primary"
-                                                : "border-white/10 text-muted-foreground hover:border-white/20")
+                                                : "border-border text-muted-foreground hover:border-tint/30")
                                         }
                                     >
-                                        <span className="block text-sm">{m.label}</span>
-                                        <span className="mt-0.5 block text-xs opacity-70">
+                                        <span className="block text-meta">{m.label}</span>
+                                        <span className="mt-0.5 block text-meta opacity-70">
                                             {m.hint}
                                         </span>
                                     </button>
@@ -1029,7 +1029,7 @@ export default function CreatorOnboarding() {
                                             value={form.payout_upi}
                                             onChange={setText("payout_upi")}
                                             maxLength={120}
-                                            className="h-12 border-white/10 bg-card/60 pl-9 focus-visible:ring-primary"
+                                            className="h-12 border-border bg-card/60 pl-9 focus-visible:ring-primary"
                                             placeholder="e.g. priya@okhdfcbank"
                                         />
                                     </div>
@@ -1106,13 +1106,13 @@ export default function CreatorOnboarding() {
                     </Section>
 
                     {error && (
-                        <p data-testid={IDS.error} className="text-sm text-destructive">
+                        <p data-testid={IDS.error} className="text-meta text-destructive">
                             {error}
                         </p>
                     )}
 
-                    <div className="space-y-4 border-t border-white/10 pt-8">
-                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <div className="space-y-4 border-t border-border pt-8">
+                        <div className="flex items-center gap-2 text-meta text-muted-foreground">
                             <ShieldCheck className="h-4 w-4 flex-none text-primary" />
                             {verificationStatus === "verified"
                                 ? "You stay live while we review any changes."
@@ -1125,7 +1125,7 @@ export default function CreatorOnboarding() {
                                 variant="outline"
                                 data-testid={IDS.save}
                                 disabled={saving || submitting}
-                                className="h-12 rounded-full border-white/15 bg-transparent hover:bg-white/5"
+                                className="h-12 rounded-full border-input bg-transparent hover:bg-muted"
                             >
                                 {saving ? (
                                     <>
@@ -1165,14 +1165,14 @@ export default function CreatorOnboarding() {
                             <Link
                                 to="/dashboard"
                                 data-testid={IDS.later}
-                                className="inline-flex min-h-[3rem] items-center text-sm text-muted-foreground transition-colors duration-200 hover:text-primary"
+                                className="inline-flex min-h-[3rem] items-center text-meta text-muted-foreground transition-colors duration-200 hover:text-primary"
                             >
                                 Finish later
                             </Link>
                         </div>
 
                         {!canSubmit && verificationStatus !== "verified" && (
-                            <p data-testid={IDS.submitBlocked} className="text-xs text-muted-foreground">
+                            <p data-testid={IDS.submitBlocked} className="text-meta text-muted-foreground">
                                 {/* The button being dead needs a reason next to
                                     it, or it just reads as broken. */}
                                 {missing.length} still to go before you can send this

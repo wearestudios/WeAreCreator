@@ -65,10 +65,26 @@ if (config.enableHealthCheck) {
   healthPluginInstance = new WebpackHealthPlugin();
 }
 
+// **Extend CRA's lint config, never replace it.** react-scripts hands the
+// ESLint plugin `eslint-config-react-app/base` only — a parser and two JSX
+// rules — and relies on `"eslintConfig": {"extends": "react-app"}` in
+// package.json for everything else. This project has no such key, so for as
+// long as this block extended only the react-hooks recommended preset the
+// build linted with no `no-undef`, no `no-unused-vars` and no jsx-a11y: an
+// undefined identifier compiled cleanly and threw at runtime, which is how a
+// whole page once shipped as a ReferenceError. The full config is resolved
+// from react-scripts' own copy, because that is the ESLint (8.x) the plugin
+// actually runs; the top-level eslint 9 in devDependencies is a different
+// tool. `deepMergeWithArray` appends this to CRA's base, so both apply.
+// `test_lint_config.py` holds this line.
+const reactAppEslintConfig = require.resolve("eslint-config-react-app", {
+  paths: [path.dirname(require.resolve("react-scripts/package.json"))],
+});
+
 const webpackConfig = {
   eslint: {
     configure: {
-      extends: ["plugin:react-hooks/recommended"],
+      extends: [reactAppEslintConfig],
       rules: {
         "react-hooks/rules-of-hooks": "error",
         "react-hooks/exhaustive-deps": "warn",
@@ -93,6 +109,23 @@ const webpackConfig = {
             '**/public/**',
         ],
       };
+
+      // **Leave root-absolute `url()`s alone.** The self-hosted fonts are
+      // served from `public/fonts/` at a stable address so `index.html` can
+      // preload the hero face by name; css-loader would otherwise try to
+      // bundle `/fonts/…` as a module, fail to resolve it, and hash it if it
+      // could — which is exactly the address a preload cannot know.
+      // Relative `url()`s (images under src/) still go through the bundler.
+      const leaveRootUrls = (rules) =>
+        rules.forEach((rule) => {
+          if (rule.oneOf) leaveRootUrls(rule.oneOf);
+          (Array.isArray(rule.use) ? rule.use : []).forEach((use) => {
+            if (use && typeof use === "object" && /[\\/]css-loader[\\/]/.test(use.loader || "")) {
+              use.options = { ...use.options, url: { filter: (url) => !url.startsWith("/") } };
+            }
+          });
+        });
+      leaveRootUrls(webpackConfig.module.rules);
 
       // Add health check plugin to webpack if enabled
       if (config.enableHealthCheck && healthPluginInstance) {

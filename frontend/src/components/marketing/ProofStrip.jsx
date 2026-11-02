@@ -77,7 +77,7 @@ export function ProofStrip({ only, className = "" }) {
             <section
                 aria-hidden
                 data-testid={IDS.proofReserve}
-                className={`border-y border-white/10 bg-card/30 ${RESERVED} ${className}`}
+                className={`border-y border-border bg-card/30 ${RESERVED} ${className}`}
             />
         );
     }
@@ -86,7 +86,7 @@ export function ProofStrip({ only, className = "" }) {
     return (
         <section
             data-testid={IDS.proof}
-            className={`border-y border-white/10 bg-card/30 ${RESERVED} ${className}`}
+            className={`border-y border-border bg-card/30 ${RESERVED} ${className}`}
         >
             <div className="mx-auto flex max-w-7xl flex-wrap items-baseline justify-center gap-x-14 gap-y-6 px-6 py-10">
                 {keys.map((k, i) => (

@@ -76,17 +76,17 @@ export function ImpersonationBanner() {
             className="fixed inset-x-0 top-0 z-50 border-b border-primary/40 bg-primary text-primary-foreground"
         >
             <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-x-4 gap-y-2 px-5 py-2.5 md:px-6">
-                <span className="inline-flex items-center gap-2 text-xs font-medium uppercase tracking-[0.18em]">
+                <span className="inline-flex items-center gap-2 text-eyebrow font-medium uppercase tracking-eyebrow">
                     <Eye className="h-4 w-4" />
                     Viewing as
                 </span>
-                <span data-testid={IDS.who} className="min-w-0 text-sm font-medium">
+                <span data-testid={IDS.who} className="min-w-0 text-meta font-medium">
                     {user?.name || "Unknown"}
                     <span className="opacity-70"> · {user?.role?.replace(/_/g, " ")}</span>
                 </span>
                 {/* Said plainly. An admin who tries something and gets a refusal
                     should have already been told why. */}
-                <span className="text-xs opacity-80">
+                <span className="text-meta opacity-80">
                     Read-only — nothing you do here can change anything
                     {minutesLeft != null ? ` · ${minutesLeft}m left` : ""}
                 </span>
@@ -95,7 +95,7 @@ export function ImpersonationBanner() {
                     onClick={stop}
                     disabled={leaving}
                     data-testid={IDS.stop}
-                    className="ml-auto inline-flex min-h-[2.25rem] items-center gap-1.5 rounded-full bg-scrim/85 px-4 py-1.5 text-xs font-medium uppercase tracking-[0.15em] text-primary-ink transition-colors duration-200 hover:bg-scrim focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-scrim focus-visible:ring-offset-2 focus-visible:ring-offset-primary disabled:opacity-60"
+                    className="ml-auto inline-flex min-h-[2.25rem] items-center gap-1.5 rounded-full bg-scrim/85 px-4 py-1.5 text-eyebrow font-medium uppercase tracking-eyebrow text-primary-ink transition-colors duration-200 hover:bg-scrim focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-scrim focus-visible:ring-offset-2 focus-visible:ring-offset-primary disabled:opacity-60"
                 >
                     <LogOut className="h-3.5 w-3.5" />
                     {leaving ? "Leaving…" : "Stop"}

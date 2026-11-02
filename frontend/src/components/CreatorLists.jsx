@@ -98,7 +98,7 @@ export default function CreatorLists({ campaignId, onInvited }) {
         <section data-testid={IDS.panel} className="space-y-4">
             <div className="flex flex-wrap items-center gap-2">
                 <Users className="h-4 w-4 text-muted-foreground" />
-                <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                     Saved lists
                 </p>
             </div>
@@ -110,7 +110,7 @@ export default function CreatorLists({ campaignId, onInvited }) {
                     placeholder="e.g. Worked well at launches"
                     maxLength={80}
                     data-testid={IDS.name}
-                    className="h-10 w-64 border-tint/10 bg-background/60"
+                    className="h-10 w-64 border-border bg-background/60"
                 />
                 <Button
                     size="sm"
@@ -126,7 +126,7 @@ export default function CreatorLists({ campaignId, onInvited }) {
             </div>
 
             {lists && lists.length === 0 ? (
-                <p data-testid={IDS.empty} className="text-sm text-muted-foreground">
+                <p data-testid={IDS.empty} className="text-meta text-muted-foreground">
                     No lists yet. Make one, then add creators to it from the directory or an
                     applicant board — next time you brief, they're already together.
                 </p>
@@ -136,12 +136,12 @@ export default function CreatorLists({ campaignId, onInvited }) {
                         <li
                             key={list.id}
                             data-testid={IDS.row(list.id)}
-                            className="rounded-md border border-tint/10 bg-card p-4"
+                            className="rounded-md border border-border bg-card p-4"
                         >
                             <div className="flex flex-wrap items-center gap-3">
                                 <div className="min-w-0 flex-1">
-                                    <p className="truncate text-sm">{list.name}</p>
-                                    <p className="mt-0.5 text-xs text-muted-foreground">
+                                    <p className="truncate text-meta">{list.name}</p>
+                                    <p className="mt-0.5 text-meta text-muted-foreground">
                                         {list.member_count}{" "}
                                         {list.member_count === 1 ? "creator" : "creators"}
                                     </p>
@@ -170,7 +170,7 @@ export default function CreatorLists({ campaignId, onInvited }) {
                                     disabled={busy === list.id}
                                     data-testid={IDS.remove(list.id)}
                                     title="Remove this list"
-                                    className="rounded border border-tint/10 p-2 text-muted-foreground transition-colors duration-150 hover:border-destructive/40 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                    className="rounded border border-border p-2 text-muted-foreground transition-colors duration-150 hover:border-destructive/40 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                                 >
                                     <Trash2 className="h-3.5 w-3.5" />
                                     <span className="sr-only">Remove list</span>
@@ -182,10 +182,10 @@ export default function CreatorLists({ campaignId, onInvited }) {
                                     {list.members.map((m) => (
                                         <li
                                             key={m.user_id}
-                                            className="flex items-center gap-2 rounded border border-tint/10 px-2 py-1"
+                                            className="flex items-center gap-2 rounded border border-border px-2 py-1"
                                         >
                                             <CreatorAvatar creator={m} size="h-5 w-5" />
-                                            <span className="text-xs">{m.name}</span>
+                                            <span className="text-meta">{m.name}</span>
                                             {/* The band, never the counts —
                                                 the same rule every other
                                                 brand surface holds. */}

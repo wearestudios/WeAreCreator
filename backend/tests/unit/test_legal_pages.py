@@ -339,8 +339,11 @@ def test_the_public_pages_carry_the_footer(page):
 def test_the_marketing_pages_carry_the_marketing_footer():
     """Same links, same terms and privacy — a different renderer, so the
     shared one could stay untouched for the authenticated surfaces."""
-    src = read("src", "pages", "Landing.jsx")
-    assert "MarketingFooter" in src
+    # Every public page mounts the footer through `MarketingPage`, which is
+    # where both bars live.
+    for page in ("Home.jsx", "ForBrands.jsx", "ForCreators.jsx"):
+        assert "<MarketingPage" in read("src", "pages", page), page
+    assert "<MarketingFooter />" in read("src", "components", "marketing", "Sections.jsx")
     nav = read("src", "lib", "siteNav.js")
     assert '"/terms"' in nav and '"/privacy"' in nav
 

@@ -44,15 +44,15 @@ export function QuestionBubble({ q }) {
                     "max-w-[85%] rounded-lg border px-4 py-3 " +
                     (mine
                         ? "border-primary/25 bg-primary/10"
-                        : "border-white/10 bg-white/5")
+                        : "border-border bg-muted")
                 }
             >
-                <p className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+                <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                     {mine ? "You" : sideLabel(q.author_side)}
                     {" · "}
                     {formatWhen(q.created_at)}
                 </p>
-                <p className="mt-1.5 whitespace-pre-line text-sm leading-relaxed text-foreground/90">
+                <p className="mt-1.5 whitespace-pre-line text-body leading-relaxed text-foreground/90">
                     {q.body}
                 </p>
             </div>
@@ -104,9 +104,9 @@ export default function CampaignQuestions({ campaignId }) {
     return (
         <section
             data-testid={QUESTIONS.section}
-            className="mt-12 rounded-md border border-white/10 bg-card p-6 md:p-8 grain-surface"
+            className="mt-12 rounded-md border border-border bg-card p-6 md:p-8 grain-surface"
         >
-            <p className="flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-primary">
+            <p className="flex items-center gap-2 text-eyebrow uppercase tracking-eyebrow text-primary">
                 <MessageCircleQuestion className="h-4 w-4" />
                 Questions
             </p>
@@ -121,7 +121,7 @@ export default function CampaignQuestions({ campaignId }) {
                     {thread.questions.length === 0 ? (
                         <p
                             data-testid={QUESTIONS.empty}
-                            className="mt-4 text-sm leading-relaxed text-muted-foreground"
+                            className="mt-4 text-body leading-relaxed text-muted-foreground"
                         >
                             Wondering about timings, parking, a plus-one? Ask here —
                             only you and {sideInline(thread.answered_by)} can see
@@ -144,10 +144,10 @@ export default function CampaignQuestions({ campaignId }) {
                                 value={draft}
                                 onChange={(e) => setDraft(e.target.value)}
                                 placeholder={`Ask ${sideInline(thread.answered_by)} anything about this brief…`}
-                                className="min-h-[72px] border-white/10 bg-card/60 focus-visible:ring-primary"
+                                className="min-h-[72px] border-border bg-card/60 focus-visible:ring-primary"
                             />
                             <div className="mt-3 flex items-center justify-between gap-3">
-                                <p className="text-xs text-muted-foreground">
+                                <p className="text-meta text-muted-foreground">
                                     Answers land here and on WhatsApp.
                                 </p>
                                 <Button
@@ -169,7 +169,7 @@ export default function CampaignQuestions({ campaignId }) {
                             </div>
                         </div>
                     ) : (
-                        <p className="mt-5 text-xs text-muted-foreground">
+                        <p className="mt-5 text-meta text-muted-foreground">
                             This campaign has wrapped up, so the thread is closed.
                         </p>
                     )}

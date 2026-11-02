@@ -69,7 +69,7 @@ function RangePicker({ value, onChange, testId }) {
             role="radiogroup"
             aria-label="Date range"
             data-testid={testId}
-            className="inline-flex rounded-lg border border-tint/10 bg-tint/[0.03] p-0.5"
+            className="inline-flex rounded-lg border border-border bg-tint/[0.03] p-0.5"
         >
             {WINDOWS.map((w) => (
                 <button
@@ -80,7 +80,7 @@ function RangePicker({ value, onChange, testId }) {
                     data-testid={`${testId}-${w.days}`}
                     onClick={() => onChange(w.days)}
                     className={
-                        "rounded-md px-3 py-1.5 text-sm transition-colors duration-150 " +
+                        "rounded-md px-3 py-1.5 text-meta transition-colors duration-150 " +
                         (value === w.days
                             ? "bg-primary text-primary-foreground"
                             : "text-muted-foreground hover:text-foreground")
@@ -156,10 +156,10 @@ function Bars({ rows, valueKey, format = pct, max }) {
         <div className="mt-3 space-y-2">
             {rows.map((r, i) => (
                 <div key={r.key ?? i} className="flex items-center gap-3">
-                    <span className="w-28 shrink-0 truncate text-sm text-muted-foreground">
+                    <span className="w-28 shrink-0 truncate text-meta text-muted-foreground">
                         {r.key}
                     </span>
-                    <div className="h-2 flex-1 overflow-hidden rounded-full bg-tint/5">
+                    <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
                         <div
                             className="h-full rounded-full"
                             style={{
@@ -168,7 +168,7 @@ function Bars({ rows, valueKey, format = pct, max }) {
                             }}
                         />
                     </div>
-                    <span className="w-16 shrink-0 text-right text-sm tabular-nums">
+                    <span className="w-16 shrink-0 text-right text-meta tabular-nums">
                         {format(r[valueKey])}
                     </span>
                 </div>
@@ -198,7 +198,7 @@ function SupplyRow({ row, right, onOpen, opens, testId }) {
                 data-testid={testId}
                 onClick={onOpen}
                 title={`Open the ${opens} this counted`}
-                className="flex w-full items-center justify-between gap-3 rounded-md border border-tint/10 bg-tint/[0.03] px-3 py-2 text-left text-sm transition-colors duration-150 hover:border-primary/40 hover:bg-tint/[0.06]"
+                className="flex w-full items-center justify-between gap-3 rounded-md border border-border bg-tint/[0.03] px-3 py-2 text-left text-meta transition-colors duration-150 hover:border-primary/40 hover:bg-tint/[0.06]"
             >
                 <span>
                     {row.category} · {row.city}
@@ -288,7 +288,7 @@ export default function Analytics() {
         return (
             <div className="space-y-4" aria-hidden="true">
                 {[0, 1, 2].map((i) => (
-                    <div key={i} className="h-28 animate-pulse rounded-lg bg-tint/5" />
+                    <div key={i} className="h-28 animate-pulse rounded-lg bg-muted" />
                 ))}
             </div>
         );
@@ -302,7 +302,7 @@ export default function Analytics() {
             <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                     <p className={TEXT.eyebrow}>Analytics</p>
-                    <h2 className="mt-1 font-serif text-fluid-2xl leading-tight tracking-tight">
+                    <h2 className="mt-1 font-serif text-h3 leading-tight tracking-tight">
                         Is the business healthy?
                     </h2>
                 </div>
@@ -316,7 +316,7 @@ export default function Analytics() {
                         an hour old is worse than one that admits it. Only the
                         default window is cached, so the other three are always
                         worked out for this request and say "Just now" honestly. */}
-                    <span className="text-sm text-muted-foreground">
+                    <span className="text-meta text-muted-foreground">
                         {data.cached
                             ? `Worked out ${Math.round((data.age_seconds || 0) / 60)} min ago`
                             : "Just now"}
@@ -352,7 +352,7 @@ export default function Analytics() {
                     <Stat label="Brands judged" value={num(repeat.eligible)} />
                     <Stat label="Came back" value={num(repeat.repeated)} />
                 </div>
-                <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
+                <p className="mt-3 text-body leading-relaxed text-muted-foreground">
                     A brand is judged once its own {repeat.window_days} days have passed,
                     so a good month of new signups does not drag this down.
                 </p>
@@ -415,7 +415,7 @@ export default function Analytics() {
                     margin computed with no recorded cost is a gross number
                     wearing a net number's name. */}
                 {margin.with_recorded_cost < margin.campaigns && (
-                    <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
+                    <p className="mt-3 text-body leading-relaxed text-muted-foreground">
                         {margin.campaigns - margin.with_recorded_cost} brief
                         {margin.campaigns - margin.with_recorded_cost === 1 ? " has" : "s have"}{" "}
                         no delivery cost recorded, so their revenue is counted and their
@@ -467,7 +467,7 @@ export default function Analytics() {
                 <div className="grid gap-6 md:grid-cols-2">
                     <div>
                         <p className={TEXT.eyebrow}>Sell into these</p>
-                        <p className="mt-1 text-sm text-muted-foreground">
+                        <p className="mt-1 text-meta text-muted-foreground">
                             Creators waiting, and nobody has briefed for them.
                         </p>
                         {supply.sell_into.length ? (
@@ -484,14 +484,14 @@ export default function Analytics() {
                                 ))}
                             </ul>
                         ) : (
-                            <p className="mt-3 text-sm text-muted-foreground">
+                            <p className="mt-3 text-meta text-muted-foreground">
                                 Every category with creators in it has had a brief.
                             </p>
                         )}
                     </div>
                     <div>
                         <p className={TEXT.eyebrow}>Recruit for these</p>
-                        <p className="mt-1 text-sm text-muted-foreground">
+                        <p className="mt-1 text-meta text-muted-foreground">
                             Briefs we could not fill.
                         </p>
                         {supply.recruit_for.length ? (
@@ -508,7 +508,7 @@ export default function Analytics() {
                                 ))}
                             </ul>
                         ) : (
-                            <p className="mt-3 text-sm text-muted-foreground">
+                            <p className="mt-3 text-meta text-muted-foreground">
                                 Nothing went unfilled.
                             </p>
                         )}

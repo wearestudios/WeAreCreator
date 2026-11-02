@@ -46,7 +46,7 @@ export default function BrandTrust({ userId, trust, onChanged }) {
 
     return (
         <div data-testid={IDS.panel} className="space-y-3">
-            <p className="flex flex-wrap items-center gap-2 text-sm">
+            <p className="flex flex-wrap items-center gap-2 text-meta">
                 {trust.trusted ? (
                     <ShieldCheck aria-hidden="true" className="h-4 w-4 text-state-approved" />
                 ) : (
@@ -73,7 +73,7 @@ export default function BrandTrust({ userId, trust, onChanged }) {
             </p>
 
             {trust.revoked && (
-                <p className="rounded-md border border-state-pending/30 bg-state-pending/10 p-3 text-sm text-state-pending">
+                <p className="rounded-md border border-state-pending/30 bg-state-pending-wash p-3 text-meta text-state-pending">
                     Revoked by hand: {trust.revoked_reason}
                 </p>
             )}
@@ -84,7 +84,7 @@ export default function BrandTrust({ userId, trust, onChanged }) {
                     size="sm"
                     onClick={() => setAsking(trust.revoked ? "restore" : "revoke")}
                     data-testid={trust.revoked ? IDS.restore : IDS.revoke}
-                    className="min-h-[2.75rem] border-tint/20 bg-transparent sm:min-h-0"
+                    className="min-h-[2.75rem] border-input bg-transparent sm:min-h-0"
                 >
                     {trust.revoked ? "Let them publish again" : "Send their briefs back to review"}
                 </Button>
@@ -103,7 +103,7 @@ export default function BrandTrust({ userId, trust, onChanged }) {
                                 : "Why. e.g. Spoke to them; the briefing problem is sorted."
                         }
                         data-testid={IDS.reason}
-                        className="rounded-md border-tint/10 bg-background/60 text-base focus-visible:ring-ring"
+                        className="rounded-md border-border bg-background/60 text-body focus-visible:ring-ring"
                     />
                     <div className="flex flex-wrap gap-2">
                         <Button

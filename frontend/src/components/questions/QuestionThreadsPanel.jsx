@@ -44,9 +44,9 @@ export default function QuestionThreadsPanel({ campaignId, className = "" }) {
     return (
         <section
             data-testid={QUESTIONS.threadsPanel}
-            className={`rounded-md border border-white/10 bg-card p-6 grain-surface ${className}`}
+            className={`rounded-md border border-border bg-card p-6 grain-surface ${className}`}
         >
-            <p className="flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-muted-foreground">
+            <p className="flex items-center gap-2 text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                 <MessageCircleQuestion className="h-4 w-4 text-primary" />
                 Creator questions
                 {Array.isArray(threads) && (
@@ -65,12 +65,12 @@ export default function QuestionThreadsPanel({ campaignId, className = "" }) {
                 <div className="mt-5 space-y-8">
                     {threads.map((t) => (
                         <div key={t.creator_id}>
-                            <p className="mb-3 text-sm">
-                                <span className="font-serif text-base">
+                            <p className="mb-3 text-meta">
+                                <span className="font-serif text-body">
                                     {t.creator?.name || "A creator"}
                                 </span>
                                 {t.unanswered && (
-                                    <span className="ml-2 rounded-full bg-primary/15 px-2 py-0.5 text-[10px] uppercase tracking-[0.15em] text-primary">
+                                    <span className="ml-2 rounded-full bg-primary/15 px-2 py-0.5 text-eyebrow uppercase tracking-eyebrow text-primary">
                                         Waiting on you
                                     </span>
                                 )}

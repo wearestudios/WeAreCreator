@@ -21,7 +21,7 @@ export default function ExecutionBadge({ campaign, audience = "default", classNa
             data-testid={EXECUTION.badge(owner)}
             title={audience === "creator" ? meta.creatorNote : undefined}
             className={
-                "inline-flex flex-none items-center rounded-full border px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.18em] " +
+                "inline-flex flex-none items-center rounded-full border px-2.5 py-1 text-eyebrow font-medium uppercase tracking-eyebrow " +
                 meta.tone +
                 (className ? ` ${className}` : "")
             }
@@ -47,7 +47,7 @@ export function ExecutionNote({ campaign, audience = "default", className = "" }
     return (
         <p
             data-testid={EXECUTION.note(owner)}
-            className={"text-sm text-muted-foreground " + className}
+            className={"text-meta text-muted-foreground " + className}
         >
             {note}
         </p>

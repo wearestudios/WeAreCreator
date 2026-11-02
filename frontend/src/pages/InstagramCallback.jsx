@@ -85,7 +85,7 @@ export default function InstagramCallback() {
         <div data-testid={IDS.page} className="min-h-screen bg-background grain-page">
             <Navbar />
             <main className="mx-auto max-w-xl px-5 py-16 md:px-6 md:py-24">
-                <p className="inline-flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-primary">
+                <p className="inline-flex items-center gap-2 text-eyebrow uppercase tracking-eyebrow text-primary">
                     <Instagram className="h-3.5 w-3.5" />
                     Instagram
                 </p>
@@ -93,20 +93,20 @@ export default function InstagramCallback() {
                 {state.phase === "working" && (
                     <div data-testid={IDS.working} className="mt-6 flex items-center gap-3">
                         <Loader2 className="h-5 w-5 animate-spin text-primary" />
-                        <p className="font-serif text-2xl leading-tight">Connecting your account…</p>
+                        <p className="font-serif text-h3 leading-tight">Connecting your account…</p>
                     </div>
                 )}
 
                 {state.phase === "success" && (
                     <div data-testid={IDS.success} className="mt-6">
-                        <h1 className="font-serif text-fluid-3xl leading-tight tracking-tight">
+                        <h1 className="font-serif text-h2 leading-tight tracking-tight">
                             Connected.
                         </h1>
-                        <p className="mt-4 inline-flex items-center gap-2 text-sm text-state-approved">
+                        <p className="mt-4 inline-flex items-center gap-2 text-meta text-state-approved">
                             <BadgeCheck className="h-4 w-4" />
                             {state.username ? `@${state.username}` : "Your account"} is verified.
                         </p>
-                        <p className="mt-4 text-sm leading-relaxed text-muted-foreground">
+                        <p className="mt-4 text-body leading-relaxed text-muted-foreground">
                             Brands will see your real follower count from now on. We
                             refresh it every 12 hours — taking you back to your profile.
                         </p>
@@ -115,7 +115,7 @@ export default function InstagramCallback() {
 
                 {state.phase === "not_professional" && (
                     <div className="mt-6 space-y-6">
-                        <h1 className="font-serif text-fluid-3xl leading-tight tracking-tight">
+                        <h1 className="font-serif text-h2 leading-tight tracking-tight">
                             Almost — one setting to change.
                         </h1>
                         <NotProfessionalHelp testid={IDS.notProfessional} message={state.message} />
@@ -137,7 +137,7 @@ export default function InstagramCallback() {
                             <Link
                                 to="/onboarding/creator"
                                 data-testid={IDS.back}
-                                className="inline-flex min-h-[3rem] items-center text-sm text-muted-foreground transition-colors duration-200 hover:text-primary"
+                                className="inline-flex min-h-[3rem] items-center text-meta text-muted-foreground transition-colors duration-200 hover:text-primary"
                             >
                                 Back to my profile
                             </Link>
@@ -147,14 +147,14 @@ export default function InstagramCallback() {
 
                 {state.phase === "error" && (
                     <div data-testid={IDS.error} className="mt-6 space-y-6">
-                        <h1 className="font-serif text-fluid-3xl leading-tight tracking-tight">
+                        <h1 className="font-serif text-h2 leading-tight tracking-tight">
                             That didn't go through.
                         </h1>
-                        <p className="flex items-start gap-2 rounded-md border border-state-rejected/25 bg-state-rejected/10 px-4 py-3 text-sm leading-relaxed text-state-rejected">
+                        <p className="flex items-start gap-2 rounded-md border border-state-rejected/25 bg-state-rejected-wash px-4 py-3 text-body leading-relaxed text-state-rejected">
                             <AlertCircle className="mt-0.5 h-4 w-4 flex-none" />
                             {state.message}
                         </p>
-                        <p className="text-sm leading-relaxed text-muted-foreground">
+                        <p className="text-body leading-relaxed text-muted-foreground">
                             Nothing has changed on your profile, and your self-reported
                             follower count is still what brands see.
                         </p>
@@ -176,7 +176,7 @@ export default function InstagramCallback() {
                             <Link
                                 to="/onboarding/creator"
                                 data-testid={IDS.back}
-                                className="inline-flex min-h-[3rem] items-center text-sm text-muted-foreground transition-colors duration-200 hover:text-primary"
+                                className="inline-flex min-h-[3rem] items-center text-meta text-muted-foreground transition-colors duration-200 hover:text-primary"
                             >
                                 Back to my profile
                             </Link>

@@ -31,7 +31,7 @@ import { formatCompact, formatDateTime } from "./shared";
 export const NotProfessionalHelp = ({ testid, message }) => (
     <div
         data-testid={testid}
-        className="rounded-md border border-state-pending/30 bg-state-pending/10 p-4 text-sm leading-relaxed text-state-pending"
+        className="rounded-md border border-state-pending/30 bg-state-pending-wash p-4 text-body leading-relaxed text-state-pending"
     >
         <p className="flex items-start gap-2">
             <AlertCircle className="mt-0.5 h-4 w-4 flex-none" />
@@ -46,7 +46,7 @@ export const NotProfessionalHelp = ({ testid, message }) => (
             <li>Tap <span className="text-state-pending">Account type and tools</span></li>
             <li>Tap <span className="text-state-pending">Switch to professional account</span> and pick <span className="text-state-pending">Creator</span></li>
         </ol>
-        <p className="mt-4 text-xs text-state-pending/80">
+        <p className="mt-4 text-meta text-state-pending/80">
             {/* The actual worry, answered before they ask it. */}
             It's free, your account stays public, and nothing about your posts or
             followers changes.
@@ -56,8 +56,8 @@ export const NotProfessionalHelp = ({ testid, message }) => (
 
 const Stat = ({ label, value, testid }) => (
     <div>
-        <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">{label}</p>
-        <p data-testid={testid} className="mt-1 font-serif text-xl leading-none">
+        <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">{label}</p>
+        <p data-testid={testid} className="mt-1 font-serif text-h3 leading-none">
             {typeof value === "number" ? formatCompact(value) : "—"}
         </p>
     </div>
@@ -130,7 +130,7 @@ export default function InstagramConnect({ onChanged }) {
 
     if (!data) {
         return (
-            <div data-testid={IDS.skeleton} className="rounded-md border border-white/10 bg-card p-6 grain-surface">
+            <div data-testid={IDS.skeleton} className="rounded-md border border-border bg-card p-6 grain-surface">
                 <Skeleton className="h-3 w-40" />
                 <Skeleton className="mt-4 h-6 w-2/3" />
                 <Skeleton className="mt-6 h-12 w-48 rounded-full" />
@@ -143,14 +143,14 @@ export default function InstagramConnect({ onChanged }) {
     const stale = data.status === "stale";
 
     return (
-        <div data-testid={IDS.card} className="rounded-md border border-white/10 bg-card p-6 grain-surface">
+        <div data-testid={IDS.card} className="rounded-md border border-border bg-card p-6 grain-surface">
             <div className="flex flex-wrap items-start justify-between gap-4">
                 <div className="min-w-0">
-                    <p className="inline-flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                    <p className="inline-flex items-center gap-2 text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                         <Instagram className="h-3.5 w-3.5" />
                         Instagram stats
                     </p>
-                    <p data-testid={IDS.status} className="mt-3 font-serif text-xl leading-tight">
+                    <p data-testid={IDS.status} className="mt-3 font-serif text-h3 leading-tight">
                         {connected
                             ? "Connected — your numbers are verified."
                             : stale
@@ -161,7 +161,7 @@ export default function InstagramConnect({ onChanged }) {
                 {connected && (
                     <span
                         data-testid={IDS.badge}
-                        className="inline-flex flex-none items-center gap-1.5 rounded-full border border-state-approved/40 bg-state-approved/15 px-2.5 py-1 text-[10px] uppercase tracking-[0.2em] text-state-approved"
+                        className="inline-flex flex-none items-center gap-1.5 rounded-full border border-state-approved/40 bg-state-approved-wash px-2.5 py-1 text-eyebrow uppercase tracking-eyebrow text-state-approved"
                     >
                         <BadgeCheck className="h-3.5 w-3.5" />
                         Verified
@@ -171,7 +171,7 @@ export default function InstagramConnect({ onChanged }) {
 
             {connected && (
                 <>
-                    <p data-testid={IDS.username} className="mt-3 text-sm text-muted-foreground">
+                    <p data-testid={IDS.username} className="mt-3 text-meta text-muted-foreground">
                         @{data.username}
                         {data.account_type ? ` · ${data.account_type.replace("_", " ").toLowerCase()}` : ""}
                     </p>
@@ -181,7 +181,7 @@ export default function InstagramConnect({ onChanged }) {
                         <Stat label="Reach" value={stats.reach} testid={IDS.stat("reach")} />
                         <Stat label="Interactions" value={stats.engagement} testid={IDS.stat("engagement")} />
                     </div>
-                    <p data-testid={IDS.updated} className="mt-4 text-xs text-muted-foreground">
+                    <p data-testid={IDS.updated} className="mt-4 text-meta text-muted-foreground">
                         {/* Says why the number didn't move when they tapped
                             refresh, instead of leaving it looking broken. */}
                         {data.stats_fetched_at
@@ -194,7 +194,7 @@ export default function InstagramConnect({ onChanged }) {
             {stale && (
                 <p
                     data-testid={IDS.stale}
-                    className="mt-4 rounded-md border border-state-pending/30 bg-state-pending/10 px-4 py-3 text-sm leading-relaxed text-state-pending"
+                    className="mt-4 rounded-md border border-state-pending/30 bg-state-pending-wash px-4 py-3 text-body leading-relaxed text-state-pending"
                 >
                     {data.stale_reason || "Instagram access lapsed."} Your self-reported
                     figure is showing in the meantime.
@@ -202,7 +202,7 @@ export default function InstagramConnect({ onChanged }) {
             )}
 
             {!data.configured && (
-                <p data-testid={IDS.unavailable} className="mt-4 text-sm leading-relaxed text-muted-foreground">
+                <p data-testid={IDS.unavailable} className="mt-4 text-body leading-relaxed text-muted-foreground">
                     {/* Honest about why the button is dead. "Coming soon" with
                         no reason reads as broken. */}
                     Not switched on yet — our Instagram app is with Meta for review.
@@ -218,7 +218,7 @@ export default function InstagramConnect({ onChanged }) {
             )}
 
             {error && (
-                <p data-testid={IDS.error} className="mt-4 text-sm text-destructive">
+                <p data-testid={IDS.error} className="mt-4 text-meta text-destructive">
                     {error}
                 </p>
             )}
@@ -238,7 +238,7 @@ export default function InstagramConnect({ onChanged }) {
                             // hover, and a cursor that says so.
                             (data.configured
                                 ? "bg-primary text-primary-foreground hover:bg-primary-hover disabled:opacity-60"
-                                : "cursor-not-allowed border border-white/10 bg-white/5 text-muted-foreground hover:bg-white/5")
+                                : "cursor-not-allowed border border-border bg-muted text-muted-foreground hover:bg-muted")
                         }
                     >
                         {busy ? (
@@ -263,7 +263,7 @@ export default function InstagramConnect({ onChanged }) {
                             onClick={refresh}
                             disabled={busy}
                             data-testid={IDS.refresh}
-                            className="h-12 rounded-full border-white/15 bg-transparent hover:bg-white/5"
+                            className="h-12 rounded-full border-input bg-transparent hover:bg-muted"
                         >
                             {busy ? (
                                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -277,7 +277,7 @@ export default function InstagramConnect({ onChanged }) {
                             onClick={disconnect}
                             disabled={busy}
                             data-testid={IDS.disconnect}
-                            className="inline-flex min-h-[3rem] items-center gap-2 text-sm text-muted-foreground transition-colors duration-200 hover:text-state-rejected disabled:opacity-50"
+                            className="inline-flex min-h-[3rem] items-center gap-2 text-meta text-muted-foreground transition-colors duration-200 hover:text-state-rejected disabled:opacity-50"
                         >
                             <Unlink className="h-4 w-4" />
                             Disconnect
@@ -286,7 +286,7 @@ export default function InstagramConnect({ onChanged }) {
                 )}
             </div>
 
-            <p data-testid={IDS.scopes} className="mt-5 text-xs leading-relaxed text-muted-foreground">
+            <p data-testid={IDS.scopes} className="mt-5 text-meta leading-relaxed text-muted-foreground">
                 {/* Naming the limits is the whole reason somebody says yes. */}
                 We ask Instagram for two things only: your profile basics and your
                 insights. We can't post, message, or change anything on your

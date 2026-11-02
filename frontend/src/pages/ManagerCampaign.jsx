@@ -219,7 +219,7 @@ export default function ManagerCampaign() {
                 <Link
                     to="/manager"
                     data-testid={IDS.back}
-                    className="-my-2 min-h-[2.75rem] py-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background md:my-0 md:min-h-0 md:py-0 inline-flex items-center gap-1.5 text-xs uppercase tracking-[0.18em] text-muted-foreground transition-colors duration-200 hover:text-primary"
+                    className="-my-2 min-h-[2.75rem] py-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background md:my-0 md:min-h-0 md:py-0 inline-flex items-center gap-1.5 text-eyebrow uppercase tracking-eyebrow text-muted-foreground transition-colors duration-200 hover:text-primary"
                 >
                     <ChevronLeft className="h-3.5 w-3.5" />
                     All campaigns
@@ -245,7 +245,7 @@ export default function ManagerCampaign() {
                                     />
                                     <span
                                         data-testid={ROSTER_IDS.counts}
-                                        className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground"
+                                        className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground"
                                     >
                                         {roster.attended} in · {roster.expected} expected
                                         {roster.no_shows > 0 ? ` · ${roster.no_shows} no-show` : ""}
@@ -266,7 +266,7 @@ export default function ManagerCampaign() {
                             aria-pressed={dayOf}
                             data-testid={IDS.dayOfToggle}
                             className={
-                                "mt-7 flex w-full items-center justify-center gap-2 rounded-md border text-sm uppercase tracking-[0.15em] transition-colors duration-200 " +
+                                "mt-7 flex w-full items-center justify-center gap-2 rounded-md border text-meta uppercase tracking-[0.15em] transition-colors duration-200 " +
                                 TOUCH +
                                 " " +
                                 (dayOf
@@ -309,10 +309,10 @@ export default function ManagerCampaign() {
                                                 onClick={() => setTab(t.key)}
                                                 data-testid={IDS.tab(t.key)}
                                                 className={
-                                                    "min-h-[3rem] flex-1 rounded-md border px-3 py-3 text-xs uppercase tracking-[0.15em] transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background " +
+                                                    "min-h-[3rem] flex-1 rounded-md border px-3 py-3 text-eyebrow uppercase tracking-eyebrow transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background " +
                                                     (on
                                                         ? "border-primary bg-primary/10 text-primary"
-                                                        : "border-white/10 text-muted-foreground")
+                                                        : "border-border text-muted-foreground")
                                                 }
                                             >
                                                 {t.label}
@@ -361,7 +361,7 @@ export default function ManagerCampaign() {
                                         disabled={busy}
                                         onClick={downloadDaysheet}
                                         data-testid={IDS.daysheet}
-                                        className={`rounded-md border-white/15 bg-transparent hover:border-primary/40 hover:text-primary ${TOUCH}`}
+                                        className={`rounded-md border-input bg-transparent hover:border-primary/40 hover:text-primary ${TOUCH}`}
                                     >
                                         <Download className="mr-2 h-4 w-4" />
                                         Day sheet (CSV)
@@ -428,13 +428,13 @@ function RosterList({ rows, onRecord }) {
                 <li
                     key={r.collaboration_id}
                     data-testid={ROSTER_IDS.row(r.collaboration_id)}
-                    className="flex items-center gap-4 rounded-md border border-white/10 bg-card p-5 grain-surface"
+                    className="flex items-center gap-4 rounded-md border border-border bg-card p-5 grain-surface"
                 >
                     <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-2">
                             <span
                                 data-testid={ROSTER_IDS.rowTime(r.collaboration_id)}
-                                className="font-serif text-lg leading-none"
+                                className="font-serif text-body-lg leading-none"
                             >
                                 {r.slot_time ? formatTime(r.slot_time) : "No slot"}
                             </span>
@@ -449,7 +449,7 @@ function RosterList({ rows, onRecord }) {
                             {r.slot_pending && (
                                 <span
                                     data-testid={ROSTER_IDS.rowPending(r.collaboration_id)}
-                                    className="rounded border border-primary/40 bg-primary/10 px-1.5 py-0.5 text-[10px] uppercase tracking-[0.14em] text-primary"
+                                    className="rounded border border-primary/40 bg-primary/10 px-1.5 py-0.5 text-eyebrow uppercase tracking-eyebrow text-primary"
                                 >
                                     Waiting on you
                                 </span>
@@ -458,7 +458,7 @@ function RosterList({ rows, onRecord }) {
                         <Link
                             to={`/manager/applications/${r.collaboration_id}`}
                             data-testid={ROSTER_IDS.rowOpen(r.collaboration_id)}
-                            className="mt-1.5 block truncate text-sm underline decoration-white/20 underline-offset-4 transition-colors duration-200 hover:text-primary"
+                            className="mt-1.5 block truncate text-meta underline decoration-border underline-offset-4 transition-colors duration-200 hover:text-primary"
                         >
                             <span data-testid={ROSTER_IDS.rowName(r.collaboration_id)}>
                                 {r.name}
@@ -467,7 +467,7 @@ function RosterList({ rows, onRecord }) {
                         {r.instagram_handle && (
                             <p
                                 data-testid={ROSTER_IDS.rowHandle(r.collaboration_id)}
-                                className="truncate text-xs text-muted-foreground"
+                                className="truncate text-meta text-muted-foreground"
                             >
                                 @{r.instagram_handle}
                             </p>
@@ -482,7 +482,7 @@ function RosterList({ rows, onRecord }) {
                             onClick={() => onRecord?.(r)}
                             aria-label={`Record performance for ${r.name}`}
                             data-testid={ROSTER_IDS.rowPerformance(r.collaboration_id)}
-                            className={`grid w-14 flex-none place-items-center rounded-md border border-white/15 text-muted-foreground transition-colors duration-200 hover:text-primary ${TOUCH}`}
+                            className={`grid w-14 flex-none place-items-center rounded-md border border-input text-muted-foreground transition-colors duration-200 hover:text-primary ${TOUCH}`}
                         >
                             <BarChart3 className="h-5 w-5" />
                         </button>
@@ -492,7 +492,7 @@ function RosterList({ rows, onRecord }) {
                             href={`tel:${r.phone.replace(/\s+/g, "")}`}
                             aria-label={`Call ${r.name}`}
                             data-testid={ROSTER_IDS.rowCall(r.collaboration_id)}
-                            className={`grid w-14 flex-none place-items-center rounded-md border border-white/15 text-muted-foreground transition-colors duration-200 hover:text-primary ${TOUCH}`}
+                            className={`grid w-14 flex-none place-items-center rounded-md border border-input text-muted-foreground transition-colors duration-200 hover:text-primary ${TOUCH}`}
                         >
                             <Phone className="h-5 w-5" />
                         </a>
@@ -523,20 +523,20 @@ function SlotList({ slots, rules, busy, onAdd, onEdit, onDelete }) {
                             <li
                                 key={s.id}
                                 data-testid={SLOT_IDS.row(s.id)}
-                                className="flex items-center gap-3 rounded-md border border-white/10 bg-card p-5 grain-surface"
+                                className="flex items-center gap-3 rounded-md border border-border bg-card p-5 grain-surface"
                             >
                                 <div className="min-w-0 flex-1">
-                                    <p className="font-serif text-lg leading-none">
+                                    <p className="font-serif text-body-lg leading-none">
                                         {formatTime(s.starts_at)}
                                         {s.ends_at ? ` – ${formatTime(s.ends_at)}` : ""}
                                     </p>
-                                    <p className="mt-1.5 text-xs text-muted-foreground">
+                                    <p className="mt-1.5 text-meta text-muted-foreground">
                                         {formatDay(s.starts_at)}
                                     </p>
                                     <p
                                         data-testid={SLOT_IDS.rowFill(s.id)}
                                         className={
-                                            "mt-2 text-xs " +
+                                            "mt-2 text-meta " +
                                             (full ? "text-primary" : "text-muted-foreground")
                                         }
                                     >
@@ -550,7 +550,7 @@ function SlotList({ slots, rules, busy, onAdd, onEdit, onDelete }) {
                                     {s.outside_preferences && (
                                         <p
                                             data-testid={SCHEDULING.slotOutside(s.id)}
-                                            className="mt-2 text-xs leading-relaxed text-state-pending"
+                                            className="mt-2 text-meta leading-relaxed text-state-pending"
                                         >
                                             Outside the brand's shoot days or hours —
                                             it predates the restriction. Worth a call
@@ -563,7 +563,7 @@ function SlotList({ slots, rules, busy, onAdd, onEdit, onDelete }) {
                                     onClick={() => onEdit(s)}
                                     aria-label="Edit slot"
                                     data-testid={SLOT_IDS.rowEdit(s.id)}
-                                    className={`grid w-14 flex-none place-items-center rounded-md border border-white/15 text-muted-foreground transition-colors duration-200 hover:text-primary ${TOUCH}`}
+                                    className={`grid w-14 flex-none place-items-center rounded-md border border-input text-muted-foreground transition-colors duration-200 hover:text-primary ${TOUCH}`}
                                 >
                                     <Pencil className="h-4 w-4" />
                                 </button>
@@ -576,7 +576,7 @@ function SlotList({ slots, rules, busy, onAdd, onEdit, onDelete }) {
                                         onClick={() => onDelete(s)}
                                         aria-label="Delete slot"
                                         data-testid={SLOT_IDS.rowDelete(s.id)}
-                                        className={`grid w-14 flex-none place-items-center rounded-md border border-state-rejected/30 text-state-rejected transition-colors duration-200 hover:bg-state-rejected/10 ${TOUCH}`}
+                                        className={`grid w-14 flex-none place-items-center rounded-md border border-state-rejected/30 text-state-rejected transition-colors duration-200 hover:bg-state-rejected-wash ${TOUCH}`}
                                     >
                                         <Trash2 className="h-4 w-4" />
                                     </button>
@@ -619,11 +619,11 @@ function VenuePanel({ campaign }) {
     return (
         <section data-testid={VENUE_IDS.section} className="space-y-4">
             {campaign.venue_address && (
-                <div className="rounded-md border border-white/10 bg-card p-5 grain-surface">
-                    <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+                <div className="rounded-md border border-border bg-card p-5 grain-surface">
+                    <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                         Address
                     </p>
-                    <p data-testid={VENUE_IDS.address} className="mt-3 text-sm leading-relaxed">
+                    <p data-testid={VENUE_IDS.address} className="mt-3 text-body leading-relaxed">
                         {campaign.venue_address}
                     </p>
                     <a
@@ -631,7 +631,7 @@ function VenuePanel({ campaign }) {
                         target="_blank"
                         rel="noreferrer"
                         data-testid={VENUE_IDS.map}
-                        className={`mt-4 inline-flex w-full items-center justify-center gap-2 rounded-md border border-white/15 text-sm transition-colors duration-200 hover:border-primary/40 hover:text-primary ${TOUCH}`}
+                        className={`mt-4 inline-flex w-full items-center justify-center gap-2 rounded-md border border-input text-meta transition-colors duration-200 hover:border-primary/40 hover:text-primary ${TOUCH}`}
                     >
                         <MapPin className="h-4 w-4" />
                         Open in maps
@@ -640,13 +640,13 @@ function VenuePanel({ campaign }) {
             )}
 
             {campaign.venue_instructions && (
-                <div className="rounded-md border border-white/10 bg-card p-5 grain-surface">
-                    <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+                <div className="rounded-md border border-border bg-card p-5 grain-surface">
+                    <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                         On arrival
                     </p>
                     <p
                         data-testid={VENUE_IDS.instructions}
-                        className="mt-3 text-sm leading-relaxed"
+                        className="mt-3 text-body leading-relaxed"
                     >
                         {campaign.venue_instructions}
                     </p>
@@ -654,18 +654,18 @@ function VenuePanel({ campaign }) {
             )}
 
             {campaign.on_site_contact && (
-                <div className="rounded-md border border-white/10 bg-card p-5 grain-surface">
-                    <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+                <div className="rounded-md border border-border bg-card p-5 grain-surface">
+                    <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                         On-site contact
                     </p>
-                    <p data-testid={VENUE_IDS.contact} className="mt-3 text-sm">
+                    <p data-testid={VENUE_IDS.contact} className="mt-3 text-meta">
                         {campaign.on_site_contact}
                     </p>
                     {contactNumber && (
                         <a
                             href={`tel:${contactNumber.replace(/[\s-]/g, "")}`}
                             data-testid={VENUE_IDS.contactCall}
-                            className={`mt-4 inline-flex w-full items-center justify-center gap-2 rounded-md border border-white/15 text-sm transition-colors duration-200 hover:border-primary/40 hover:text-primary ${TOUCH}`}
+                            className={`mt-4 inline-flex w-full items-center justify-center gap-2 rounded-md border border-input text-meta transition-colors duration-200 hover:border-primary/40 hover:text-primary ${TOUCH}`}
                         >
                             <Phone className="h-4 w-4" />
                             Call them

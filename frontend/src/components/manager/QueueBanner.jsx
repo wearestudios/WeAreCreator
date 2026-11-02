@@ -58,10 +58,10 @@ export default function QueueBanner({ className = "" }) {
     // tells the manager both that the network is down and what it cost.
     const queued = pending > 0;
     const tone = blocked
-        ? "border-state-rejected/30 bg-state-rejected/10 text-state-rejected"
+        ? "border-state-rejected/30 bg-state-rejected-wash text-state-rejected"
         : queued
-          ? "border-state-pending/30 bg-state-pending/10 text-state-pending"
-          : "border-white/15 bg-white/5 text-muted-foreground";
+          ? "border-state-pending/30 bg-state-pending-wash text-state-pending"
+          : "border-input bg-muted text-muted-foreground";
     const Icon = blocked ? CloudOff : queued ? UploadCloud : WifiOff;
 
     return (
@@ -74,7 +74,7 @@ export default function QueueBanner({ className = "" }) {
         >
             <Icon className="mt-0.5 h-4 w-4 flex-none" />
             <div className="min-w-0 flex-1">
-                <p data-testid={IDS.message} className="text-sm leading-relaxed">
+                <p data-testid={IDS.message} className="text-body leading-relaxed">
                     {blocked
                         ? `${pending} ${pending === 1 ? "action" : "actions"} still haven't gone through. They're saved — tell the WeAre team if this doesn't clear.`
                         : queued
@@ -87,7 +87,7 @@ export default function QueueBanner({ className = "" }) {
                         onClick={retry}
                         disabled={syncing}
                         data-testid={IDS.retry}
-                        className="mt-3 inline-flex min-h-[2.75rem] items-center gap-2 rounded-full border border-current/30 px-4 text-xs uppercase tracking-[0.15em] opacity-90 transition-opacity duration-200 hover:opacity-100 disabled:opacity-60"
+                        className="mt-3 inline-flex min-h-[2.75rem] items-center gap-2 rounded-full border border-current/30 px-4 text-eyebrow uppercase tracking-eyebrow opacity-90 transition-opacity duration-200 hover:opacity-100 disabled:opacity-60"
                     >
                         <RefreshCw className={"h-3.5 w-3.5 " + (syncing ? "animate-spin" : "")} />
                         {syncing ? "Syncing…" : "Try now"}
