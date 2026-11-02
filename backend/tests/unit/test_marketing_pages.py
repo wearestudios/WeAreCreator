@@ -465,8 +465,11 @@ def test_every_marketing_page_is_a_registered_route(path, element):
     assert f'<Route path="{path}" element={{{element}}} />' in app, path
 
 
+# `/how-it-works` lands on the homepage's "How it works" section, which shows
+# the four steps from both sides as the old page did; `/why-weare` stays on
+# /for-brands.
 RETIRED = {
-    "/how-it-works": "/for-brands",
+    "/how-it-works": "/#how-it-works",
     "/why-weare": "/for-brands",
 }
 
@@ -490,6 +493,11 @@ def test_every_retired_path_redirects_in_all_three_places():
     assert dict(server.RETIRED_MARKETING_PATHS) == RETIRED
     for old in RETIRED:
         assert f'path="{old}"' not in app, f"{old} still renders a page"
+    # The anchor the redirect names exists, and the page scrolls to it: a
+    # client-side redirect renders after the browser has looked for a hash.
+    home = copy_of(*PAGES["home"])
+    assert 'id="how-it-works"' in home
+    assert "scrollIntoView" in home
 
 
 def test_the_retired_pages_are_gone_rather_than_unrouted():
@@ -668,18 +676,28 @@ def test_home_is_the_eight_sections_in_order():
     """Replaces `test_home_keeps_only_what_routes`. Home is brands-first and
     eight sections long: hero, the problem, a photograph, the four steps, the
     navy band, who built it, the creator door, the close — in that order, and
-    nothing else. The proof strip, the brand wall, the scroll film, the case
-    studies and the leaderboard are not on it; the three server-backed ones
-    stay in the tree, unmounted."""
+    nothing else. The proof strip, the brand wall, the case studies and the
+    leaderboard are not on it; the server-backed ones stay in the tree,
+    unmounted.
+
+    **The scroll film is back, and not as a ninth section**: the restoration
+    put it inside "How it works", beside the four steps, where it plays as
+    they are read. It is fetched in its own chunk when that section nears the
+    screen, so the homepage's first paint still carries no animation
+    library."""
     src = copy_of(*PAGES["home"])
     body = src[src.index("export default function Home") :]
     order = ["<Hero />", "<ComparisonBand", '<PhotoBand slot="home-on-location"', "<HowItWorks",
              "<PromiseBand", "<WhoBuiltIt", "<CreatorDoor", "<Closing"]
     positions = [body.index(tag) for tag in order]
     assert positions == sorted(positions), order
-    for gone in ("ProofStrip", "BrandWall", "CampaignFilm", "CaseStudyStrip", "CreatorLeaderboard",
+    for gone in ("ProofStrip", "BrandWall", "CaseStudyStrip", "CreatorLeaderboard",
                  "TwoPaths", "HandshakeBand", "HeroSlider", "KineticHeadline"):
         assert gone not in src, gone
+    how = src[src.index("function HowItWorks") : src.index("function WhoBuiltIt")]
+    assert "<CampaignFilm" in how and "trackRef={trackRef}" in how
+    assert 'webpackChunkName: "film"' in read(*PAGES["home"])
+    assert "import CampaignFilm" not in src, "a static import puts framer-motion in the first paint"
 
 
 def test_every_section_opens_on_the_numbered_rule():
@@ -851,16 +869,32 @@ def test_our_payout_window_is_the_platform_default_and_said_as_one():
 
 def test_the_money_band_counts_once_and_names_the_amount_once():
     """The amount counts, once, through the existing `CountUp`. A screen
-    reader reads the figure, not the count."""
+    reader reads the figure, not the count.
+
+    It is navy, through `Band` — and **no longer the page's only navy
+    section**: the restored banding puts the close on navy too. Two is the
+    ceiling a page may have; `test_site_restoration.py` holds it for all
+    three pages."""
     src = copy_of(*PAGES["creators"])
     band = src[src.index("function MoneyBand") : src.index("export default function ForCreators")]
     assert "<CountUp value={money.amount} />" in band
     assert 'className="sr-only"' in band and 'aria-hidden className="mkt-display' in band
-    assert 'data-surface="dark"' in band
-    assert src.count('data-surface="dark"') == 1, "the money band is the page's one navy section"
+    assert '<Band ground="navy"' in band
+    assert "<PayoutClock clock={money.clock}" in band
 
 
 # --- The copy budget ----------------------------------------------------------
+#
+# **Raised again by the restoration of the old site's explaining, and by
+# exactly what it added.** Home gained a creator-side line on each of the four
+# steps (both sides of the deal, as the old /how-it-works page showed) and the
+# film's seven captions, and measures 416; /for-brands gained the fee flow's
+# three steps, measuring 651. Every word added is a claim the product keeps
+# and lives in the content module. The headline and line caps did not move,
+# and drawn product UI — the deck's screens and the film's — still does not
+# count. Each budget sits a little above its page, so the next section still
+# has to argue with a number. /for-creators' clock is a few words and still
+# fits 330.
 #
 # **Raised for this rebuild, and by the copy the rewrite brief itself wrote.**
 # The brief specifies home's eight sections and /for-brands' seven nearly word
@@ -872,8 +906,8 @@ def test_the_money_band_counts_once_and_names_the_amount_once():
 # per-line (32) caps did not move. Drawn product UI is illustration and does
 # not count; the meta title and description are held by the meta tests.
 BUDGET = {
-    "home": 390,
-    "brands": 620,
+    "home": 430,
+    "brands": 670,
     "creators": 330,
     "contact": 200,
 }
@@ -1046,16 +1080,23 @@ def test_the_hero_names_no_sector_and_the_slider_is_gone():
     """Replaces `test_the_headline_morphs_between_real_campaign_categories`.
 
     **Inverted on purpose.** That test pinned the hero's phrases to
-    `CATEGORY_OPTIONS`. The hero no longer rotates anything: it is one static
-    product card and one word drawn once, so nothing in it reads the category
-    list, and the slider, its sector phrases, its drifts and its eight
-    drawings are deleted rather than left unmounted."""
+    `CATEGORY_OPTIONS`. The hero does not rotate sectors: the h1 is static and
+    one word is drawn once, so nothing in it reads the category list, and the
+    sector slider, its phrases, its drifts and its eight drawings are deleted
+    rather than left unmounted. The card beside it cycles the four *steps*
+    (restored from #39) — the stage of the job, which is what a visitor came
+    to find out, never the sector they already know."""
     home = copy_of(*PAGES["home"])
     assert "CATEGORY_OPTIONS" not in home and "categories" not in home
     marketing = FRONTEND / "src" / "components" / "marketing"
-    for gone in ("HeroSlider.jsx", "KineticHeadline.jsx", "sectorCycle.jsx", "HeroDeck.jsx", "heroScreens.jsx"):
+    for gone in ("HeroSlider.jsx", "KineticHeadline.jsx", "sectorCycle.jsx"):
         assert not (marketing / gone).exists(), gone
-    assert not (FRONTEND / "src" / "lib" / "heroDeck.js").exists()
+    # The card cycles again — the four steps, never a sector. The deck that
+    # does it reads no category list and never will.
+    for rel in (marketing / "HeroDeck.jsx", marketing / "heroScreens.jsx",
+                FRONTEND / "src" / "lib" / "heroDeck.js"):
+        code = _code(*rel.relative_to(FRONTEND).parts)
+        assert "CATEGORY_OPTIONS" not in code and "categories" not in code, rel.name
     illus = FRONTEND / "public" / "img" / "marketing"
     for sector in ("fnb", "hospitality", "retail", "real-estate", "fashion", "travel", "wellness", "lifestyle"):
         assert not (illus / f"hero-{sector}.svg").exists(), sector
@@ -1088,17 +1129,20 @@ def test_one_word_is_drawn_once_in_true_italic():
     assert "aria-live" not in copy_of(*PAGES["home"])
 
 
-def test_the_hero_has_no_timer_at_all():
-    """Replaces `test_the_picture_and_the_word_change_on_one_timer`. That rule
-    existed because two clocks drifted apart. There is no clock now: the card
-    writes its rows once when it comes into view, and nothing in the hero, the
-    drawn screens or the problem band starts a timer."""
+def test_the_hero_has_one_timer_and_it_is_the_decks():
+    """Replaces `test_the_picture_and_the_word_change_on_one_timer`, which
+    existed because two clocks drifted apart. **The card cycles again, on one
+    clock**: the deck's provider owns the only timer in the hero (driven in
+    `test_hero_deck.py`), and nothing else — the page, the drawn screens, the
+    problem band — starts one. The Agree screen writes the deal's rows in
+    once as it arrives, the way the card did."""
     for rel in (PAGES["home"], ("src", "components", "marketing", "siteMocks.jsx"),
+                ("src", "components", "marketing", "heroScreens.jsx"),
                 ("src", "components", "marketing", "ComparisonBand.jsx")):
         code = copy_of(*rel)
         assert "setTimeout" not in code and "setInterval" not in code, rel
-    mocks = copy_of("src", "components", "marketing", "siteMocks.jsx")
-    assert "<RowWriter rows={rows}" in mocks
+    screens = copy_of("src", "components", "marketing", "heroScreens.jsx")
+    assert "<RowWriter rows={rows}" in screens
 
 
 def test_the_h1_is_display_scale():
@@ -1113,17 +1157,20 @@ def test_the_h1_is_display_scale():
 
 def test_the_hero_card_reserves_its_box():
     """Replaces `test_the_headline_reserves_its_box_by_rendered_width`. The
-    card's rows wait at opacity 0 in boxes they already occupy, so writing
-    them moves nothing. It used to also pin the chip row's reserved two lines;
-    **the chips are gone**, so it pins what replaced them: three rows, one
-    large figure (the agreed fee, in Fraunces) and no chip at all."""
+    deck's stage is one fixed box at every width — the tallest screen's,
+    measured — so swapping screens moves nothing, and the deal's rows wait at
+    opacity 0 in boxes they already occupy, so writing them moves nothing
+    either. The deal is the card's own data (`HOME.card`), drawn on the Agree
+    screen with **the agreed fee as its one large figure**."""
     css = read("src", "index.css")
     assert re.search(r"\.mkt-row \{\s*opacity: 0;\s*\}", css)
-    mocks = copy_of("src", "components", "marketing", "siteMocks.jsx")
-    deal = mocks[mocks.index("export function DealCard") : mocks.index("export function StepScreen")]
-    assert "<Chip" not in deal and "mkt-label" not in deal
-    assert deal.count("font-serif text-[2rem]") == 1, "the agreed fee is the only large figure"
-    assert "mkt-h2" not in deal and "mkt-h3" not in deal
+    deck = copy_of("src", "components", "marketing", "HeroDeck.jsx")
+    stage = deck[deck.index("export function DeckStage") : deck.index("export function StepRail")]
+    assert "h-[21rem] w-full" in stage
+    screens = copy_of("src", "components", "marketing", "heroScreens.jsx")
+    agree = screens[screens.index("export function AgreeScreen") : screens.index("export function DeliverScreen")]
+    assert agree.count("font-serif text-[1.75rem]") == 1, "the agreed fee is the only large figure"
+    assert "mkt-label" not in agree
     card = content()["HOME"]["card"]
     assert "chips" not in card and "kicker" not in card
     assert [r.get("final", False) for r in card["rows"]] == [False, False, True]
@@ -1151,15 +1198,16 @@ def test_the_h1_has_one_stable_accessible_name():
 
 def test_the_hero_is_exactly_its_five_elements():
     """The hero read as noise, and the fix was subtraction: the h1, one lead,
-    the two asks, one quiet line, and the card. **No eyebrow, no Built-for
+    the two asks, one quiet line, and the card — which is the step deck now,
+    the card cycling the four steps. **No eyebrow, no Built-for
     line, no step rail** — and in three type styles at most: the Fraunces
     display h1, the Inter Tight lead, and Inter Tight UI. No label face."""
     src = copy_of(*PAGES["home"])
-    hero = src[src.index("function Hero()") : src.index("function HowItWorks")]
+    hero = src[src.index("function Hero()") : src.index("function WhenNear")]
     assert "<nav" not in hero and "<Label" not in hero and "HERO_EYEBROW" not in hero
     assert "builtFor" not in hero and "railLabel" not in hero
     assert "mkt-label" not in hero
-    for el in ("<HeroTitle", "{hero.lead}", "ASK.postBrief", "ASK.talkWhatsapp", "{hero.note}", "<DealCard"):
+    for el in ("<HeroTitle", "{hero.lead}", "ASK.postBrief", "ASK.talkWhatsapp", "{hero.note}", "<HeroDeckProvider"):
         assert hero.count(el) == 1, el
     styles = set(re.findall(r"\bmkt-[a-z0-9]+", hero))
     assert styles <= {"mkt-lead"}, styles  # the h1's own class sits in HeroTitle
@@ -1287,7 +1335,8 @@ def test_a_slot_reserves_its_space_so_real_photography_drops_in_cleanly():
     src = read("src", "components", "marketing", "PlaceholderImage.jsx")
     assert "aspect-[16/9]" in src
     assert "absolute inset-0 h-full w-full object-cover" in src
-    assert 'src ? (' in src
+    # `shown` is the real photograph, or in production the slot's drawing.
+    assert 'shown ? (' in src
 
 
 def test_the_placeholder_does_not_put_grain_on_its_own_gradient():

@@ -168,11 +168,16 @@ export const HOME = {
         title: "Four steps, and you only touch two",
         weHandle: "We handle this part",
         youTouch: "You",
+        // Each step shows both sides of the deal at once, as the old
+        // /how-it-works page did: `line` is the brand's, `creatorLine` what
+        // happens on the creator's side.
+        creatorSide: "The creator",
         items: [
             {
                 key: "offer",
                 title: "Offer",
                 line: "Post the brief: what you want made, what it pays and how you may use it.",
+                creatorLine: "Creators see what it pays, what it asks for and how it may be used before they apply.",
                 screen: { kicker: "New brief", rows: ["Weekend brunch launch", "₹11,000 per creator", "1 reel · 3 stories"] },
                 yours: true,
             },
@@ -180,6 +185,7 @@ export const HOME = {
                 key: "agree",
                 title: "Agree",
                 line: "We shortlist verified creators and agree each fee in writing. The terms freeze when a creator is taken on.",
+                creatorLine: "Their fee is agreed in writing before they travel, and their number stays theirs.",
                 screen: { kicker: "Shortlist", rows: ["Kiran M. · 94% match", "Fee agreed ₹12,500", "Terms frozen"] },
                 yours: false,
             },
@@ -187,6 +193,7 @@ export const HOME = {
                 key: "deliver",
                 title: "Deliver",
                 line: "We book the slot, run the shoot day and check the post carries its disclosure.",
+                creatorLine: "They turn up at the slot, shoot, and post with the disclosure the brief asks for.",
                 screen: { kicker: "Shoot day", rows: ["Sat 11:00 · slot confirmed", "Checked in", "Draft received"] },
                 yours: false,
                 weHandle: true,
@@ -195,10 +202,79 @@ export const HOME = {
                 key: "paid",
                 title: "Get paid",
                 line: "You approve the work, and the creator is paid within 7 days of your approval.",
+                creatorLine: "Paid to their UPI or bank within 7 days of your approval — all of it.",
                 screen: { kicker: "Payment", rows: ["Work approved", "₹12,500 to Kiran", "Paid in full"] },
                 yours: true,
             },
         ],
+    },
+    // The scroll film beside the four steps: seven beats, grouped under the
+    // four steps' own names. **Captions are argument and count against the
+    // budget; everything under `screen` is drawn product UI and does not.**
+    // The story is one the product keeps: a person checks creators, the fee
+    // is agreed in writing, the brand approves the work (a draft gate is
+    // optional per brief, so the film does not claim one), and the creator
+    // is paid all of the fee within 7 days of approval.
+    film: {
+        beats: [
+            { key: "brief", step: "offer", caption: "A brief goes up" },
+            { key: "applied", step: "offer", caption: "Verified creators apply" },
+            { key: "accepted", step: "agree", caption: "One is taken on" },
+            { key: "message", step: "agree", caption: "The fee is agreed in writing" },
+            { key: "slot", step: "deliver", caption: "A slot is booked" },
+            { key: "approved", step: "deliver", caption: "You approve the work" },
+            { key: "paid", step: "paid", caption: "Paid within 7 days, all of it" },
+        ],
+        screen: {
+            brief: { tag: "Brief posted", meta: "Food & drink", title: "Weekend brunch launch", chips: ["₹11,000 per creator", "3 needed"] },
+            applicants: [
+                { name: "Kiran M.", followers: "24K followers", rate: "₹14,000" },
+                { name: "Priya R.", followers: "11K followers", rate: "₹12,000" },
+                { name: "Tanvi M.", followers: "38K followers", rate: "₹9,500" },
+            ],
+            accepted: "Taken on",
+            message: { channel: "WhatsApp", text: "You're on. Fee agreed:", amount: "₹12,500" },
+            slot: { label: "Slot booked · Sat 11:00", days: ["M", "T", "W", "T", "F", "S", "S"], booked: 5 },
+            approval: { title: "Work reviewed", line: "Approved by the brand", tag: "Approved" },
+            payout: { label: "Paid to the creator", amount: 12500, line: "All of it. Our fee is charged to the brand." },
+        },
+    },
+    // The hero card: one screen per step, cycling. Drawn product UI, so it
+    // sits under `screen` and does not count against the budget. The deal is
+    // `card` above, unchanged, as the Agree screen.
+    deck: {
+        label: "The four steps",
+        screen: {
+            offer: {
+                kicker: "New brief",
+                title: "Weekend brunch launch",
+                chips: ["1 reel", "3 stories", "₹11,000 per creator"],
+                monograms: ["KM", "PR", "TM", "AS"],
+                applied: "18 applied",
+                shortlistLabel: "Shortlist",
+                shortlist: "Checked by a person",
+            },
+            agree: { kicker: "Deal · Kiran M.", termsLabel: "Terms", terms: "Frozen at acceptance" },
+            deliver: {
+                kicker: "Shoot · Weekend brunch launch",
+                title: "3 creators, one list",
+                rows: [
+                    { m: "KM", name: "Kiran M.", tone: "good", state: "Approved", owes: "Done" },
+                    { m: "PR", name: "Priya R.", tone: "warn", state: "Draft sent back", owes: "Creator" },
+                    { m: "TM", name: "Tanvi M.", tone: "info", state: "Shoot Saturday", owes: "Creator" },
+                ],
+            },
+            paid: {
+                kicker: "Payout · Kiran M.",
+                title: "₹12,500 on its way",
+                rows: [
+                    { label: "Work", value: "Approved", tone: "good" },
+                    { label: "Paid within", value: "7 days of approval" },
+                    { label: "To the creator", value: "₹12,500, all of it" },
+                ],
+                foot: "Our fee is invoiced to you on its own line.",
+            },
+        },
     },
     // The navy band. "Guarantee" is a banned word on these pages, so the
     // label is not the brief's "The guarantees".
@@ -299,6 +375,20 @@ export const BRANDS = {
             { key: "retainer", title: "No retainer", line: "No monthly fee, and nothing to sign up to before a brief." },
         ],
         budgetTitle: "What should I budget?",
+        // `FeeFlow`: where the money goes, drawn. **No escrow** — there is
+        // none, and the FAQ says so — and **no fee figure while
+        // `FACTS.platformFeePercent` is null**: the middle node then says the
+        // fee is shown before you accept, which is true without a number.
+        flow: {
+            label: "Where the money goes",
+            steps: [
+                { key: "brand", who: "You", line: "Pay the creator's agreed fee, with our fee on top." },
+                { key: "weare", who: "WeAre Creators", line: "Invoices you, and pays the creator once you approve the work." },
+                { key: "creator", who: "The creator", line: "Receives the whole agreed fee, within 7 days of your approval." },
+            ],
+            share: 100,
+            shareLabel: "of the agreed fee reaches the creator",
+        },
     },
     report: {
         label: "What you get at the end",
@@ -457,6 +547,15 @@ export const CREATORS = {
         ],
         amount: 12500,
         amountSuffix: "paid · all of it",
+        // `PayoutClock`: the 7 days, drawn from approval to payment. The
+        // number is `CREATOR_PAYOUT_DAYS` (lib/payoutWindow.js), drift-tested
+        // against the server; these are the words around it.
+        clock: {
+            start: "Work approved",
+            end: "Paid by",
+            unit: "days",
+            ours: "From approval to your UPI or bank, at most",
+        },
     },
     protections: {
         label: "What protects you",

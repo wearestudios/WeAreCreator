@@ -1,30 +1,39 @@
 // The home page. Brands first, eight sections, in this order:
 //
-//   1 the hero — the h1, one lead, two asks, one quiet line, and the card
+//   1 the hero — the h1, one lead, two asks, one quiet line, and the step deck
 //   2 the problem — the spreadsheet and the DMs, against the same campaign here
-//   3 a full-bleed photograph (or, until there is one, its headline)
-//   4 the four steps
+//   3 a full-bleed photograph (or, until there is one, its illustration)
+//   4 how it works — the four steps, each illustrated, both sides of the deal,
+//     with the campaign film playing beside them
 //   5 the navy band: three things the code enforces
-//   6 who built it: the heading and the one scroll-inked sentence
-//   7 the creator door
+//   6 who built it: the heading, an illustration and the scroll-inked sentence
+//   7 the creator door, on the second navy band
 //   8 the close
 //
 // **Every word is in `HOME` in `content/marketing.js`**; this file is layout.
-// Each section is its numbered rule, one heading, at most one lead and its
-// one component — nothing else. **No real business is named on this page**:
-// the client marquee and cards were removed, and the only names here are the
+// **No real business is named on this page**: the only names here are the
 // invented ones inside the drawn product UI.
 //
-// Motion here is the primitives and nothing else: the wipe on "chasing", the
-// card's rows written once in view, and the one FillText sentence on the
-// site.
-import React from "react";
+// **The look is the pre-revamp site's, brought back over the new content**:
+// the drawn illustrations beside the copy, the campaign film, the hero card
+// cycling the four steps, a gentle rise on headings and drawings, and bands
+// that alternate the page ground, a warm tint and navy. The copy, the claims,
+// the structure and the type rules are the new site's and did not move.
+//
+// **The homepage ships no animation library.** Its LCP is the h1, and 36KB of
+// framer-motion in front of it would be the one regression this must not
+// cause: the deck reads reduced motion off the media query, `Rise` is CSS,
+// and the film — which does need framer — is fetched in its own chunk only
+// when "How it works" is about to come on screen.
+import React, { Suspense, lazy, useEffect, useRef, useState } from "react";
 
 import ComparisonBand from "@/components/marketing/ComparisonBand";
+import { DeckStage, HeroDeckProvider, StepRail } from "@/components/marketing/HeroDeck";
+import Illustration from "@/components/marketing/Illustration";
 import { MarketingPage } from "@/components/marketing/Sections";
-import { FillText, WipeWord } from "@/components/marketing/primitives";
-import { DealCard, StepScreen } from "@/components/marketing/siteMocks";
+import { FillText, Rise, WipeWord } from "@/components/marketing/primitives";
 import {
+    Band,
     Closing,
     Cta,
     PhotoBand,
@@ -36,6 +45,20 @@ import {
 import StickyCta from "@/components/marketing/StickyCta";
 import { LANDING_CLOSING, LANDING_HERO as HERO_IDS, LANDING_PAGE as IDS } from "@/constants/testIds";
 import { ASK, HOME } from "@/content/marketing";
+import { retryImport } from "@/lib/lazyRoute";
+
+// The film is framer-motion, and the homepage's first paint carries none.
+const CampaignFilm = lazy(() =>
+    retryImport(() => import(/* webpackChunkName: "film" */ "@/components/marketing/CampaignFilm")),
+);
+
+/** Each step's drawing, placed by meaning — the pre-revamp pages' own. */
+const STEP_ART = {
+    offer: "how-briefing",
+    agree: "how-table-talk",
+    deliver: "why-shoot-day",
+    paid: "creators-payment",
+};
 
 /** The h1 with its one accented word, whole in the DOM from the first paint. */
 function HeroTitle({ title, accent }) {
@@ -58,14 +81,20 @@ function HeroTitle({ title, accent }) {
 }
 
 /**
- * The hero: three type styles and nothing else — the Fraunces h1, the Inter
- * Tight lead and Inter Tight UI. The card's top sits level with the h1's
- * first line, and the section ends one ordinary section gap under the asks.
+ * The hero: the Fraunces h1, the Inter Tight lead and Inter Tight UI, and
+ * beside them the card — now the four steps, one screen each, on one timer
+ * (the old slider's engine, restored from #39). The h1 and its drawn word are
+ * exactly as they were.
  */
 function Hero() {
-    const { hero, card } = HOME;
+    const { hero, card, deck, how } = HOME;
+    const steps = how.items.map((step) => ({
+        key: step.key,
+        label: step.title,
+        props: { screen: deck.screen[step.key], card, rowTestid: HERO_IDS.cardRow },
+    }));
     return (
-        <section id="hero" data-track-section="hero" data-testid={HERO_IDS.section}>
+        <Band ground="page" id="hero" track="hero" testid={HERO_IDS.section}>
             <Wrap className="grid gap-10 pb-20 pt-8 md:pb-28 md:pt-12 xl:grid-cols-12 xl:items-start xl:gap-12">
                 {/* Two columns from xl only, and the text takes eight of them
                     until 2xl: the container stops growing at 1280 while the
@@ -85,76 +114,168 @@ function Hero() {
                         {hero.note}
                     </p>
                 </div>
-                <div className="max-w-xl xl:col-span-4 xl:max-w-none 2xl:col-span-5">
-                    <DealCard card={card} testid={HERO_IDS.card} rowTestid={HERO_IDS.cardRow} />
+                <div data-testid={HERO_IDS.card} className="max-w-xl xl:col-span-4 xl:max-w-none 2xl:col-span-5">
+                    <HeroDeckProvider steps={steps} label={deck.label}>
+                        <DeckStage />
+                        <StepRail className="mt-3" />
+                    </HeroDeckProvider>
                 </div>
             </Wrap>
-        </section>
+        </Band>
     );
 }
 
-function HowItWorks({ n }) {
-    const { how } = HOME;
+/**
+ * Mounts its children once the block is within a screen and a half of the
+ * viewport, and never unmounts them. The film's chunk is fetched then and not
+ * before: a visitor who reads the hero and leaves never downloads it, and
+ * neither does a page-load measurement.
+ */
+function WhenNear({ children }) {
+    const ref = useRef(null);
+    const [near, setNear] = useState(false);
+    useEffect(() => {
+        const node = ref.current;
+        if (near || !node) return undefined;
+        if (typeof IntersectionObserver === "undefined") {
+            setNear(true);
+            return undefined;
+        }
+        const io = new IntersectionObserver(
+            (entries) => {
+                if (entries.some((e) => e.isIntersecting)) {
+                    setNear(true);
+                    io.disconnect();
+                }
+            },
+            { rootMargin: "150% 0px 150% 0px" },
+        );
+        io.observe(node);
+        return () => io.disconnect();
+    }, [near]);
     return (
-        <section data-track-section="how" data-testid={IDS.how} className="border-t border-border">
+        <div ref={ref} className="h-full">
+            {near ? <Suspense fallback={null}>{children}</Suspense> : null}
+        </div>
+    );
+}
+
+/**
+ * How it works: the four steps, each with its drawing, a line for the brand
+ * and a line for the creator — both sides of the deal visible at once, as the
+ * old /how-it-works page showed — and the campaign film beside them, playing
+ * as the steps are read. `/how-it-works` redirects to this section's anchor.
+ */
+function HowItWorks({ n }) {
+    const { how, film } = HOME;
+    const trackRef = useRef(null);
+    const titles = Object.fromEntries(how.items.map((s) => [s.key, s.title]));
+    return (
+        <Band ground="page" id="how-it-works" track="how" testid={IDS.how} className="scroll-mt-16">
             <Wrap className="py-20 md:py-28">
                 <SectionHead n={n} label={how.label} title={how.title} />
-                <ol className="mt-14 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-                    {how.items.map((step) => (
-                        <li key={step.key} data-testid={IDS.step(step.key)} className="flex flex-col">
-                            <h3 className="mkt-h3 text-heading">{step.title}</h3>
-                            {/* The one quiet label the spec asked for, on step 03. */}
-                            {step.weHandle ? (
-                                <p data-testid={IDS.stepTag} className="mt-2 text-meta text-muted-foreground">
-                                    {how.weHandle}
-                                </p>
-                            ) : null}
-                            <p className="mkt-body mt-3 text-muted-foreground">{step.line}</p>
-                            <div className="mt-6">
-                                <StepScreen screen={step.screen} />
-                            </div>
-                        </li>
-                    ))}
-                </ol>
+                <div className="mt-14 grid gap-14 lg:grid-cols-12 lg:gap-16">
+                    <ol ref={trackRef} className="space-y-14 lg:col-span-7">
+                        {how.items.map((step) => (
+                            <li
+                                key={step.key}
+                                data-testid={IDS.step(step.key)}
+                                className="grid gap-6 sm:grid-cols-5 sm:items-start sm:gap-8"
+                            >
+                                {/* At 390px the drawing stacks above its text,
+                                    full width; beside it from `sm`. */}
+                                <Illustration name={STEP_ART[step.key]} ratio="4 / 3" className="sm:col-span-2" />
+                                <div className="sm:col-span-3">
+                                    <Rise>
+                                        <h3 className="mkt-h3 text-heading">{step.title}</h3>
+                                    </Rise>
+                                    {/* The one quiet label the spec asked for, on step 03. */}
+                                    {step.weHandle ? (
+                                        <p data-testid={IDS.stepTag} className="mt-2 text-meta text-muted-foreground">
+                                            {how.weHandle}
+                                        </p>
+                                    ) : null}
+                                    <dl className="mt-4 space-y-4">
+                                        <div data-testid={IDS.stepSide(step.key, "brand")}>
+                                            <dt className="text-meta font-medium text-foreground">{how.youTouch}</dt>
+                                            <dd className="mkt-body mt-1 text-muted-foreground">{step.line}</dd>
+                                        </div>
+                                        <div data-testid={IDS.stepSide(step.key, "creator")}>
+                                            <dt className="text-meta font-medium text-foreground">{how.creatorSide}</dt>
+                                            <dd className="mkt-body mt-1 text-muted-foreground">{step.creatorLine}</dd>
+                                        </div>
+                                    </dl>
+                                </div>
+                            </li>
+                        ))}
+                    </ol>
+                    <div className="lg:col-span-5">
+                        <WhenNear>
+                            <CampaignFilm film={film} steps={titles} trackRef={trackRef} />
+                        </WhenNear>
+                    </div>
+                </div>
             </Wrap>
-        </section>
+        </Band>
     );
 }
 
 function WhoBuiltIt({ n }) {
     const { clients } = HOME;
     return (
-        <section data-track-section="who-built-it" data-testid={IDS.clients} className="border-t border-border">
+        <Band ground="tint" track="who-built-it" testid={IDS.clients}>
             <Wrap className="py-20 md:py-28">
                 <SectionHead n={n} label={clients.label} title={clients.title} />
-                <div data-testid={IDS.fill} className="mt-12 max-w-5xl md:mt-16">
-                    <FillText text={clients.fill} className="mkt-h2 text-heading" />
+                <div className="mt-12 grid gap-10 md:mt-16 lg:grid-cols-12 lg:items-center lg:gap-16">
+                    <div data-testid={IDS.fill} className="lg:col-span-7">
+                        <FillText text={clients.fill} className="mkt-h2 text-heading" />
+                    </div>
+                    <Illustration name="why-production" className="order-first lg:order-none lg:col-span-5" />
                 </div>
             </Wrap>
-        </section>
+        </Band>
     );
 }
 
 function CreatorDoor({ n }) {
     const { creatorDoor } = HOME;
     return (
-        <section data-track-section="creator-door" data-testid={IDS.creatorDoor} className="border-t border-border bg-muted/40">
+        <Band ground="navy" track="creator-door" testid={IDS.creatorDoor}>
             <Wrap className="py-20 md:py-28">
                 <SectionRule n={n} label={creatorDoor.label} />
-                <h2 className="mkt-h2 mt-8 max-w-4xl text-heading md:mt-10">{creatorDoor.title}</h2>
+                <Rise>
+                    <h2 className="mkt-h2 mt-8 max-w-4xl text-heading md:mt-10">{creatorDoor.title}</h2>
+                </Rise>
                 <p className="mkt-lead mt-5 max-w-2xl text-muted-foreground">{creatorDoor.line}</p>
                 <Cta ask={ASK.forCreators} variant="outline" testid={IDS.creatorDoorCta} className="mt-8" />
             </Wrap>
-        </section>
+        </Band>
     );
+}
+
+/**
+ * `/how-it-works` lands on `/#how-it-works`. The browser scrolls to a hash on
+ * a page it loaded itself, but not on one a client-side redirect rendered
+ * after it had already looked, so the page does it once on arrival.
+ */
+function useScrollToHash() {
+    useEffect(() => {
+        const id = window.location.hash.slice(1);
+        if (!id) return;
+        const el = document.getElementById(id);
+        if (el) el.scrollIntoView();
+    }, []);
 }
 
 export default function Home() {
     const { meta, swap, promises, close } = HOME;
+    useScrollToHash();
+    // Grounds, top to bottom: page, tint, photograph, page, navy, tint, navy,
+    // page — no two neighbours alike, and navy twice.
     return (
         <MarketingPage testid={IDS.page} title={meta.title} description={meta.description} path="/">
             <Hero />
-            <ComparisonBand copy={swap} n={2} />
+            <ComparisonBand copy={swap} n={2} ground="bg-muted" />
             <PhotoBand slot="home-on-location" testid={IDS.band} />
             <HowItWorks n={4} />
             <PromiseBand

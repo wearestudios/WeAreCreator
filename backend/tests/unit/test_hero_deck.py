@@ -1,7 +1,11 @@
-"""The four-step hero, driven where it can be and read where it cannot.
+"""The four-step hero card, driven where it can be and read where it cannot.
 
-The hero rotates the stage of the job — Offer, Agree, Deliver, Get paid — and
-each step shows the product screen it happens on. The rules that would
+The homepage's hero card rotates the stage of the job — Offer, Agree, Deliver,
+Get paid — and each step shows the product screen it happens on. **Restored
+from the four-step hero (#39, never merged) as the card beside the homepage's
+own `h1`**, which did not change: these tests came back with the deck, and the
+ones that read source now read `Home.jsx` and `content/marketing.js` rather
+than #39's `Landing.jsx`. The rules that would
 regress quietly are behavioural, so they are **run**: `lib/heroDeck.js` is
 pure, and these load it into node and drive the reducer the provider uses.
 
@@ -9,6 +13,7 @@ pure, and these load it into node and drive the reducer the provider uses.
 - at most two slides are ever mounted, whatever sequence of rail presses,
   timer ticks and wipe endings arrives;
 - reduced motion never auto-advances, and never paints a second layer;
+- each screen dwells 7000ms, the old slider's hold, on one timer;
 - the `h1` is the same text on every step.
 
 The rest — screens that are pure presentation, names that are invented,
@@ -30,7 +35,8 @@ import server
 
 ROOT = Path(server.__file__).resolve().parents[1]
 SRC = ROOT / "frontend" / "src"
-LANDING = (SRC / "pages" / "Landing.jsx").read_text()
+HOME = (SRC / "pages" / "Home.jsx").read_text()
+CONTENT = (SRC / "content" / "marketing.js").read_text()
 DECK = (SRC / "components" / "marketing" / "HeroDeck.jsx").read_text()
 SCREENS = (SRC / "components" / "marketing" / "heroScreens.jsx").read_text()
 BAND = (SRC / "components" / "marketing" / "ComparisonBand.jsx").read_text()
@@ -144,6 +150,20 @@ def test_reduced_motion_never_auto_advances_and_never_paints_two(tmp_path):
     assert [s["active"] for s in out["reduced"]] == [3, 1], "the rail still switches"
 
 
+def test_each_screen_dwells_seven_seconds_on_one_timer(tmp_path):
+    """The old slider's 7000ms hold, and one `setTimeout` chain off it — no
+    interval, and nothing else in the hero owning a clock. Hovering or
+    focusing anywhere in the card pauses it."""
+    assert _drive({}, tmp_path)["hold"] == 7000
+    code = _code(DECK)
+    assert code.count("setTimeout(") == 2, "the hold, and the wipe's one-shot unmount"
+    assert "setInterval" not in code
+    for event in ("pointerenter", "pointerleave", "focusin", "focusout"):
+        assert f'addEventListener("{event}"' in code, event
+    home = _code(HOME)
+    assert "setTimeout" not in home and "setInterval" not in home
+
+
 def test_the_stage_renders_exactly_what_painted_returns():
     """The driven rule only holds if the component renders through it: the
     stage maps `painted(state)`, never the whole step list."""
@@ -155,16 +175,18 @@ def test_the_stage_renders_exactly_what_painted_returns():
 
 
 def test_the_h1_text_is_the_same_on_every_step():
-    """The `h1` is a COPY literal rendered outside the deck. Nothing the deck
-    provides reaches it, the deck renders no heading of its own, and no step's
-    line or support repeats it — so there is one heading on all four steps."""
-    title = re.search(r'heroTitle: "([^"]+)"', LANDING).group(1)
-    assert title == "One place for the whole job"
-    h1 = LANDING[LANDING.index("<h1") : LANDING.index("</h1>")]
-    assert "{COPY.heroTitle}" in h1
+    """The `h1` is the content module's, rendered outside the deck. Nothing
+    the deck provides reaches it, the deck renders no heading of its own, and
+    no screen repeats it — so there is one heading on all four steps, and it
+    is the one the homepage already had."""
+    title = re.search(r'title: "(Creator campaigns, minus the chasing\.)"', CONTENT).group(1)
+    h1 = HOME[HOME.index("<h1") : HOME.index("</h1>")]
+    assert "{title.slice(0, at)}" in h1
     assert "<h1" not in DECK and "<h1" not in SCREENS
-    lines = re.findall(r'(?:line|support): "([^"]+)"', LANDING[LANDING.index("steps: [") :])
-    assert title not in lines
+    deck = CONTENT[CONTENT.index("    deck: {") : CONTENT.index("    promises: {")]
+    assert title not in deck
+    hero = _code(HOME)[_code(HOME).index("function Hero()") : _code(HOME).index("function WhenNear")]
+    assert "<HeroDeckProvider" in hero and "<DeckStage" in hero and "<StepRail" in hero
 
 
 # ---------------------------------------------------------------------------
@@ -197,7 +219,7 @@ def test_the_hero_and_the_band_use_no_image_and_name_no_colour():
         r"emerald|teal|cyan|sky|blue|indigo|violet|purple|pink|rose|navy)(?:-\d{2,3})?\b"
     )
     literal = re.compile(r"#[0-9a-fA-F]{3,8}\b|\brgba?\(|\bhsla?\(\s*\d")
-    hero = LANDING[LANDING.index("function Hero()") : LANDING.index("function WhatWeRun()")]
+    hero = HOME[HOME.index("function Hero()") : HOME.index("function WhenNear")]
     for name, src in (("HeroDeck", DECK), ("heroScreens", SCREENS), ("ComparisonBand", BAND),
                       ("Hero()", hero)):
         code = _code(src)
@@ -217,7 +239,7 @@ def test_no_real_brand_is_named_in_public_product_ui():
              "Myntra", "Blue Tokai", "Chai Point", "Taj", "Oberoi", "Mamaearth", "boAt"}
     names = {n for n in seeded | known if len(n) > 2}
     assert seeded, "the seed's brand names could not be read"
-    text = " ".join(_code(s) for s in (DECK, SCREENS, BAND, LANDING))
+    text = " ".join(_code(s) for s in (DECK, SCREENS, BAND, HOME, CONTENT))
     hits = sorted(n for n in names if re.search(rf"\b{re.escape(n)}\b", text))
     assert not hits, hits
 
@@ -241,50 +263,29 @@ def test_the_sector_images_are_gone_and_nothing_points_at_them():
 # ---------------------------------------------------------------------------
 
 
-def _claims():
-    block = LANDING[LANDING.index("claims: [") : LANDING.index("],", LANDING.index("claims: ["))]
-    return re.findall(r'label: "([^"]+)",\s*line: "([^"]+)"', block)
+def _deck_and_film():
+    """Every string the deck's screens and the film draw, from the content
+    module — the claims the hero card makes are made there."""
+    deck = CONTENT[CONTENT.index("    film: {") : CONTENT.index("    promises: {")]
+    return " ".join(re.findall(r'"([^"]*)"', deck))
 
 
-def test_the_three_claims_are_ones_the_product_makes():
-    labels = [c[0] for c in _claims()]
-    assert len(labels) == 3
-
-    # "A brand never sees your number": contact fields are on the forbidden
-    # list every brand-facing projection is leak-tested against.
-    assert labels[0] == "A brand never sees your number"
-    for field in ("phone", "whatsapp", "email"):
-        assert field in server.BRAND_FORBIDDEN_CREATOR_FIELDS, field
-
-    # "The fee is agreed before you shoot": the fee step precedes booking and
-    # delivery on the ladder, and the payout window the brief states exists.
-    assert labels[1] == "The fee is agreed before you shoot"
+def test_the_screens_claim_only_what_the_product_does():
+    """#39's claims strip is not carried back — the homepage keeps its own
+    hero — so what is checked is what the four screens and the film draw.
+    The fee is agreed before booking; the creator is paid within the window
+    the server holds, and all of it; nothing is held before a shoot, because
+    no payment is raised until after approval."""
+    text = _deck_and_film().lower()
+    assert "held before" not in text and "escrow" not in text
     order = server.COLLAB_STATE_ORDER
     assert order.index("commercial_agreed") < order.index("slot_booked")
-    assert order.index("commercial_agreed") < order.index("address_confirmed")
-    assert server.CREATOR_PAYOUT_DAYS > 0
-
-    # "Every brand is checked": publishing is behind brand verification.
-    assert labels[2] == "Every brand is checked"
-    import inspect
-
-    assert "_verified_brand_or_403" in inspect.getsource(server.publish_brand_campaign)
-
-
-def test_no_claim_promises_what_main_does_not_do():
-    """**The two commissioned claims that were not true are kept out.** No
-    payment is held before a shoot — a payment row is raised at `in_payment`,
-    after approval — and the draft-review timer is not on main. If either is
-    built, the claim can come back: these assertions name what would have to
-    exist first."""
-    copy = " ".join(" ".join(c) for c in _claims()).lower()
-    code = _code(LANDING)
-    steps = code[code.index("steps: [") : code.index("claims: [")].lower()
-    for text in (copy, steps):
-        assert "held before" not in text and "escrow" not in text
-    if not hasattr(server, "_approve_draft_by_window"):
-        for word in ("timer", "stall", "auto-approv", "clear on"):
-            assert word not in copy, word
+    assert order.index("content_approved") < order.index("in_payment")
+    assert server.CREATOR_PAYOUT_DAYS == 7
+    assert "7 days of approval" in text and "all of it" in text
+    # A draft gate is optional per brief, so neither the deck nor the film
+    # may draw every brief as having one.
+    assert "approved before publishing" not in text
 
 
 # ---------------------------------------------------------------------------
@@ -293,13 +294,13 @@ def test_no_claim_promises_what_main_does_not_do():
 
 
 def test_the_band_sits_directly_under_the_hero_and_stacks_today_first():
-    page = _code(LANDING)
-    body = page[page.index("export default function Landing") :]
-    hero, band, proof = body.index("<Hero />"), body.index("<ComparisonBand"), body.index("<ProofStrip")
-    assert hero < band < proof
-    assert 'compareTitle: "A campaign is not a spreadsheet and sixty DMs"' in LANDING
+    page = _code(HOME)
+    body = page[page.index("export default function Home") :]
+    hero, band, photo = body.index("<Hero />"), body.index("<ComparisonBand"), body.index("<PhotoBand")
+    assert hero < band < photo
+    assert 'title: "A campaign is not a spreadsheet and sixty DMs"' in CONTENT
     code = _code(BAND)
-    assert code.index("<Spreadsheet />") < code.index("<Board />")
+    assert code.index("<Spreadsheet") < code.index("<Board")
     assert "grid-cols-1" in code and "md:grid-cols-[1fr_auto_1fr]" in code
 
 

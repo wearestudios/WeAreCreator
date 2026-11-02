@@ -86,3 +86,61 @@ export function RowWriter({ rows, className = "", rowClassName = "", as: Tag = "
         </Tag>
     );
 }
+
+/**
+ * Rise and fade, once, the first time the element is in view — the entrance
+ * the pre-revamp pages gave their section headings and their illustrations.
+ *
+ * **It is `Reveal`'s entrance, not a new one**: the same 14px of travel, the
+ * same curve (`--weare-ease`), the same 70ms between staggered siblings, and
+ * a duration at the top of `Reveal`'s band. It is written in CSS rather than
+ * by importing `Reveal` because `Reveal` is framer-motion, and the homepage
+ * ships none: 36KB gzip of animation library on the page whose LCP is a
+ * heading would be the one regression this restoration must not cause.
+ *
+ * Headings and illustrations only. Body text, the comparison table and the
+ * FAQ do not rise — a paragraph arriving after the heading above it is a
+ * paragraph somebody waits for.
+ *
+ * Transparent until it plays, in the box it already occupies, so arriving
+ * moves nothing; where `IntersectionObserver` is missing it is shown at once.
+ * Under reduced motion the stylesheet renders the end state on first paint.
+ *
+ * @param {{ i?: number, as?: string, className?: string, children: React.ReactNode }} props
+ */
+export function Rise({ i = 0, as: Tag = "div", className = "", children, ...rest }) {
+    const ref = useRef(null);
+    const [shown, setShown] = useState(false);
+
+    useEffect(() => {
+        if (shown) return undefined;
+        const node = ref.current;
+        if (!node || typeof IntersectionObserver === "undefined") {
+            setShown(true);
+            return undefined;
+        }
+        const io = new IntersectionObserver(
+            (entries) => {
+                if (entries.some((e) => e.isIntersecting)) {
+                    setShown(true);
+                    io.disconnect();
+                }
+            },
+            { rootMargin: "0px 0px -60px 0px" },
+        );
+        io.observe(node);
+        return () => io.disconnect();
+    }, [shown]);
+
+    return (
+        <Tag
+            ref={ref}
+            data-shown={shown ? "true" : "false"}
+            className={`mkt-rise ${className}`}
+            style={i ? { animationDelay: `${i * ROW_GAP_MS}ms` } : undefined}
+            {...rest}
+        >
+            {children}
+        </Tag>
+    );
+}

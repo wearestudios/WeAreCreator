@@ -4,25 +4,29 @@
 // payment is what creators name most often, and the striking half is that
 // creators who *were* paid inside a week still named it — because nothing ever
 // said when payment was coming, and an unstated wait is assumed to be a long
-// one. A sentence saying "paid within seven days" answers that. A timeline
-// showing seven against ninety answers it in the one glance somebody gives a
-// page they have not decided to read yet.
+// one. A sentence saying "paid within 7 days of approval" answers that. A
+// track that runs from approval to paid, a day per tick, answers it in the
+// one glance somebody gives a page they have not decided to read yet.
 //
 // **Our number is real and is read from the one place that holds it.**
 // `CREATOR_PAYOUT_DAYS` mirrors `server.py`'s platform default, under a drift
 // test, so this page and the promise printed on every brief cannot disagree.
 // It is deliberately not fetched: these pages render before there is anything
-// to fetch, which is the same reason `platformTerms.js` and `execution.js`
-// are mirrored rather than requested.
+// to fetch. Every word around it is `CREATORS.money.clock` in the content
+// module.
 //
-// **The track is SVG and everything else is HTML, for two reasons that point
-// the same way.** `role="img"` makes a subtree presentational, so a chart
-// drawn entirely in SVG reaches a screen reader as its label and nothing else
-// — the numbers have to be real text to be heard, resized or reflowed. And a
-// `preserveAspectRatio="none"` viewBox stretches whatever is inside it, which
-// is harmless for the two rectangles of the track and would turn a round
-// marker into an ellipse at desktop width. So the rectangles are SVG and the
-// markers are HTML dots placed by percentage.
+// **Restored from the pre-revamp /for-creators (8263b6f) and narrowed to the
+// half that is true.** It drew our 7 days against "around 90 days elsewhere",
+// a figure nothing in this codebase backs — it carried `data-unsourced` for
+// exactly that reason — and these pages now carry only claims the product
+// keeps. So the scale is our own window: day 0 is the approval, the last day
+// is the latest the money arrives, and there is no other operator on it.
+//
+// **The track is SVG and everything else is HTML.** `role="img"` makes a
+// subtree presentational, so a chart drawn entirely in SVG reaches a screen
+// reader as its label and nothing else; and a `preserveAspectRatio="none"`
+// viewBox would turn a round marker into an ellipse. So the bar is SVG and the
+// markers and figures are HTML.
 import React, { useRef } from "react";
 import { motion, useInView, useReducedMotion } from "framer-motion";
 
@@ -31,153 +35,78 @@ import { DUR, EASE, VIEWPORT } from "@/components/marketing/motion";
 import { CREATOR_PAYOUT_DAYS } from "@/lib/payoutWindow";
 import { MARKETING as IDS } from "@/constants/testIds";
 
-// ---------------------------------------------------------------------------
-// NEEDS A SOURCE
-// ---------------------------------------------------------------------------
-// `theirDays` is a claim about *other* operators' payment terms. Nothing in
-// this codebase backs it — unlike `CREATOR_PAYOUT_DAYS`, which is a stored
-// platform setting an admin can read and change, printed on every brief and
-// frozen into the terms a creator accepts.
-//
-// It renders because the operation asserts it, and it is a prop so sourcing it
-// is one edit at the call site. **Until it is sourced the marker carries
-// `data-unsourced`**, so the claim is greppable in the built page rather than
-// living only in somebody's memory. These pages are held to "every claim is
-// checkable"; this one is not yet.
-export const UNSOURCED = ["theirDays"];
-
-/** The axis. Fixed rather than derived from the markers, so the gap is read
- *  against a scale that does not move when a figure is corrected. */
-const SCALE_DAYS = 90;
-
-// One block, because these are words on `/for-creators` and the page's budget
-// counts words a reader meets wherever they are declared — the argument
-// `test_marketing_pages.py` already makes for `CampaignFilm`'s captions. The
-// `aria-label` is deliberately absent: it stands in for the picture rather
-// than adding to the page, and charging the budget for it would make
-// describing a chart properly cost copy.
-export const COPY = {
-    scaleStart: "Day 0",
-    scaleEnd: "Day",
-    ours: "After your delivery is approved",
-    theirs: "Terms commonly quoted elsewhere",
-    gap: "The wait you are not doing",
-    unit: "days",
-};
-
-const pct = (days) => Math.min(100, (days / SCALE_DAYS) * 100);
-
-export function PayoutClock({
-    ourDays = CREATOR_PAYOUT_DAYS,
-    theirDays = 90,
-    className = "",
-}) {
+/**
+ * @param {{ clock: object, ourDays?: number, className?: string }} props
+ *   `clock` is `CREATORS.money.clock`.
+ */
+export function PayoutClock({ clock, ourDays = CREATOR_PAYOUT_DAYS, className = "" }) {
     const reduced = useReducedMotion();
     // One observer for the track, for the reason `FeeFlow` records: a child
     // `motion` element's own `whileInView` is unreliable inside a variant
     // tree, and an explicit ref is deterministic.
     const ref = useRef(null);
     const inView = useInView(ref, VIEWPORT);
-    const gap = Math.max(0, theirDays - ourDays);
-    const ourAt = pct(ourDays);
-    const theirAt = pct(theirDays);
-
-    // The track draws, then the span fills, then the markers land. One beat
-    // apart, inside the site's 200–400ms band, and nothing repeats.
-    const step = 0.12;
-    const draw = (delay, to = 1) => ({
-        initial: false,
-        animate: { scaleX: reduced || inView ? to : 0 },
-        transition: reduced
-            ? { duration: 0 }
-            : { duration: DUR.slow, ease: EASE, delay },
-    });
+    const days = Array.from({ length: ourDays + 1 }, (_, d) => d);
 
     return (
         <div data-testid={IDS.payoutClock} className={className}>
-            {/* The scale, above the track, so the numbers under each marker
-                are the markers' own and cannot be misread as the axis. */}
-            <div className="flex justify-between text-xs uppercase tracking-[0.18em] text-muted-foreground">
-                <span>{COPY.scaleStart}</span>
-                <span>{COPY.scaleEnd} {SCALE_DAYS}</span>
-            </div>
-
-            <div ref={ref} className="relative mt-3 h-2">
+            <div ref={ref} className="relative h-2">
                 <svg
                     viewBox="0 0 1000 8"
                     preserveAspectRatio="none"
                     role="img"
-                    aria-label={`A creator is paid within ${ourDays} days of approved delivery here, against terms of around ${theirDays} days elsewhere — a gap of ${gap} days.`}
+                    aria-label={`From the day your work is approved to the day you are paid: ${ourDays} ${clock.unit} at most.`}
                     className="absolute inset-0 h-2 w-full overflow-hidden rounded-full"
                 >
+                    <rect width="1000" height="8" fill="hsl(var(--muted))" />
+                    {/* The wait, drawn from approval to paid — once, as the
+                        track comes into view, and never again. */}
                     <motion.rect
                         width="1000"
                         height="8"
-                        fill="#1A3053"
+                        fill="hsl(var(--accent))"
                         style={{ originX: 0, transformBox: "fill-box" }}
-                        {...draw(0)}
-                    />
-                    {/* The wait a creator does not have. Drawn from our marker
-                        to theirs, which is what makes the span mean something
-                        rather than being decoration between two dots. */}
-                    <motion.rect
-                        x={ourAt * 10}
-                        width={(theirAt - ourAt) * 10}
-                        height="8"
-                        fill="#5E7FA8"
-                        style={{ originX: 0, transformBox: "fill-box" }}
-                        {...draw(step)}
+                        initial={false}
+                        animate={{ scaleX: reduced || inView ? 1 : 0 }}
+                        transition={reduced ? { duration: 0 } : { duration: DUR.slow * 2, ease: EASE, delay: 0.1 }}
                     />
                 </svg>
 
-                {/* HTML, not SVG: a circle in a `preserveAspectRatio="none"`
-                    viewBox is an ellipse at any width but one. */}
-                <Reveal
-                    i={2}
-                    noTravel
-                    data-testid={IDS.payoutClockOurs}
-                    className="absolute top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-background bg-primary"
-                    style={{ left: `${ourAt}%` }}
-                />
-                <Reveal
-                    i={3}
-                    noTravel
-                    data-testid={IDS.payoutClockTheirs}
-                    data-unsourced="theirDays"
-                    className="absolute top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-background bg-muted-foreground"
-                    style={{ left: `${theirAt}%` }}
-                />
+                {/* A tick per day, so "7" reads as a week of days rather than
+                    as a number. HTML, not SVG: a circle in a
+                    `preserveAspectRatio="none"` viewBox is an ellipse. */}
+                {days.map((d) => {
+                    const end = d === 0 || d === ourDays;
+                    return (
+                        <Reveal
+                            key={d}
+                            i={end ? (d === 0 ? 0 : 2) : 1}
+                            noTravel
+                            data-testid={d === 0 ? IDS.payoutClockStart : d === ourDays ? IDS.payoutClockOurs : undefined}
+                            className={`absolute top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-background ${
+                                end ? "h-4 w-4 bg-foreground" : "h-2 w-2 bg-muted-foreground"
+                            }`}
+                            style={{ left: `${(d / ourDays) * 100}%` }}
+                        />
+                    );
+                })}
             </div>
 
-            {/* **Every figure is real text and never only a position on a
-                bar.** Read aloud, in greyscale, or with the SVG blocked, the
-                three numbers and what they mean all survive. */}
-            <div className="mt-5 grid gap-4 sm:grid-cols-3">
-                <Reveal i={4}>
-                    <p className="font-serif text-fluid-2xl text-primary">
-                        {ourDays} {COPY.unit}
-                    </p>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                        {COPY.ours}
-                    </p>
-                </Reveal>
-                <Reveal i={5} data-unsourced="theirDays">
-                    <p className="font-serif text-fluid-2xl text-foreground">
-                        {theirDays} {COPY.unit}
-                    </p>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                        {COPY.theirs}
-                    </p>
-                </Reveal>
-                <Reveal i={6} data-testid={IDS.payoutClockGap}>
-                    <p className="font-serif text-fluid-2xl text-foreground">
-                        {gap} {COPY.unit}
-                    </p>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                        {COPY.gap}
-                    </p>
-                </Reveal>
+            {/* The two ends, named under their own markers, so a position on
+                a bar is never the only way to read it. */}
+            <div className="mt-4 flex justify-between gap-4 text-body text-muted-foreground">
+                <span>{clock.start}</span>
+                <span className="text-right">
+                    {clock.end} day {ourDays}
+                </span>
             </div>
+
+            <Reveal i={3} className="mt-8">
+                <p className="mkt-h2 text-heading">
+                    {ourDays} {clock.unit}
+                </p>
+                <p className="mt-1 text-body text-muted-foreground">{clock.ours}</p>
+            </Reveal>
         </div>
     );
 }

@@ -207,7 +207,10 @@ class TestFonts:
         mounted = [SRC / "pages" / f for f in ("Home.jsx", "ForBrands.jsx", "ForCreators.jsx")] + [
             SRC / "components" / "marketing" / f
             for f in ("SiteParts.jsx", "siteMocks.jsx", "ComparisonBand.jsx", "StickyCta.jsx",
-                      "PhotoSlot.jsx", "MarketingNavbar.jsx", "MarketingFooter.jsx")
+                      "PhotoSlot.jsx", "MarketingNavbar.jsx", "MarketingFooter.jsx",
+                      # Restored, and mounted again: held to the same rule.
+                      "Illustration.jsx", "HeroDeck.jsx", "heroScreens.jsx", "CampaignFilm.jsx",
+                      "filmUI.jsx", "filmParts.jsx", "FeeFlow.jsx", "PayoutClock.jsx")
         ]
         for p in mounted:
             code = _code(p.read_text())
@@ -562,7 +565,7 @@ def _hsl_hex(h, s, l):
 
 
 # ---------------------------------------------------------------------------
-# 2d — Motion: one curve, two bands, five primitives
+# 2d — Motion: one curve, two bands, six primitives
 # ---------------------------------------------------------------------------
 
 PRIMITIVES = SRC / "components/marketing/primitives.js"
@@ -576,10 +579,13 @@ def _reduced() -> str:
 
 
 class TestMarketingMotion:
-    def test_there_are_exactly_five_primitives(self):
+    def test_there_are_exactly_six_primitives(self):
+        """Five, plus `Rise` — the pre-revamp `Reveal` entrance, restored on
+        headings and illustrations and written in CSS so the homepage ships
+        no animation library."""
         exports = re.findall(r"export \{([^}]+)\}", PRIMITIVES.read_text())
         names = {n.strip() for group in exports for n in group.split(",")}
-        assert names == {"WipeWord", "RowWriter", "CountUp", "FillText", "Marquee"}
+        assert names == {"WipeWord", "RowWriter", "Rise", "CountUp", "FillText", "Marquee"}
 
     def test_one_curve(self):
         """`--weare-ease` is the curve, and no other `cubic-bezier` is written
@@ -624,6 +630,8 @@ class TestMarketingMotion:
         for decl in ("animation: none !important", "opacity: 1 !important",
                      "transform: none !important", "clip-path: none !important"):
             assert decl in rule
+        head = re.search(r"(\.mkt-wipe,\s*\.mkt-row,[^{]*)\{", reduced).group(1)
+        assert ".mkt-rise," in head and '.mkt-rise[data-shown="true"]' in head, "Rise lands on its end state too"
         assert re.search(r"\.mkt-fill-word \{\s*opacity: 1 !important;", reduced)
         assert re.search(r"\.mkt-marquee-track \{\s*animation: none !important;", reduced)
         assert re.search(r"\.mkt-marquee-dup,[^{]*\{\s*display: none !important;", reduced)
@@ -677,7 +685,7 @@ MANIFEST = SRC / "content/photoSlots.js"
 PHOTO_SLOT = SRC / "components/marketing/PhotoSlot.jsx"
 SLOT_KEYS = {
     "src", "alt", "focal", "width", "height", "brief",
-    "fallbackHeadline", "fallbackAccent", "fallbackLine",
+    "fallbackHeadline", "fallbackAccent", "fallbackLine", "fallbackIllustration",
 }
 
 
@@ -709,6 +717,11 @@ class TestPhotoSlots:
             assert len(slot["fallbackHeadline"]) > 10, sid
             if slot["fallbackAccent"]:
                 assert slot["fallbackAccent"] in slot["fallbackHeadline"], sid
+            # The drawing that stands in until a photograph exists: one of the
+            # site's own, served from our origin, and actually there.
+            art = slot["fallbackIllustration"]
+            assert art.startswith("/img/marketing/") and art.endswith(".svg"), sid
+            assert (SRC.parent / "public" / art.lstrip("/")).is_file(), art
 
     def test_the_brief_exists_in_development_and_on_a_preview_only(self):
         """**The photographer's notes never reach production.** Evaluated the
@@ -766,7 +779,16 @@ class TestPhotoSlots:
             for tag in re.findall(r"<PlaceholderImage\b[^>]*>", code, flags=re.S):
                 assert not re.search(r'\bnote="', tag), f"{p}: a literal brief ships in the bundle"
         slot = (SRC / "components/marketing/PlaceholderImage.jsx").read_text()
-        assert "data-placeholder={src || !brief ? undefined : brief}" in slot
+        assert "data-placeholder={shown || !brief ? undefined : brief}" in slot
+        # In production each of the three shows a drawing rather than an
+        # empty tint; in development and on a preview, the brief as before.
+        script = _module(MANIFEST) + "\nconsole.log(JSON.stringify(PLACEHOLDER_ILLUSTRATIONS));"
+        art = json.loads(subprocess.run(["node", "--input-type=module", "-e", script],
+                                        capture_output=True, text=True, timeout=60).stdout)
+        assert set(art) == set(dev)
+        for path in art.values():
+            assert (SRC.parent / "public" / path.lstrip("/")).is_file(), path
+        assert "!SHOW_BRIEFS && slot ? PLACEHOLDER_ILLUSTRATIONS[slot]" in _code(slot)
 
     def test_the_component_holds_no_path_of_its_own(self):
         code = _code(PHOTO_SLOT.read_text())
@@ -784,7 +806,12 @@ class TestPhotoSlots:
         assert "objectPosition: slot.focal" in code
         assert code.count("style={box}") == 3
 
-    def test_the_placeholder_is_development_only_and_the_fallback_is_navy(self):
+    def test_the_placeholder_is_development_only_and_the_fallback_is_the_drawing(self):
+        """The production fallback was the navy panel alone. It is the slot's
+        illustration, full bleed, with the headline on a navy band across its
+        foot — navy at 92% under the inverse ink, so the headline keeps its
+        contrast whatever the drawing does. The dev/preview brief is
+        unchanged."""
         code = _code(PHOTO_SLOT.read_text())
         placeholder = code.split('data-empty="placeholder"', 1)[1].split("return", 1)[0]
         before = code.split('data-empty="placeholder"', 1)[0]
@@ -792,8 +819,10 @@ class TestPhotoSlots:
         assert "border-dashed" in placeholder and "{slot.brief}" in placeholder
         assert "{id}" in placeholder and "{slot.width}×{slot.height}" in placeholder
         fallback = code.split('data-empty="fallback"', 1)[1]
-        assert 'data-surface="inverse"' in fallback, "the production fallback is the navy panel"
+        assert 'data-surface="inverse"' in fallback, "the headline sits on the navy band"
         assert "slot.fallbackHeadline" in fallback and "mkt-h1" in fallback
+        assert "src={slot.fallbackIllustration}" in fallback and 'alt=""' in fallback
+        assert "bg-background/[0.92]" in fallback
         assert "slot.brief" not in fallback
 
     def test_the_inverse_surface_is_the_brand_navy(self):

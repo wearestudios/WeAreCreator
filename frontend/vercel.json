@@ -3,7 +3,7 @@
   "redirects": [
     {
       "source": "/how-it-works",
-      "destination": "/for-brands",
+      "destination": "/#how-it-works",
       "statusCode": 301
     },
     {

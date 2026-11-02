@@ -5,25 +5,40 @@
 // sector is the thing a visitor already knows about themselves; the stage of
 // the job is the thing they came to find out.
 //
-// Four pieces, all reading one provider:
+// Three pieces, all reading one provider:
 //
 //   - `HeroDeckProvider` owns the index, **the only timer**, the pause and the
 //     reduced-motion branch. Its state is `deckReducer`, which is pure and
 //     run by the tests.
 //   - `DeckStage` paints the product screens — at most two at once.
 //   - `StepRail` is four real buttons with `aria-pressed`.
-//   - `RotatingLine` is the decorative line under the static `h1`.
+//
+// **Restored from the four-step hero (#39), which was never merged, as the
+// card beside the homepage `h1`.** The `h1` and its drawn word are untouched;
+// only the card cycles. #39 also rotated a line under a new `h1`
+// (`RotatingLine`); the homepage keeps its own heading, so that piece is not
+// carried back. And it reads reduced motion off the media query directly
+// rather than through framer-motion: the homepage ships no animation library,
+// and one hook was the only thing this file used it for.
 //
 // **One timer, and nothing else in the hero may own one.** The old slider held
 // 7000ms and the old headline 4000ms, each with its own clock; they drifted
 // apart by the second slide and never recovered. Slides and lines are 1:1 now,
 // so both read `index` off this context, and the progress bar under the rail
 // is a CSS animation over the same `HOLD_MS` rather than a second interval.
-import React, { createContext, useCallback, useContext, useEffect, useReducer, useRef, useState } from "react";
-import { useReducedMotion } from "framer-motion";
+import React, {
+    Suspense,
+    createContext,
+    lazy,
+    useCallback,
+    useContext,
+    useEffect,
+    useReducer,
+    useRef,
+    useState,
+} from "react";
 
 import { EASE } from "@/components/marketing/motion";
-import { SCREENS } from "@/components/marketing/heroScreens";
 import {
     HOLD_MS,
     INITIAL,
@@ -34,6 +49,50 @@ import {
     painted,
 } from "@/lib/heroDeck";
 import { LANDING_HERO as IDS } from "@/constants/testIds";
+import { retryImport } from "@/lib/lazyRoute";
+
+/**
+ * **The screens are their own chunk, fetched as the hero mounts.** The h1 is
+ * the homepage's LCP, and everything in the first paint's bundle is between a
+ * visitor and it; the four drawn screens and their icons are not needed to
+ * paint the heading, so they arrive a moment after it, into a frame that is
+ * already the right size. Measured with Lighthouse mobile behind gzip: with
+ * the screens in the page's own chunk, the restored homepage's median LCP was
+ * 18ms behind main's; this is what takes that back.
+ */
+const loadScreens = () =>
+    retryImport(() => import(/* webpackChunkName: "hero-screens" */ "@/components/marketing/heroScreens"));
+const lazyScreens = {};
+function screenFor(key) {
+    if (!lazyScreens[key]) {
+        lazyScreens[key] = lazy(() => loadScreens().then((m) => ({ default: m.SCREENS[key] })));
+    }
+    return lazyScreens[key];
+}
+
+/** The frame a screen sits in, empty — what shows for the moment before the
+ * screens' chunk lands. The same box and the same border, so nothing moves
+ * when the screen fills it. */
+const EmptyFrame = () => <div aria-hidden className="h-full rounded-lg border border-border bg-card" />;
+
+/**
+ * Whether the reader asked for less motion, kept current if they change it.
+ * Read synchronously on the first render, so a reader who asked never sees a
+ * frame of the wipe.
+ */
+function usePrefersReducedMotion() {
+    const query = "(prefers-reduced-motion: reduce)";
+    const read = () => typeof window !== "undefined" && Boolean(window.matchMedia?.(query).matches);
+    const [reduced, setReduced] = useState(read);
+    useEffect(() => {
+        const mq = window.matchMedia?.(query);
+        if (!mq) return undefined;
+        const sync = () => setReduced(mq.matches);
+        mq.addEventListener("change", sync);
+        return () => mq.removeEventListener("change", sync);
+    }, []);
+    return reduced;
+}
 
 /** One curve, built from `EASE` rather than retyped. */
 const EASE_CSS = `cubic-bezier(${EASE.join(", ")})`;
@@ -54,8 +113,8 @@ export function useHeroDeck() {
  * hovering anywhere in the hero, or tabbing into it, stops the clock.
  * `focusin`/`focusout` rather than `focus`/`blur`, which do not bubble.
  */
-export function HeroDeckProvider({ steps, className = "relative", children }) {
-    const reduced = Boolean(useReducedMotion());
+export function HeroDeckProvider({ steps, label, className = "relative", children }) {
+    const reduced = usePrefersReducedMotion();
     const [state, dispatch] = useReducer(deckReducer, INITIAL);
     const [paused, setPaused] = useState(false);
     const rootRef = useRef(null);
@@ -96,7 +155,7 @@ export function HeroDeckProvider({ steps, className = "relative", children }) {
         };
     }, []);
 
-    const value = { steps, index: state.active, state, paused, reduced, goTo };
+    const value = { steps, label, index: state.active, state, paused, reduced, goTo };
     return (
         <DeckContext.Provider value={value}>
             <div ref={rootRef} className={className}>
@@ -117,7 +176,7 @@ export function HeroDeckProvider({ steps, className = "relative", children }) {
  * screen is `aria-hidden` while it is uncovered.
  */
 function Slide({ step, index, active, incoming, reduced }) {
-    const Screen = SCREENS[step.key];
+    const Screen = screenFor(step.key);
     const wipe = (name) =>
         reduced || !incoming
             ? undefined
@@ -137,7 +196,9 @@ function Slide({ step, index, active, incoming, reduced }) {
             style={wipe("heroWipeWindow")}
         >
             <div className="absolute inset-0" style={wipe("heroWipeHold")}>
-                <Screen />
+                <Suspense fallback={<EmptyFrame />}>
+                    <Screen {...step.props} />
+                </Suspense>
             </div>
         </div>
     );
@@ -151,14 +212,19 @@ function Slide({ step, index, active, incoming, reduced }) {
  *
  * The box is reserved by its aspect ratio, so swapping screens moves nothing.
  */
-export function DeckStage({ className = "" }) {
+export function DeckStage({ className = "", testid }) {
     const { steps, state, reduced } = useHeroDeck();
     const mounted = painted(state);
     return (
+        // A fixed height rather than #39's ratio: these screens are text, and
+        // a ratio shrinks with the column until the tallest one is clipped at
+        // 390px. The box is the tallest screen's, at every width, so swapping
+        // screens moves nothing — measured: Get paid needs 325px at 360 wide
+        // and 308 from 768 up, and 21rem is 336.
         <div
-            data-testid={IDS.slides}
+            data-testid={testid || IDS.slides}
             data-mounted={mounted.length}
-            className={`relative aspect-[5/4] w-full sm:aspect-[4/3] ${className}`}
+            className={`relative h-[21rem] w-full ${className}`}
         >
             {mounted.map((i) => (
                 <Slide
@@ -184,13 +250,15 @@ export function DeckStage({ className = "" }) {
  * render under reduced motion, where nothing advances on its own.
  */
 export function StepRail({ className = "" }) {
-    const { steps, index, goTo, paused, reduced } = useHeroDeck();
+    const { steps, label, index, goTo, paused, reduced } = useHeroDeck();
     return (
         <div
             role="group"
-            aria-label="The four steps"
+            aria-label={label}
             data-testid={IDS.rail}
-            className={`grid grid-cols-2 gap-2 sm:grid-cols-4 ${className}`}
+            // Two by two where the card is a narrow column beside the h1
+            // (xl until 2xl), four across where it has the width.
+            className={`grid grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-2 2xl:grid-cols-4 ${className}`}
         >
             {steps.map((step, i) => {
                 const on = i === index;
@@ -201,13 +269,13 @@ export function StepRail({ className = "" }) {
                         aria-pressed={on}
                         data-testid={IDS.railStep(i)}
                         onClick={() => goTo(i)}
-                        className={`group relative flex min-h-[2.75rem] items-baseline gap-2 overflow-hidden rounded-md border px-3 py-2 text-left text-sm transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background ${
+                        className={`group relative flex min-h-[2.75rem] items-baseline gap-2 overflow-hidden whitespace-nowrap rounded-md border px-3 py-2 text-left text-meta transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background ${
                             on
                                 ? "border-primary/50 bg-primary/10 text-foreground"
-                                : "border-tint/10 bg-card text-muted-foreground hover:border-tint/25 hover:text-foreground"
+                                : "border-border bg-card text-muted-foreground hover:border-foreground/30 hover:text-foreground"
                         }`}
                     >
-                        <span className="font-serif text-xs tabular-nums text-primary-ink">
+                        <span className="font-serif tabular-nums text-muted-foreground">
                             {pad(i + 1)}
                         </span>
                         <span>{step.label}</span>
@@ -229,67 +297,6 @@ export function StepRail({ className = "" }) {
                     </button>
                 );
             })}
-        </div>
-    );
-}
-
-/**
- * The rotating line and its support, under the static `h1`.
- *
- * **Decorative, and hidden from assistive tech**: the four lines are also a
- * visually-hidden static list, so nothing is only available to somebody who
- * can see it change. No `aria-live` — announcing marketing copy every six
- * seconds is hostile.
- *
- * **The box is reserved by drawing all four into one grid cell**, the rule
- * the old headline learned: a character count is not a width, and only a
- * box the browser draws is the right size. Only the active one is visible.
- */
-export function RotatingLine() {
-    const { steps, index, reduced } = useHeroDeck();
-    return (
-        <div>
-            <div aria-hidden className="grid">
-                {steps.map((step, i) => {
-                    const on = i === index;
-                    return (
-                        <div
-                            key={step.key}
-                            className={`col-start-1 row-start-1 ${on ? "" : "invisible"}`}
-                            style={
-                                on && !reduced
-                                    ? {
-                                          animationName: "weare-settle",
-                                          animationDuration: "420ms",
-                                          animationTimingFunction: EASE_CSS,
-                                          animationFillMode: "both",
-                                      }
-                                    : undefined
-                            }
-                        >
-                            <p
-                                data-testid={on ? IDS.line : undefined}
-                                className="font-serif text-2xl leading-snug text-foreground md:text-3xl"
-                            >
-                                {step.line}
-                            </p>
-                            <p
-                                data-testid={on ? IDS.subheading : undefined}
-                                className="mt-3 max-w-xl text-base leading-relaxed text-muted-foreground md:text-lg"
-                            >
-                                {step.support}
-                            </p>
-                        </div>
-                    );
-                })}
-            </div>
-            <ol data-testid={IDS.stepsList} className="sr-only">
-                {steps.map((step, i) => (
-                    <li key={step.key}>
-                        {pad(i + 1)} {step.label}: {step.line} {step.support}
-                    </li>
-                ))}
-            </ol>
         </div>
     );
 }

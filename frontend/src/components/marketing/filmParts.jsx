@@ -20,8 +20,11 @@ export function CreatorMonogram({ name }) {
     return (
         <span
             aria-hidden
-            className="grid h-9 w-9 shrink-0 place-items-center rounded-full font-serif text-sm text-white/90"
-            style={{ backgroundColor: `hsl(${hue} 55% 26%)` }}
+            // Light ink on a deep disc of the name's own hue — a literal
+            // colour because the hue is computed, and kept dark enough
+            // (26% lightness) that the initial reads at well over 7:1.
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-full font-serif text-meta"
+            style={{ backgroundColor: `hsl(${hue} 55% 26%)`, color: "hsl(var(--brand-white))" }}
         >
             {name.slice(0, 1)}
         </span>

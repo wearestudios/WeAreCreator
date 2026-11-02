@@ -8,10 +8,14 @@
 //
 //   - **a `src`**: the image, positioned on the slot's focal point, lazy
 //     unless the caller says it is above the fold;
-//   - **no `src`, in production**: a navy panel carrying the slot's
-//     `fallbackHeadline` in display type. A visitor must read it as a
-//     finished section — a dashed box on the live site is a site that is not
-//     done;
+//   - **no `src`, in production**: the slot's drawing
+//     (`fallbackIllustration`), full bleed, with the `fallbackHeadline` in
+//     display type on a navy band across its foot. A visitor must read it as
+//     a finished section — a dashed box on the live site is a site that is
+//     not done. It used to be the navy panel alone, which read as finished
+//     and also as empty; the drawing is what the pre-revamp site had there.
+//     The band is navy at 92% over the drawing, so the headline's contrast
+//     is the inverse ink on navy whatever the drawing underneath is doing;
 //   - **no `src`, in development or on a Vercel preview**: the dashed
 //     placeholder with the slot id, the size to shoot at and the brief, so
 //     the people building the site can see what belongs there.
@@ -87,7 +91,9 @@ export default function PhotoSlot({ id, eager = false, fill = false, className =
         );
     }
 
-    // Production with no photograph: the panel is the section.
+    // Production with no photograph: the drawing, and the headline on a navy
+    // band over it. The section is navy underneath too, so the frame reads as
+    // one piece while the drawing is still arriving.
     const Heading = headingLevel;
     return (
         <div
@@ -98,13 +104,27 @@ export default function PhotoSlot({ id, eager = false, fill = false, className =
             className={`${frame} flex items-end bg-background text-foreground`}
             style={box}
         >
-            <div className="max-w-4xl p-6 sm:p-10 md:p-16">
-                <Heading className="mkt-h1 text-foreground">
-                    <Headline text={slot.fallbackHeadline} accent={slot.fallbackAccent} />
-                </Heading>
-                {slot.fallbackLine ? (
-                    <p className="mkt-lead mt-5 max-w-2xl text-muted-foreground">{slot.fallbackLine}</p>
-                ) : null}
+            {slot.fallbackIllustration ? (
+                <img
+                    src={slot.fallbackIllustration}
+                    alt=""
+                    width={slot.width}
+                    height={slot.height}
+                    loading={eager ? "eager" : "lazy"}
+                    decoding="async"
+                    className="absolute inset-0 h-full w-full object-cover"
+                    style={{ objectPosition: slot.focal }}
+                />
+            ) : null}
+            <div className="relative w-full bg-background/[0.92]">
+                <div className="max-w-4xl p-6 sm:p-10 md:px-16 md:py-12">
+                    <Heading className="mkt-h1 text-foreground">
+                        <Headline text={slot.fallbackHeadline} accent={slot.fallbackAccent} />
+                    </Heading>
+                    {slot.fallbackLine ? (
+                        <p className="mkt-lead mt-5 max-w-2xl text-muted-foreground">{slot.fallbackLine}</p>
+                    ) : null}
+                </div>
             </div>
         </div>
     );

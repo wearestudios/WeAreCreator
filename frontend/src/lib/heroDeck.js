@@ -22,8 +22,10 @@
 //   - **Reduced motion never auto-advances.** Step 01, and the rail does the
 //     switching — with no wipe, so there is never a second layer either.
 
-/** The one hold, for the screen and the line alike. */
-export const HOLD_MS = 6000;
+/** The one hold: how long each step's screen is on before the next. 7000ms,
+ *  the old `HeroSlider`'s dwell — long enough to read a screen, short enough
+ *  that a visitor who stays sees the whole job go round. */
+export const HOLD_MS = 7000;
 
 /** How long the wipe between two screens takes. */
 export const WIPE_MS = 700;

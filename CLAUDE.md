@@ -1256,7 +1256,8 @@ current state, and where the two disagree it wins.
 ### The rebuild: three pages, one copy module
 
 `pages/Home.jsx` replaced `pages/Landing.jsx` at `/`, and
-`/how-it-works` and `/why-weare` were folded into `/for-brands`. **Every word
+`/how-it-works` and `/why-weare` were folded into the three pages (see "The
+old site's look, brought back" for where `/how-it-works` lands now). **Every word
 the three pages render is in `content/marketing.js`** (`HOME`, `BRANDS`,
 `CREATORS`, `ASK`), the pages hold layout, and the tests read the module
 evaluated in node rather than regexing JSX.
@@ -1264,7 +1265,8 @@ evaluated in node rather than regexing JSX.
 - **The two retired paths redirect in two places a test keeps in step**:
   `RETIRED_MARKETING_PATHS` in `lib/siteNav.js`, rendered as `<Navigate
   replace>` routes, and 301 `redirects` in `vercel.json`. The server mirrors
-  the list so neither path is in the sitemap. `/contact` and the legal pages
+  the list so neither path is in the sitemap. `/how-it-works` goes to
+  `/#how-it-works` and `/why-weare` to `/for-brands`. `/contact` and the legal pages
   were not touched.
 - **Every section header is numbered** (`SectionHead` → `SectionRule`, a
   hairline with `01 · Label` in the mono label face) — the page reads as one
@@ -1284,15 +1286,15 @@ evaluated in node rather than regexing JSX.
   payouts, record, close.
 - **The hero is five things and three type styles.** The h1 with one
   `WipeWord` on "chasing", one lead, the two asks, one quiet line, and the
-  deal card — Fraunces display, Inter Tight lead, Inter Tight UI. **No
-  eyebrow, no Built-for line, no step rail**: they were removed in a
-  subtraction pass, and the rail duplicated section 4 a screen above it. The
-  card is three rows (budget, quote, agreed) with **the agreed fee as its
-  only large figure**, and no chips. The sector slider, its eight
-  `hero-*.svg` drawings, `KineticHeadline`, `sectorCycle`, the scroll film,
-  `FeeFlow`, `PayoutClock` and the studio handshake band are deleted, not
-  unmounted. At 1366×768 the whole hero — h1, lead, asks, card — ends at
-  ~500px, and the card's top is level with the h1's.
+  card — Fraunces display, Inter Tight lead, Inter Tight UI. **No eyebrow,
+  no Built-for line**: they were removed in a subtraction pass. The card is
+  the four-step deck now (see "The old site's look, brought back"); the deal
+  that was the card is its Agree screen, with **the agreed fee as its only
+  large figure**. The sector slider, its eight `hero-*.svg` drawings,
+  `KineticHeadline`, `sectorCycle` and the studio handshake band are deleted,
+  not unmounted; the scroll film, `FeeFlow` and `PayoutClock` were deleted
+  here and have since been restored. At 1366×768 the whole hero — h1, lead,
+  asks, card — ends at ~500px, and the card's top is level with the h1's.
 - **Display tracking is -0.02em, h2 -0.015em** (from -0.04 / -0.035): at
   1366 and 1920 "Creator campaigns," read as one word.
 - **A value the content module does not know yet is `null`, and `<Known>`
@@ -1314,7 +1316,7 @@ evaluated in node rather than regexing JSX.
   home and `/for-brands`, "Join free" on `/for-creators`. It appears once the
   hero is above the viewport and goes away when the close is on screen or
   passed, because both already carry the ask at full size. Below `md` only,
-  a 48px target, no animation — it is not one of the five primitives.
+  a 48px target, no animation — it is not one of the six primitives.
 - **The mobile menu is a real dialog**: focus is trapped while it is open,
   Escape closes it, and so does any change of path or hash.
 - **Claims were checked against the code, and four were replaced** rather
@@ -1672,15 +1674,85 @@ inside frames that clip.
   Tailwind warns on every build. It warns for the string anywhere, including
   inside a comment.
 
-### The kinetic hero, the slider and the film — retired
+### The kinetic hero, the slider and the film — retired, and partly back
 
 The sector-morphing headline, the eight-photograph slider that came back
 under the budget that removed it, the scroll film and the studio handshake
-band each had a section here. **All of them are deleted** — see "The
-rebuild" above. The reasoning that outlives them: the hero rotated the one
-thing a visitor already knows about themselves (their sector), and a page
-allowed three moving things had five. Read the git history for the detail;
-do not reinstate any of them without reading why they went.
+band each had a section here. **The headline, the sector slider and the
+handshake band are deleted** — see "The rebuild" above. The reasoning that
+outlives them: the hero rotated the one thing a visitor already knows about
+themselves (their sector). **The scroll film is back**, inside "How it
+works" rather than as a section of its own; see the next section for why and
+under what budget.
+
+### The old site's look, brought back
+
+The founder compared both live sites: the pre-revamp one (8263b6f) was better
+on visuals, motion and ease of understanding, and the rebuild was right on
+content. The restoration kept every word, claim, route and type rule of the
+rebuild and brought the richness back over it. `test_site_restoration.py`
+holds all of it.
+
+- **Illustrations, placed by meaning.** `content/illustrations.js` names
+  each drawing and its file (no image path in a page, the photo-slot rule);
+  `components/marketing/Illustration.jsx` draws one with an empty `alt`
+  (decorative: the text beside it already says what it shows), the box
+  reserved on the frame, lazy unless it is a hero, and a `Rise` entrance.
+  Home: the four steps (briefing, table talk, shoot day, payment) and "who
+  built it" (production). /for-brands: the hero (city at dusk), the
+  shortlist (roster tablet), the guarantees band (door check-in), the
+  report (report desk). /for-creators: the hero (profile phone), "Briefs
+  that fit" (café shoot), "Getting paid properly" (fees close-up). At 390px
+  every drawing stacks above its text at full width (`order-first`).
+  `why-planning` fits nothing closely enough and is deliberately unused.
+- **A photo slot shows a drawing until a photograph arrives.**
+  `fallbackIllustration` on each slot; in production `PhotoSlot` draws it
+  full bleed with the headline on a navy band at 92% over its foot, so the
+  headline keeps its contrast whatever the drawing does. The dev/preview
+  brief is unchanged. The three tinted slots (sign in, sign up, the 404)
+  show a drawing in production too (`PLACEHOLDER_ILLUSTRATIONS`).
+- **Motion that explains, rewired rather than rewritten** — restored from
+  8263b6f and #39 in a verbatim commit first, so the next commit's diff is
+  exactly what was adapted:
+  - `CampaignFilm` sits in the homepage's "How it works", in the column
+    beside the four steps, and **the steps are its track**: the stage is
+    sticky in its column and each beat plays while its own step is the one
+    being read (measured at 1280, 1440 and 1920). Seven beats, grouped under
+    the four steps' names, every word and figure from `HOME.film`.
+  - `FeeFlow` on /for-brands draws *our* flow — you, WeAre Creators, the
+    creator — and 100% of the agreed fee arriving. **No escrow** (there is
+    none) and **no fee figure while `platformFeePercent` is null**. The old
+    version's comparison with "35–60%" elsewhere was unsourced and is gone.
+  - `PayoutClock` on /for-creators draws approval to paid, a tick a day, over
+    `CREATOR_PAYOUT_DAYS`. Its "90 days elsewhere" was unsourced and is gone.
+  - **The hero card cycles the four steps** — #39's `HeroDeck` and
+    `heroScreens`: one timer, 7000ms dwell (`HOLD_MS`), at most two screens
+    painted, pause on hover and focus. The h1 and its drawn word are
+    untouched. The screens' words are `HOME.deck` and the deal is `HOME.card`.
+  - `Rise` is the old `Reveal` entrance (14px, `--weare-ease`, 70ms stagger)
+    on section headings and illustrations only — **in CSS**, the sixth
+    primitive, because `Reveal` is framer-motion.
+- **The homepage's first paint carries no animation library.** Its LCP is
+  the h1. The deck reads the reduced-motion media query itself, `Rise` is
+  CSS, the film is a dynamic import (`webpackChunkName: "film"`) fetched when
+  "How it works" nears the screen, and the deck's screens are their own
+  chunk (`"hero-screens"`) into a frame already the right size. Measured with
+  Lighthouse mobile behind gzip, interleaved eight runs each: median LCP
+  3481ms against main's 3517ms, CLS 0.0000 in every run. **Measure behind
+  gzip**: the plain static server makes Lighthouse's simulation charge raw
+  bytes, which exaggerated a 4.8KB gzip difference into 130ms.
+- **Bands.** `Band` in `SiteParts.jsx` is the one way a section picks its
+  ground: the page ground, the warm tint (`--muted`) or navy (the dark token
+  set via `data-surface`). No two neighbours share one, and navy is at most
+  twice a page. Every `Band` carries `track`, so `section_view` names it.
+- **Both sides of every step**: each step on home shows a line for the brand
+  (`line`) and one for the creator (`creatorLine`), and `/how-it-works`
+  redirects to `/#how-it-works`, which `Home` scrolls to on arrival.
+- **Reduced motion** shows every one of these at its final state: no
+  auto-advance, the film in its stepped form, no rise, the bars full.
+  Verified in a browser: zero running animations on all three pages.
+- **Word budgets moved by exactly what was added**: home 430 (416 used),
+  /for-brands 670 (651). Drawn product UI still does not count.
 
 ### Measured, not assumed
 
@@ -5466,18 +5538,22 @@ request loaded no `ital` axis. These are the public site's own, and
   the four `mkt-*` headings as large. The arbitrary-value spellings
   (`text-[#FF2731]` and inline `color:`) are refused outright, and no state
   token is ever the brand red.
-- **Five motion primitives, imported from
+- **Six motion primitives, imported from
   `components/marketing/primitives.js`**: `WipeWord` (one word, left to
   right, once at load), `RowWriter` (rows in sequence, once in view),
-  `CountUp`, `FillText` (one sentence inking in with scroll position, used
-  once on the site) and `Marquee` (continuous; pauses on hover and focus).
+  `Rise` (a heading or illustration rising in once — the old `Reveal`,
+  in CSS), `CountUp`, `FillText` (one sentence inking in with scroll
+  position, used once on the site) and `Marquee` (continuous; pauses on
+  hover and focus). The film, the fee flow, the payout clock and the hero
+  deck are components with motion inside them, imported directly.
   One curve, `--weare-ease`, and two bands: 200ms interactive, 400–600ms
   entrance. The marquee is `linear` — the one exception, because a loop that
   eases stalls at its seam. Reduced motion resolves every one to its end
   state, in `index.css` and only there (the marquee becomes a static list).
 - **`PhotoSlot` reads `content/photoSlots.js`**. With a `src` it is the image;
-  without one, **in production**, it is a navy panel carrying the slot's
-  `fallbackHeadline` in display type — it must read as finished. The dashed
+  without one, **in production**, it is the slot's `fallbackIllustration`
+  full bleed with the `fallbackHeadline` on a navy band — it must read as
+  finished. The dashed
   placeholder with the id, size and brief is **development and Vercel
   preview only**, and the brief is not hidden in production but absent:
   each is written `SHOW_BRIEFS ? "…" : null` inline, which a production
