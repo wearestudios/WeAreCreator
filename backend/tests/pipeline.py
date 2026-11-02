@@ -48,17 +48,21 @@ _ADMIN_STEPS = {
 # endpoint refuses these on a brand-run brief by design, and on a weare-run
 # one it would skip the disclosure check `approve_content` makes — so the
 # harness always goes through the brand route, as the runner.
-_BRAND_STEPS = ("accepted", "content_approved")
+_BRAND_STEPS = ("accepted", "content_approved", "dispatched")
 
 # Steps only the creator can take. The admin advance refuses `slot_booked`
 # outright: nobody books on a creator's behalf.
-_CREATOR_STEPS = ("slot_booked", "draft_submitted", "content_submitted")
+_CREATOR_STEPS = (
+    "slot_booked", "address_confirmed", "received", "draft_submitted", "content_submitted",
+)
 
 # The draft review, decided by whoever `execution_owner` names.
 _REVIEWER_STEPS = ("draft_approved",)
 
-# Closing is a consequence of recording the payout, not an advance — but it is
-# an admin's act, so it is claimed here rather than left unowned.
+# Closing is a consequence of recording the payout on a paid brief, and the
+# console's Close-it-out advance on a barter one (which has no payment rung).
+# Either way it is an admin's act, so it is claimed here rather than left
+# unowned.
 _PAYOUT_STEPS = ("closed",)
 
 OWNERS = {
@@ -100,6 +104,60 @@ DRAFT_PIPELINE = [
 ]
 
 
+def _delivery(ladder):
+    """The same ladder with the venue half swapped for the delivery half."""
+    out = []
+    for state in ladder:
+        if state == "slot_booked":
+            out += ["address_confirmed", "dispatched"]
+        elif state == "attended":
+            out.append("received")
+        else:
+            out.append(state)
+    return out
+
+
+def _barter(ladder):
+    """A barter brief has no payment rung: approval steps straight to closed."""
+    return [s for s in ladder if s != "in_payment"]
+
+
+DELIVERY_PIPELINE = _delivery(PIPELINE)
+DELIVERY_DRAFT_PIPELINE = _delivery(DRAFT_PIPELINE)
+
+# Every ladder the server can hand a collaboration, by (shape, money). The
+# unit twin of this table is `tests/unit/test_lifecycle_harness.py`, which
+# drives the same rungs through the real handlers on every PR.
+LADDERS = {
+    (shape, money): (_barter(ladder) if money == "barter" else ladder)
+    for shape, ladder in (
+        ("venue", PIPELINE),
+        ("venue+draft", DRAFT_PIPELINE),
+        ("delivery", DELIVERY_PIPELINE),
+        ("delivery+draft", DELIVERY_DRAFT_PIPELINE),
+    )
+    for money in ("paid", "barter")
+}
+
+
+def creator_next_action(state, ladder):
+    """What the creator's own card should say to do on this rung. `None` is a
+    wait. The rule each surface is held to, written out once for the walk."""
+    delivery = "address_confirmed" in ladder
+    draft = "draft_submitted" in ladder
+    return {
+        "commercial_agreed": "confirm_address" if delivery else "book_slot",
+        "slot_booked": "attend",
+        "attended": "submit_draft" if draft else "submit_content",
+        "address_confirmed": "await_dispatch",
+        "dispatched": "confirm_received",
+        "received": "submit_draft" if draft else "submit_content",
+        "draft_submitted": "resubmit_draft",
+        "draft_approved": "submit_content",
+        "content_submitted": "resubmit_content",
+    }.get(state)
+
+
 def check_ownership(ladder):
     """Fail, naming the state, unless every step has exactly one owner."""
     problems = []
@@ -120,8 +178,8 @@ def check_ownership(ladder):
 
 # At import, so a bad edit to the tables fails every test that uses them
 # rather than one step deep inside whichever test happened to reach it.
-check_ownership(PIPELINE)
-check_ownership(DRAFT_PIPELINE)
+for _ladder in LADDERS.values():
+    check_ownership(_ladder)
 
 # A slot inside the seeded campaign's window (2025-01-01 → 2027-01-01): a
 # Tuesday from 10:00 to 18:00 IST, and a time inside it for a personal table,
@@ -248,6 +306,7 @@ def approve_campaign(admin_session, campaign_id):
 def seed_open_campaign(
     brand_session, admin_session, *, creators_needed=3, budget=5000, brand_ready=False,
     requires_draft_approval=None, requires_slot_confirmation=None,
+    campaign_type="personal_table", compensation_type=None,
 ):
     """A campaign creators can actually see, through the real gates.
 
@@ -264,6 +323,11 @@ def seed_open_campaign(
         setup_brand(brand_session, admin_session)
 
     gates = {}
+    if compensation_type is not None:
+        gates["compensation_type"] = compensation_type
+        if compensation_type == "barter":
+            # Required on every write path: a barter brief says what is on offer.
+            gates["barter_description"] = "Dinner for two and a bottle of the house wine"
     if requires_draft_approval is not None:
         gates["requires_draft_approval"] = requires_draft_approval
     if requires_slot_confirmation is not None:
@@ -282,7 +346,7 @@ def seed_open_campaign(
             "creators_needed": creators_needed,
             # A window that already opened, so approval lands on "open" rather
             # than "upcoming"; far enough out that the expiry sweep leaves it.
-            "campaign_type": "personal_table",
+            "campaign_type": campaign_type,
             "start_date": "2025-01-01T00:00:00Z",
             "end_date": "2027-01-01T00:00:00Z",
             "status": "draft",
@@ -411,6 +475,16 @@ def step(admin_session, brand_session, collab_id, to_state, **kwargs):
     `content_submitted` always has: they need a different session and a
     different route, and a silent wrong route is how this file broke before.
     """
+    if to_state == "dispatched":
+        raise AssertionError(
+            "dispatched is the runner's step through its own route (it carries "
+            "a tracking reference) — call dispatch"
+        )
+    if to_state in ("address_confirmed", "received"):
+        raise AssertionError(
+            f"{to_state} is the creator's step — call "
+            + ("confirm_address" if to_state == "address_confirmed" else "confirm_received")
+        )
     if to_state in _BRAND_STEPS:
         campaign = campaign_of(admin_session, collab_id)
         runner = runner_session(campaign, admin_session, brand_session)
@@ -454,6 +528,58 @@ def step(admin_session, brand_session, collab_id, to_state, **kwargs):
     return r.json()
 
 
+def confirm_address(creator_session, collab_id):
+    """The creator checks the address on their profile — a delivery's first step."""
+    r = creator_session.post(
+        f"{BASE_URL}/creator/collaborations/{collab_id}/confirm-address", json={}
+    )
+    assert r.status_code == 200, f"confirming the address failed: {r.text}"
+    return r.json()
+
+
+def dispatch(runner, collab_id):
+    """Whoever runs the campaign sends it, with a tracking reference."""
+    r = runner.post(
+        f"{BASE_URL}/collaborations/{collab_id}/dispatch",
+        json={"tracking_reference": f"DTDC{uuid.uuid4().hex[:8].upper()}"},
+    )
+    assert r.status_code == 200, f"recording the dispatch failed: {r.text}"
+    return r.json()
+
+
+def confirm_received(creator_session, collab_id):
+    r = creator_session.post(
+        f"{BASE_URL}/creator/collaborations/{collab_id}/confirm-received", json={}
+    )
+    assert r.status_code == 200, f"confirming the arrival failed: {r.text}"
+    return r.json()
+
+
+def close_barter(admin_session, collab_id):
+    """A barter collaboration closes from approval — there is no payout."""
+    r = admin_session.post(
+        f"{BASE_URL}/admin/collaborations/{collab_id}/advance",
+        json={"from_state": "content_approved"},
+    )
+    assert r.status_code == 200, f"closing the barter collaboration failed: {r.text}"
+    return r.json()
+
+
+def raise_dispute(creator_session, collab_id, reason="The brand never answered about the reshoot."):
+    r = creator_session.post(f"{BASE_URL}/disputes/{collab_id}", json={"reason": reason})
+    assert r.status_code == 200, f"raising the dispute failed: {r.text}"
+    return r.json()
+
+
+def resolve_dispute(admin_session, collab_id, resolution, note="Neither side can deliver on this now."):
+    r = admin_session.post(
+        f"{BASE_URL}/admin/disputes/{collab_id}/resolve",
+        json={"resolution": resolution, "note": note},
+    )
+    assert r.status_code == 200, f"resolving the dispute failed: {r.text}"
+    return r.json()
+
+
 def submit_content(creator_session, collab_id, urls=None):
     r = creator_session.post(
         f"{BASE_URL}/creator/collaborations/{collab_id}/submit_content",
@@ -484,12 +610,12 @@ def ladder_for(admin_session, collab_id):
     not know is a gap to fill here, not one to walk past.
     """
     server = collab_detail(admin_session, collab_id)["state_order"]
-    for ladder in (PIPELINE, DRAFT_PIPELINE):
+    for ladder in LADDERS.values():
         if server == ["applied"] + ladder:
             return ladder
     raise AssertionError(
         f"the server walks this collaboration through {server}, which matches "
-        "neither PIPELINE nor DRAFT_PIPELINE — add the ladder to the harness"
+        "no ladder in LADDERS — add the ladder to the harness"
     )
 
 
@@ -498,9 +624,17 @@ def walk(admin_session, brand_session, creator_session, collab_id):
     ladder = ladder_for(admin_session, collab_id)
     check_ownership(ladder)
     campaign = None
+    paid = "in_payment" in ladder
     for state in ladder:
         if state == "slot_booked":
             book_slot(admin_session, brand_session, creator_session, collab_id)
+        elif state == "address_confirmed":
+            confirm_address(creator_session, collab_id)
+        elif state == "dispatched":
+            campaign = campaign or campaign_of(admin_session, collab_id)
+            dispatch(runner_session(campaign, admin_session, brand_session), collab_id)
+        elif state == "received":
+            confirm_received(creator_session, collab_id)
         elif state == "draft_submitted":
             submit_draft(creator_session, collab_id)
         elif state == "draft_approved":
@@ -511,7 +645,10 @@ def walk(admin_session, brand_session, creator_session, collab_id):
         elif state == "content_submitted":
             submit_content(creator_session, collab_id)
         elif state == "closed":
-            mark_paid(admin_session, collab_id)
+            if paid:
+                mark_paid(admin_session, collab_id)
+            else:
+                close_barter(admin_session, collab_id)
         else:
             step(admin_session, brand_session, collab_id, state)
         yield state
@@ -536,6 +673,7 @@ def advance_to(admin_session, brand_session, creator_session, collab_id, target_
 def make_collab_in_state(
     admin_session, brand_session, creator_session, creator_user_id, target_state,
     *, creators_needed=3, requires_draft_approval=None, requires_slot_confirmation=None,
+    campaign_type="personal_table", compensation_type=None,
 ):
     """End-to-end setup: verified creator applies to a live brief, then walks the
     pipeline to `target_state`. Returns (collab_id, campaign_id)."""
@@ -545,6 +683,7 @@ def make_collab_in_state(
         brand_session, admin_session, creators_needed=creators_needed,
         requires_draft_approval=requires_draft_approval,
         requires_slot_confirmation=requires_slot_confirmation,
+        campaign_type=campaign_type, compensation_type=compensation_type,
     )
     collab_id = apply_to_campaign(creator_session, campaign_id)
     if target_state != "applied":

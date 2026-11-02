@@ -244,7 +244,7 @@ class TestCreatorPromises:
         assert "Sign in with WhatsApp" in content()["CREATORS"]["hero"]["chips"]
 
     def test_every_send_back_needs_a_reason(self):
-        for fn in (server.brand_request_changes, server.request_draft_changes):
+        for fn in (server.brand_request_changes, server._request_draft_changes_decision):
             src = inspect.getsource(fn)
             assert re.search(r"if not \(payload\.(?:reason|note) or \"\"\)\.strip\(\)|if not note", src), fn.__name__
 

@@ -63,22 +63,32 @@ def creator():
     return s, pipeline.user_id_of(s)
 
 
-LADDERS = {
-    # The server's default for a brand-posted brief: weare-run, no draft
-    # gate, no booking handshake.
-    "plain": dict(ladder=pipeline.PIPELINE, gates={}),
-    # Both optional gates on, so the draft review and the slot confirmation
-    # are each walked once.
-    "draft-gate": dict(
-        ladder=pipeline.DRAFT_PIPELINE,
-        gates=dict(requires_draft_approval=True, requires_slot_confirmation=True),
-    ),
-}
+# Every ladder the server can hand a collaboration — the venue and delivery
+# halves, with and without the draft gate — once with money and once without.
+# The draft-gate runs also turn the booking handshake on, so it is walked too.
+CASES = [
+    (shape, money)
+    for shape in ("venue", "venue+draft", "delivery", "delivery+draft")
+    for money in ("paid", "barter")
+]
 
 
-@pytest.mark.parametrize("name", list(LADDERS))
-def test_a_collaboration_walks_from_applied_to_closed(admin, brand, creator, name):
-    expected, gates = LADDERS[name]["ladder"], LADDERS[name]["gates"]
+def _gates(shape, money):
+    gates = {
+        "campaign_type": "delivery" if shape.startswith("delivery") else "personal_table",
+        "compensation_type": "barter" if money == "barter" else None,
+    }
+    if shape.endswith("+draft"):
+        gates.update(requires_draft_approval=True)
+        if shape.startswith("venue"):
+            gates.update(requires_slot_confirmation=True)
+    return gates
+
+
+@pytest.mark.parametrize("shape,money", CASES, ids=[f"{s}-{m}" for s, m in CASES])
+def test_a_collaboration_walks_from_applied_to_closed(admin, brand, creator, shape, money):
+    expected = pipeline.LADDERS[(shape, money)]
+    gates = _gates(shape, money)
     creator_session, creator_id = creator
 
     pipeline.complete_creator_profile(creator_session)
@@ -96,6 +106,18 @@ def test_a_collaboration_walks_from_applied_to_closed(admin, brand, creator, nam
         assert stored == state, (
             f"after taking the '{state}' step the stored state is '{stored}'"
         )
+        # **Each persona's next action, after every step.** The creator's card
+        # and the console's own button are read off the live payloads, and
+        # checked against the rung — the delivery brief that told a creator to
+        # book a slot, and the barter brief whose only button led into a
+        # payment it could never reach, were both this check missing.
+        want = pipeline.creator_next_action(state, expected)
+        if want is not None:
+            assert _creator_next(creator_session, collab_id)["action"] == want, state
+        detail = pipeline.collab_detail(admin, collab_id)["collaboration"]
+        if state != "closed":
+            nxt = expected[expected.index(state) + 1]
+            assert detail["next_state"] == nxt, (state, detail["next_state"])
         if state == "slot_booked":
             # Booked by the creator and, where the brief asks for it, answered
             # by whoever runs it — read from the creator's side, which is the
@@ -106,18 +128,59 @@ def test_a_collaboration_walks_from_applied_to_closed(admin, brand, creator, nam
 
     detail = pipeline.collab_detail(admin, collab_id)
     assert detail["collaboration"]["state"] == "closed"
-    assert detail["payment"]["state"] == "paid"
-    assert detail["slot"] is not None
+    if money == "paid":
+        assert detail["payment"]["state"] == "paid"
+    else:
+        # No money moved, so no payment was ever raised.
+        assert not detail.get("payment")
+    if shape.startswith("venue"):
+        assert detail["slot"] is not None
 
     campaign = pipeline.campaign_of(admin, collab_id)
-    # The gates the walk exercised are the ones this case asked for — so the
-    # draft-gate run really did go through the handshake rather than past it.
-    assert bool(campaign.get("requires_slot_confirmation")) == bool(
-        gates.get("requires_slot_confirmation")
+    assert bool(campaign.get("requires_draft_approval")) == shape.endswith("+draft")
+
+
+@pytest.mark.parametrize("resolution", ["refund", "cancelled"])
+@pytest.mark.parametrize("money", ["paid", "barter"])
+def test_a_dispute_that_ends_it_leaves_a_terminal_record(admin, brand, creator, money, resolution):
+    """Refund and call-off both end the arrangement: the stored row is
+    `cancelled`, the payment (where there is one) is cancelled, and nobody is
+    told to do anything next. The refund used to leave the row live."""
+    creator_session, creator_id = creator
+    collab_id, _ = pipeline.make_collab_in_state(
+        admin, brand, creator_session, creator_id, "content_approved",
+        compensation_type="barter" if money == "barter" else None,
     )
-    assert bool(campaign.get("requires_draft_approval")) == bool(
-        gates.get("requires_draft_approval")
-    )
+    pipeline.raise_dispute(creator_session, collab_id)
+    pipeline.resolve_dispute(admin, collab_id, resolution)
+
+    detail = pipeline.collab_detail(admin, collab_id)
+    collab = detail["collaboration"]
+    assert collab["state"] == "cancelled"
+    if detail.get("payment"):
+        assert detail["payment"]["state"] == "cancelled"
+    assert collab["next_state"] is None
+
+
+def _creator_next(creator_session, collab_id):
+    """The creator's next action, off whichever dashboard row carries it —
+    the active rows do, the flat applications list does not."""
+    r = creator_session.get(f"{BASE_URL}/creator/dashboard")
+    assert r.status_code == 200, r.text
+
+    def rows(node):
+        if isinstance(node, dict):
+            if node.get("id") == collab_id and "next_action" in node:
+                yield node
+            for v in node.values():
+                yield from rows(v)
+        elif isinstance(node, list):
+            for v in node:
+                yield from rows(v)
+
+    found = next(rows(r.json()), None)
+    assert found is not None, "the creator's dashboard has no active row for this collaboration"
+    return found["next_action"]
 
 
 def _creator_row(creator_session, collab_id):

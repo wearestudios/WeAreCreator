@@ -44,6 +44,8 @@ import { PerformancePanel } from "@/components/admin/Performance";
 import DisputePanel from "@/components/DisputePanel";
 import NegotiationHistory from "@/components/collab/NegotiationHistory";
 import OnBehalfNote from "@/components/collab/OnBehalfNote";
+import { ActOnBehalfMenu, OnBehalfActDialog } from "@/components/admin/ActOnBehalf";
+import ReceivedEvidence from "@/components/admin/ReceivedEvidence";
 import { INVOICE } from "@/constants/testIds";
 import { TEXT } from "./console/tokens";
 import { useAdminConsole } from "@/pages/AdminConsole";
@@ -130,6 +132,58 @@ export default function CollaborationDetailPage() {
     const order = data?.state_order || [];
     const terminal = (data?.terminal_states || []).includes(collab?.state);
     const currentIndex = terminal ? -1 : order.indexOf(collab?.state);
+
+    // The acts this admin may take for somebody on this row, as the server
+    // decided them. The two older flags still gate their own items, so the
+    // menu and the routes cannot disagree about either.
+    const onBehalfActions = (collab?.on_behalf_actions || []).filter(
+        (a) =>
+            (a.key !== "book_slot" || collab?.can_book_on_behalf) &&
+            (a.key !== "confirm_address" || collab?.can_confirm_address_on_behalf),
+    );
+
+    /** One act, through its own route. Written out per route rather than
+     *  from a map, so each override's path is in the source to be found. */
+    const actOnBehalf = (action, body) => {
+        const done = {
+            mark_received: "Marked received on their behalf — the creator has been told",
+            accept: "Accepted for the brand — the brand has been told",
+            approve_draft: "Draft approved for the brand — the brand has been told",
+            request_draft_changes: "Sent back for the brand — the brand has been told",
+            approve_content: "Content approved for the brand — the brand has been told",
+        }[action.key];
+        const request = () => {
+            if (action.key === "mark_received") {
+                const form = new FormData();
+                form.append("reason", body.reason);
+                if (body.tracking_url) form.append("tracking_url", body.tracking_url);
+                if (body.file) form.append("file", body.file);
+                return api.post(`/admin/collaborations/${id}/on-behalf/mark-received`, form);
+            }
+            if (action.key === "accept") {
+                return api.post(`/admin/collaborations/${id}/on-behalf/accept`, {
+                    reason: body.reason,
+                });
+            }
+            if (action.key === "approve_draft") {
+                return api.post(`/admin/collaborations/${id}/on-behalf/approve-draft`, {
+                    reason: body.reason,
+                    disclosure_confirmed: body.disclosure_confirmed,
+                });
+            }
+            if (action.key === "request_draft_changes") {
+                return api.post(`/admin/collaborations/${id}/on-behalf/request-draft-changes`, {
+                    reason: body.reason,
+                    note: body.note,
+                });
+            }
+            return api.post(`/admin/collaborations/${id}/on-behalf/approve-content`, {
+                reason: body.reason,
+                disclosure_confirmed: body.disclosure_confirmed,
+            });
+        };
+        return act("act-on-behalf", request, done);
+    };
 
     const advance = () => {
         const next = collab.next_state;
@@ -225,33 +279,32 @@ export default function CollaborationDetailPage() {
                             </Link>
                         )}
                         {/* **The override, where the ordinary advance refuses.**
-                            Booking and confirming an address are the creator's
-                            own steps and `advance` keeps refusing them. These
-                            are the separate, audited door for when the creator
-                            has asked us to — a reason is required and the
-                            creator reads it. The server decides whether either
-                            is offered; an outline button, because it is the
-                            exception and not the next step. */}
-                        {collab.can_book_on_behalf && (
-                            <Button
-                                variant="outline"
-                                data-testid={IDS.bookOnBehalf}
-                                onClick={() => setDialog({ kind: "book-on-behalf" })}
-                                className="rounded-full border-tint/15 bg-transparent hover:bg-tint/5"
-                            >
-                                Book a slot on their behalf
-                            </Button>
-                        )}
-                        {collab.can_confirm_address_on_behalf && (
-                            <Button
-                                variant="outline"
-                                data-testid={IDS.confirmAddressOnBehalf}
-                                onClick={() => setDialog({ kind: "address-on-behalf" })}
-                                className="rounded-full border-tint/15 bg-transparent hover:bg-tint/5"
-                            >
-                                Confirm their address on their behalf
-                            </Button>
-                        )}
+                            Every act here is somebody else's step — the
+                            creator's or the brand's — and `advance` keeps
+                            refusing all of them. This is the separate, audited
+                            door for when they have asked us to: a reason the
+                            affected party reads, and evidence for an arrival.
+                            The server decides what is offered
+                            (`on_behalf_actions`, and the older
+                            `can_book_on_behalf` / `can_confirm_address_on_behalf`
+                            still gate their two items); an outline button,
+                            because it is the exception and not the next step. */}
+                        <ActOnBehalfMenu
+                            actions={onBehalfActions}
+                            testidFor={{
+                                book_slot: IDS.bookOnBehalf,
+                                confirm_address: IDS.confirmAddressOnBehalf,
+                            }}
+                            onPick={(a) =>
+                                setDialog(
+                                    a.key === "book_slot"
+                                        ? { kind: "book-on-behalf" }
+                                        : a.key === "confirm_address"
+                                          ? { kind: "address-on-behalf" }
+                                          : { kind: "act-on-behalf", action: a },
+                                )
+                            }
+                        />
                         {collab.can_cancel && (
                             <>
                                 <Button
@@ -414,6 +467,11 @@ export default function CollaborationDetailPage() {
                                     onBehalf={collab.on_behalf}
                                     voice="they"
                                     testid={IDS.onBehalf}
+                                    className="mb-4"
+                                />
+                                <ReceivedEvidence
+                                    collabId={id}
+                                    record={collab.on_behalf?.received}
                                     className="mb-4"
                                 />
                                 {data.slot ? (
@@ -605,6 +663,14 @@ export default function CollaborationDetailPage() {
                         `Moved to ${STATE_META[dialog.mode]?.label || dialog.mode}`,
                     )
                 }
+            />
+            <OnBehalfActDialog
+                open={dialog.kind === "act-on-behalf"}
+                onOpenChange={(v) => !v && setDialog({ kind: null })}
+                action={dialog.action}
+                creatorName={collab?.creator?.name}
+                submitting={busy === "act-on-behalf"}
+                onSubmit={(body) => actOnBehalf(dialog.action, body)}
             />
             <OnBehalfSlotDialog
                 open={dialog.kind === "book-on-behalf"}

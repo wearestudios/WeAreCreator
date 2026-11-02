@@ -1500,6 +1500,15 @@ class TestAuditCoverage:
                     # on-behalf override included. It writes
                     # `collaboration.book_slot_on_behalf` with the reason.
                     "_claim_slot",
+                    # The owner's own implementation of each step, shared
+                    # with the admin's on-behalf route. Each writes its
+                    # `*_on_behalf` action with the reason when handed a
+                    # record.
+                    "_record_delivery_received",
+                    "_accept_applicant",
+                    "_approve_draft_decision",
+                    "_request_draft_changes_decision",
+                    "_approve_content_decision",
                 )
             )
             if not delegates:
@@ -1510,7 +1519,9 @@ class TestAuditCoverage:
         "helper",
         ["_pause_campaign", "_resume_campaign", "_invite_creators",
          "_check_in_collaboration", "_set_creator_verification",
-         "_record_performance", "_approve_draft_by_window", "_claim_slot"],
+         "_record_performance", "_approve_draft_by_window", "_claim_slot",
+         "_record_delivery_received", "_accept_applicant", "_approve_draft_decision",
+         "_request_draft_changes_decision", "_approve_content_decision"],
     )
     def test_the_delegated_helpers_actually_audit(self, helper):
         # The exemption above is only safe while this holds: a helper trusted
@@ -5304,9 +5315,11 @@ class TestAuditCarriesBrandAndCampaign:
             "create_brand_campaign",
             "update_brand_campaign",
             "close_brand_campaign",
-            "brand_accept_applicant",
+            # The route and WeAre's on-behalf route share one implementation;
+            # the context is written there.
+            "_accept_applicant",
             "brand_decline_applicant",
-            "brand_approve_content",
+            "_approve_content_decision",
             "brand_request_changes",
             "brand_record_agreed_amount",
             "add_collaboration_note",

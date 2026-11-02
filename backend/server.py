@@ -2910,6 +2910,31 @@ class OnBehalfPayload(BaseModel):
     reason: str = Field(min_length=3, max_length=500)
 
 
+class AcceptOnBehalfPayload(OnBehalfPayload):
+    """Accepting an applicant for the brand. The brand's own two fields, so
+    the fee resolution and the budget cap are the brand's own."""
+
+    agreed_amount: Optional[float] = Field(default=None, ge=0)
+    budget_override_reason: Optional[str] = Field(default=None, max_length=500)
+
+
+class ReviewOnBehalfPayload(OnBehalfPayload):
+    """Approving a draft or the live content for the brand. **The disclosure
+    box is not defaulted to true here either** — the override approves on the
+    brand's terms, and the brand's terms include somebody looking for the
+    label."""
+
+    disclosure_confirmed: bool = False
+
+
+class ChangesOnBehalfPayload(OnBehalfPayload):
+    """Sending a draft back for the brand. Two sentences, for two readers:
+    `reason` is why WeAre is answering for the brand (the brand reads it);
+    `note` is what has to change (the creator reads it)."""
+
+    note: str = Field(min_length=1, max_length=1000)
+
+
 class BookSlotOnBehalfPayload(OnBehalfPayload):
     """An admin taking a seat for a creator who asked them to.
 
@@ -3194,13 +3219,28 @@ def _slot_confirmed(collab: Optional[dict]) -> bool:
     return not collab.get("slot_booked_at")
 
 
-# The two creator-owned steps an admin may take *for* a creator, as an
-# explicit override. `received` is deliberately not among them: an admin
-# asserting that a parcel arrived at somebody's door is the one of the three
-# with no honest basis at all, and a required reason would only record the
-# guess. See `_CREATOR_OWNED_TRANSITIONS` for why the ordinary advance refuses
-# all three, and the `/on-behalf/` routes for the override.
-ON_BEHALF_STEPS = ("slot_booked", "address_confirmed")
+# The creator-owned steps an admin may take *for* a creator, as an explicit
+# override — all three now. `received` came last and on different terms:
+# **evidence, not a reason, is what makes that one honest.** An admin
+# asserting that a parcel arrived at somebody's door with only a sentence
+# behind it would be recording a guess, which is why it was left out. With a
+# courier's tracking link showing delivered, or a photograph of the parcel,
+# stored with the record, it is a fact somebody can check — and the route
+# refuses without one. See `_CREATOR_OWNED_TRANSITIONS` for why the ordinary
+# advance refuses all three, and the `/on-behalf/` routes for the override.
+ON_BEHALF_STEPS = ("slot_booked", "address_confirmed", "received")
+
+# And the brand-owned ones, on a **brand-run** campaign only — on a weare-run
+# brief those steps are already ours, and acting "for the brand" there would
+# be acting for nobody. Same shape: a separate admin-only route each, a reason
+# the brand reads, a record on the row, an audit line of its own, the freeze
+# respected, and the brand's own implementation underneath.
+ON_BEHALF_BRAND_STEPS = (
+    "accepted",
+    "draft_approved",
+    "draft_changes_requested",
+    "content_approved",
+)
 
 
 def _on_behalf_record(user: dict, reason: str, now: datetime) -> dict:
@@ -3218,11 +3258,22 @@ def _on_behalf_record(user: dict, reason: str, now: datetime) -> dict:
 def _serialize_on_behalf(record: Optional[dict]) -> Optional[dict]:
     if not record:
         return None
-    return {
+    out = {
         "by_name": record.get("by_name"),
         "at": _iso(record.get("at")),
         "reason": record.get("reason"),
     }
+    evidence = record.get("evidence")
+    if evidence:
+        # The tracking link is a courier's public page and travels as is. The
+        # image does not — it is a photograph of somebody's doorstep, so what
+        # travels is that one exists, and the bytes leave only through the
+        # admin's audited route.
+        out["evidence"] = {
+            "tracking_url": evidence.get("tracking_url"),
+            "has_image": bool(evidence.get("image")),
+        }
+    return out
 
 
 def _on_behalf_block(collab: Optional[dict]) -> Optional[dict]:
@@ -3241,11 +3292,19 @@ def _on_behalf_block(collab: Optional[dict]) -> Optional[dict]:
     slot = _serialize_on_behalf(collab.get("slot_booked_on_behalf"))
     if slot:
         out["slot_booked"] = slot
-    address = _serialize_on_behalf(
-        (collab.get("delivery") or {}).get("address_confirmed_on_behalf")
-    )
+    delivery = collab.get("delivery") or {}
+    address = _serialize_on_behalf(delivery.get("address_confirmed_on_behalf"))
     if address:
         out["address_confirmed"] = address
+    received = _serialize_on_behalf(delivery.get("received_on_behalf"))
+    if received:
+        out["received"] = received
+    # The brand's steps, where WeAre stood in for the brand on a brand-run
+    # brief. Each marker lives beside the decision it describes.
+    for step in ON_BEHALF_BRAND_STEPS:
+        record = _serialize_on_behalf(collab.get(f"{step}_on_behalf"))
+        if record:
+            out[step] = record
     return out or None
 
 
@@ -4247,6 +4306,11 @@ NOTIFY_EVENTS = {
     # and has to be able to object to it — the message names who and why.
     "slot_booked_for_you": "WeAre booked a slot for you",
     "address_confirmed_for_you": "WeAre confirmed your delivery address for you",
+    "received_for_you": "WeAre marked your delivery as received",
+    # The brand's half: a step that was the brand's, taken by WeAre on a
+    # brand-run brief. The brand is the party it was done *for*, so the brand
+    # is told — with who and why — and the creator hears the ordinary outcome.
+    "brand_step_taken_for_you": "WeAre took a step on your campaign for you",
     "manager_slot_pending": "A slot needs confirming",
     "campaign_broadcast": "A message from your campaign manager",
     "profile_submitted": "Your profile is with the team",
@@ -9376,18 +9440,26 @@ def _creator_next_action(collab: dict, campaign: Optional[dict], can_be_paid: bo
             "waiting_on": "you",
         }
     if state in READY_TO_SHOOT_STATES:
+        # Said first where WeAre marked the parcel received: the clock for
+        # the work starts from that, and if it never arrived this is the line
+        # the creator has to answer.
+        marked = (
+            "WeAre marked your delivery received. "
+            if state == "received" and on_behalf.get("received")
+            else ""
+        )
         if _requires_draft_approval(campaign):
             # The whole point of the stage: nothing is published until it has
             # been looked at, so the ask here is a draft, not a live link.
             note = (collab.get("draft_revision_note") or "").strip()
             return {
                 "action": "submit_draft",
-                "label": (
+                "label": marked + (
                     f"Changes requested: {note}" if note else "Submit your draft for review."
                 ),
                 "waiting_on": "you",
             }
-        return {"action": "submit_content", "label": "Submit your content.", "waiting_on": "you"}
+        return {"action": "submit_content", "label": marked + "Submit your content.", "waiting_on": "you"}
     if state == "draft_submitted":
         return {
             "action": "resubmit_draft",
@@ -10492,17 +10564,39 @@ async def creator_confirm_delivery_received(
     collab, campaign = await _delivery_collab_or_409(
         collab_id, user, expected="dispatched"
     )
+    updated = await _record_delivery_received(user, collab, campaign, note=payload.note)
+    return _delivery_block(updated)
 
+
+async def _record_delivery_received(
+    user: dict,
+    collab: dict,
+    campaign: dict,
+    *,
+    note: Optional[str] = None,
+    on_behalf: Optional[dict] = None,
+) -> dict:
+    """`dispatched → received`, written once for both doors.
+
+    **The creator's own confirmation and WeAre's override are this one
+    function**, so the state stamp, the content clock it starts, the audit and
+    the runner's message cannot come to differ between them. What the
+    override adds is the record — who, when, why and the evidence — which
+    lives inside `delivery` beside the arrival it describes, and an audit
+    action of its own: "who confirmed this arrived" is exactly the question
+    the log is asked about these rows.
+    """
     now = datetime.now(timezone.utc)
+    setter = {
+        **_state_stamp("received", now),
+        "delivery.received_at": now,
+        "delivery.received_note": (note or "").strip() or None,
+    }
+    if on_behalf:
+        setter["delivery.received_on_behalf"] = on_behalf
     updated = await db.collaborations.find_one_and_update(
         {"_id": collab["_id"], "state": "dispatched"},
-        {
-            "$set": {
-                **_state_stamp("received", now),
-                "delivery.received_at": now,
-                "delivery.received_note": (payload.note or "").strip() or None,
-            }
-        },
+        {"$set": setter},
         return_document=True,
     )
     if not updated:
@@ -10510,22 +10604,42 @@ async def creator_confirm_delivery_received(
             status_code=409, detail="That moved while you were confirming. Reload."
         )
 
+    evidence = (on_behalf or {}).get("evidence") or {}
     await audit(
         user,
-        "collaboration.delivery_received",
+        "collaboration.delivery_received_on_behalf" if on_behalf else "collaboration.delivery_received",
         "collaboration",
         collab["_id"],
         before={"state": "dispatched"},
-        after={"state": "received"},
+        after={
+            "state": "received",
+            **(
+                {
+                    "on_behalf": True,
+                    "confirmed_by": user.get("name"),
+                    "tracking_url": evidence.get("tracking_url"),
+                    "proof_image": bool(evidence.get("image")),
+                }
+                if on_behalf
+                else {}
+            ),
+        },
+        **({"note": on_behalf.get("reason")} if on_behalf else {}),
         **_campaign_audit_context(campaign),
     )
+    if on_behalf:
+        profile = await db.creator_profiles.find_one({"user_id": collab["creator_id"]}) or {}
+        who = profile.get("name") or "A creator"
+        body = (
+            f"{who}'s delivery was marked received by {user.get('name') or 'WeAre'} "
+            "(WeAre) on their behalf, with proof on file."
+        )
+    else:
+        body = f"{user.get('name') or 'A creator'} confirmed their delivery arrived."
     await _escalate_to_whoever_runs_it(
-        campaign,
-        "delivery_received",
-        title="A delivery arrived",
-        body=f"{user.get('name') or 'A creator'} confirmed their delivery arrived.",
+        campaign, "delivery_received", title="A delivery arrived", body=body
     )
-    return _delivery_block(updated)
+    return updated
 
 
 def _delivery_block(collab: Optional[dict]) -> Optional[dict]:
@@ -13983,6 +14097,10 @@ def _serialize_applicant(
         "location_note": collab.get("location_note"),
         "exit_reason": collab.get("exit_reason"),
         "revision_note": collab.get("revision_note"),
+        # Which of this row's steps WeAre took for somebody — the brand's own
+        # included, so a brand reading its board sees "accepted by WeAre on
+        # your behalf" rather than an acceptance it does not remember making.
+        "on_behalf": _on_behalf_block(collab),
         "applied_at": _iso(collab.get("created_at")),
         "updated_at": _iso(collab.get("updated_at")),
         # Actions the brand can take on this row, decided server-side so the UI
@@ -14275,6 +14393,22 @@ async def brand_accept_applicant(
     _refuse_if_disputed(collab)
     # Creators are never reachable by a brand we have not checked.
     await _verified_brand_or_403(user)
+    return await _accept_applicant(user, collab, campaign, payload)
+
+
+async def _accept_applicant(
+    user: dict,
+    collab: dict,
+    campaign: dict,
+    payload: "BrandAcceptPayload",
+    *,
+    on_behalf: Optional[dict] = None,
+) -> dict:
+    """`verified → accepted`, with the fee, for the brand and for WeAre acting
+    as the brand. One implementation: the capacity check, the budget cap, the
+    fee resolution, the terms snapshot and the creator's message are the
+    brand's own, whoever pressed the button."""
+    collab_id = str(collab["_id"])
     if collab.get("state") != "verified":
         raise HTTPException(
             status_code=409,
@@ -14330,6 +14464,7 @@ async def brand_accept_applicant(
             **_state_stamp("accepted", now),
             "agreed_at": now,
             "agreed_by": ObjectId(user["_id"]),
+            **({"accepted_on_behalf": on_behalf} if on_behalf else {}),
         },
         now=now,
     )
@@ -14340,12 +14475,16 @@ async def brand_accept_applicant(
 
     await audit(
         user,
-        "collaboration.accept",
+        "collaboration.accept_on_behalf" if on_behalf else "collaboration.accept",
         "collaboration",
         collab["_id"],
         before={"state": "verified"},
-        after={"state": "accepted", "agreed_amount": amount},
-        note=payload.note,
+        after={
+            "state": "accepted",
+            "agreed_amount": amount,
+            **({"on_behalf": True, "on_behalf_of": "brand"} if on_behalf else {}),
+        },
+        note=(on_behalf or {}).get("reason") or payload.note,
         **_campaign_audit_context(campaign),
     )
     await _sync_campaign_fill(campaign["_id"])
@@ -14451,16 +14590,34 @@ async def brand_approve_content(
     _refuse_if_disputed(collab)
     # Creators are never reachable by a brand we have not checked.
     await _verified_brand_or_403(user)
+    return await _approve_content_decision(
+        user, collab, campaign, payload.disclosure_confirmed
+    )
+
+
+async def _approve_content_decision(
+    user: dict,
+    collab: dict,
+    campaign: dict,
+    disclosure_confirmed: bool,
+    *,
+    on_behalf: Optional[dict] = None,
+) -> dict:
+    """`content_submitted → content_approved`, for the brand and for WeAre
+    acting as the brand. The disclosure checkpoint is in here, so the
+    override cannot approve a live post nobody confirmed is labelled."""
+    collab_id = str(collab["_id"])
     if collab.get("state") != "content_submitted":
         raise HTTPException(
             status_code=409, detail="There's no content waiting for review here."
         )
-    _refuse_unconfirmed_disclosure(campaign, payload.disclosure_confirmed)
+    _refuse_unconfirmed_disclosure(campaign, disclosure_confirmed)
 
     now = datetime.now(timezone.utc)
     result = await db.collaborations.update_one(
         {"_id": collab["_id"], "state": "content_submitted"},
         {"$set": {
+            **({"content_approved_on_behalf": on_behalf} if on_behalf else {}),
             **_state_stamp("content_approved", now),
             "revision_note": None,
             # **Stamped here rather than read off `state_since`**, because
@@ -14477,20 +14634,33 @@ async def brand_approve_content(
 
     await audit(
         user,
-        "collaboration.approve_content",
+        "collaboration.approve_content_on_behalf" if on_behalf else "collaboration.approve_content",
         "collaboration",
         collab["_id"],
         before={"state": "content_submitted"},
         after={"state": "content_approved",
-               "disclosure_confirmed": _required_disclosure(campaign)},
-        note=f"Disclosure confirmed: {_disclosure_text(campaign)}.",
+               "disclosure_confirmed": _required_disclosure(campaign),
+               **({"on_behalf": True, "on_behalf_of": "brand"} if on_behalf else {})},
+        note=(
+            f"{on_behalf['reason']} — disclosure confirmed: {_disclosure_text(campaign)}."
+            if on_behalf
+            else f"Disclosure confirmed: {_disclosure_text(campaign)}."
+        ),
         **_campaign_audit_context(campaign),
+    )
+    # "Payment is next" only where there is a payment. A barter brief closes
+    # out from here, and telling somebody money is coming for a dinner is the
+    # message this used to send.
+    next_line = (
+        "We'll close it out from here."
+        if _compensation_type(campaign) == "barter"
+        else "Payment is next."
     )
     await notify(
         collab["creator_id"],
         "content_approved",
         title="Content approved",
-        body=f"{campaign.get('title')} — your work was approved. Payment is next.",
+        body=f"{campaign.get('title')} — your work was approved. {next_line}",
         link="/dashboard",
     )
     return {"id": collab_id, "state": "content_approved"}
@@ -17315,6 +17485,19 @@ _PROCESS_ACTION = {
     "dispatched": ("creator", "Confirm it arrived", "On its way to the creator"),
     "received": ("creator", "Publish and send the link", "Waiting for the creator's content"),
     "received_draft": ("creator", "Upload your draft", "Waiting for the creator's draft"),
+    # Where WeAre marked it received, with evidence on file. Said in the line
+    # every surface prints, because the content clock starts here and the
+    # creator is the one who has to object if it never arrived.
+    "received_on_behalf": (
+        "creator",
+        "Publish and send the link — WeAre marked your delivery received",
+        "Marked received by WeAre on the creator's behalf — waiting for their content",
+    ),
+    "received_draft_on_behalf": (
+        "creator",
+        "Upload your draft — WeAre marked your delivery received",
+        "Marked received by WeAre on the creator's behalf — waiting for their draft",
+    ),
     "draft_submitted": ("brand", "Review the draft", "The draft is being reviewed"),
     "draft_approved": ("creator", "Publish and send the live link", "Waiting for the creator to publish"),
     "content_submitted": ("brand", "Approve it, or ask for changes", "The content is being reviewed"),
@@ -17412,6 +17595,8 @@ def _process_flow(
     # creator does next is make the draft, not publish.
     if state == "received" and _requires_draft_approval(campaign):
         action_key = "received_draft"
+    if state == "received" and on_behalf.get("received"):
+        action_key = f"{action_key}_on_behalf"
 
     owner, mine, theirs = _PROCESS_ACTION.get(action_key, (None, None, None))
     owner = _process_owner(owner, campaign)
@@ -25405,6 +25590,8 @@ async def get_admin_collaboration_detail(
     # here like every other action so the page cannot offer one the route
     # will 409. Admin-only — `weare_team` reaches this page and does not get
     # the button, for the reason it does not get the budget override.
+    # The whole menu, creator and brand halves, decided in one place.
+    row["on_behalf_actions"] = _on_behalf_actions(collab, campaign, user)
     row["can_book_on_behalf"] = (
         is_all_access(user)
         and row["state"] == "commercial_agreed"
@@ -25985,6 +26172,322 @@ async def confirm_address_on_behalf(
         "(WeAre) on their behalf.",
     )
     return {**(_delivery_block(updated) or {}), "on_behalf": _on_behalf_block(updated)}
+
+
+_TRACKING_URL_RE = re.compile(r"^https?://[^\s]+$", re.IGNORECASE)
+
+
+def _on_behalf_reason_or_422(reason: Optional[str], *, whose: str) -> str:
+    """The floor every override holds: a sentence the affected party reads."""
+    reason = (reason or "").strip()
+    if len(reason) < 3:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Say why you're doing this for them — {whose} reads it.",
+        )
+    return reason
+
+
+@admin_router.post("/collaborations/{collab_id}/on-behalf/mark-received")
+async def mark_received_on_behalf(
+    collab_id: str,
+    reason: str = Form(...),
+    tracking_url: Optional[str] = Form(default=None),
+    file: Optional[UploadFile] = File(default=None),
+    user: dict = Depends(require_roles("admin")),
+):
+    """Mark a delivery received for a creator. `dispatched → received`, as an
+    override — **and only with evidence**.
+
+    The reason says why WeAre is doing it (the creator reads it). The evidence
+    says it is true: a courier tracking link showing delivered, or a
+    photograph of the parcel. Either is stored with the record and refused
+    without — an arrival asserted on a sentence alone is a guess, and
+    `received` starts the creator's content clock, so a wrong one puts
+    somebody overdue for work they cannot start. Through
+    `_record_delivery_received`, the creator's own implementation.
+    """
+    collab = await _collab_or_404(collab_id, user)
+    _refuse_if_disputed(collab)
+    reason = _on_behalf_reason_or_422(reason, whose="the creator")
+    campaign = await db.campaigns.find_one({"_id": collab["campaign_id"]})
+    if not _is_delivery(campaign):
+        raise HTTPException(
+            status_code=409,
+            detail="This campaign has a venue — there's no delivery to mark received.",
+        )
+    state = collab.get("state")
+    if state != "dispatched":
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "It hasn't been dispatched yet — record the dispatch first."
+                if state in ("commercial_agreed", "address_confirmed")
+                else f"This collaboration is {state} — there's no delivery waiting."
+            ),
+        )
+
+    url = (tracking_url or "").strip() or None
+    if url and not _TRACKING_URL_RE.match(url):
+        raise HTTPException(
+            status_code=422,
+            detail="The tracking link has to be a web address (https://…).",
+        )
+    has_file = file is not None and bool(getattr(file, "filename", None) or getattr(file, "size", None))
+    if not url and not has_file:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "message": (
+                    "Attach the evidence: a courier tracking link showing it was "
+                    "delivered, or a photo of the parcel. An arrival with nothing "
+                    "behind it is a guess."
+                ),
+                "code": "evidence_required",
+            },
+        )
+    image = None
+    if has_file:
+        stored = await _store_private_upload(
+            file, prefix=f"received-{collab_id}", sniffer=sniff_image_type, kind="Proof photos"
+        )
+        image = {**stored, "uploaded_at": datetime.now(timezone.utc)}
+
+    now = datetime.now(timezone.utc)
+    record = {
+        **_on_behalf_record(user, reason, now),
+        "evidence": {"tracking_url": url, "image": image},
+    }
+    updated = await _record_delivery_received(user, collab, campaign, on_behalf=record)
+    who = user.get("name") or "WeAre"
+    await notify(
+        collab["creator_id"],
+        "received_for_you",
+        title="WeAre marked your delivery as received",
+        body=f"{who} marked your delivery for {(campaign or {}).get('title') or 'your campaign'} "
+        f"as received — {reason} If it hasn't reached you, tell us now: your "
+        "content clock starts from here.",
+        link=f"/dashboard?collab={str(collab['_id'])}",
+    )
+    return {**(_delivery_block(updated) or {}), "on_behalf": _on_behalf_block(updated)}
+
+
+@admin_router.get("/collaborations/{collab_id}/on-behalf/received-evidence")
+async def read_received_evidence(
+    collab_id: str,
+    user: dict = Depends(require_roles(*CONSOLE_ROLES)),
+):
+    """The proof photo behind a received-on-behalf. Audited, `no-store`, and
+    the only way the bytes leave — the arrangement every private upload here
+    has."""
+    collab = await _collab_or_404(collab_id, user)
+    record = (collab.get("delivery") or {}).get("received_on_behalf") or {}
+    image = (record.get("evidence") or {}).get("image") or {}
+    stored = image.get("stored_name")
+    if not _private_upload_exists(stored):
+        raise HTTPException(status_code=404, detail="There's no proof photo on this one.")
+    campaign = await db.campaigns.find_one({"_id": collab["campaign_id"]})
+    await audit(
+        user, "collaboration.received_evidence_view", "collaboration", collab["_id"],
+        **_campaign_audit_context(campaign),
+    )
+    return _private_file_response(
+        stored, original_name=image.get("original_name"), mime=image.get("mime"), inline=True
+    )
+
+
+async def _brand_step_on_behalf_or_409(
+    collab_id: str, user: dict, reason: str
+) -> tuple[dict, dict, dict]:
+    """The door every brand-side override comes through.
+
+    In the order the brand's own routes check: the scoped console door (a
+    404 for a collaboration outside it), the freeze, the reason, then the
+    two things only an override has to ask — that there *is* a brand to act
+    for (a brand-run brief; on a weare-run one these steps are already ours
+    and the ordinary routes take them), and that the brand on the campaign
+    has been checked, which is the rule the brand's routes hold through
+    `_verified_brand_or_403`. Returns the record to write.
+    """
+    collab = await _collab_or_404(collab_id, user)
+    _refuse_if_disputed(collab)
+    reason = _on_behalf_reason_or_422(reason, whose="the brand")
+    campaign = await db.campaigns.find_one({"_id": collab["campaign_id"]})
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    if _weare_runs(campaign):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": (
+                    "WeAre runs this campaign, so this step is already yours — "
+                    "take it from the application page. There's no brand to act for."
+                ),
+                "code": "weare_run",
+            },
+        )
+    await _campaign_brand_verified_or_409(campaign)
+    return collab, campaign, _on_behalf_record(user, reason, datetime.now(timezone.utc))
+
+
+async def _tell_brand_step_taken(campaign: dict, collab: dict, user: dict, what: str, reason: str) -> None:
+    """The brand hears that WeAre took one of its steps, by name and why."""
+    profile = await db.creator_profiles.find_one({"user_id": collab["creator_id"]}) or {}
+    who = profile.get("name") or "a creator"
+    await notify_brand_manager(
+        campaign.get("brand_id"),
+        "brand_step_taken_for_you",
+        title="WeAre took a step for you",
+        body=f"{user.get('name') or 'WeAre'} (WeAre) {what} {who} on "
+        f"{campaign.get('title') or 'your campaign'} on your behalf — {reason}",
+        link=f"/brand/applications/{str(collab['_id'])}",
+    )
+
+
+@admin_router.post("/collaborations/{collab_id}/on-behalf/accept")
+async def accept_applicant_on_behalf(
+    collab_id: str,
+    payload: AcceptOnBehalfPayload,
+    user: dict = Depends(require_roles("admin")),
+):
+    """Accept an applicant for the brand. Through `_accept_applicant` — the
+    capacity check, the budget cap, the fee and the terms snapshot are the
+    brand's own."""
+    collab, campaign, record = await _brand_step_on_behalf_or_409(
+        collab_id, user, payload.reason
+    )
+    result = await _accept_applicant(
+        user,
+        collab,
+        campaign,
+        BrandAcceptPayload(
+            agreed_amount=payload.agreed_amount,
+            budget_override_reason=payload.budget_override_reason,
+        ),
+        on_behalf=record,
+    )
+    await _tell_brand_step_taken(campaign, collab, user, "accepted", record["reason"])
+    return {**result, "on_behalf": _on_behalf_block(
+        await db.collaborations.find_one({"_id": collab["_id"]})
+    )}
+
+
+@admin_router.post("/collaborations/{collab_id}/on-behalf/approve-draft")
+async def approve_draft_on_behalf(
+    collab_id: str,
+    payload: ReviewOnBehalfPayload,
+    user: dict = Depends(require_roles("admin")),
+):
+    """Approve a draft for the brand. Through `_approve_draft_decision`, with
+    the disclosure checkpoint in it.
+
+    **The review window is settled first**, the lazy half every draft read
+    runs: a draft whose window has elapsed has already approved itself, and
+    approving it again in the brand's name would put a decision on the record
+    that the clock made."""
+    collab, campaign, record = await _brand_step_on_behalf_or_409(
+        collab_id, user, payload.reason
+    )
+    collab = await _settle_review_window_of(collab)
+    if collab.get("state") != "draft_submitted":
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "The review window ran out and the draft approved itself."
+                if collab.get("draft_approved_by") == "system_auto"
+                else "There's no draft waiting for review here."
+            ),
+        )
+    updated = await _approve_draft_decision(
+        user, collab, campaign, payload.disclosure_confirmed, on_behalf=record
+    )
+    await _tell_brand_step_taken(campaign, collab, user, "approved the draft from", record["reason"])
+    return {**_serialize_draft(updated), "on_behalf": _on_behalf_block(updated)}
+
+
+@admin_router.post("/collaborations/{collab_id}/on-behalf/request-draft-changes")
+async def request_draft_changes_on_behalf(
+    collab_id: str,
+    payload: ChangesOnBehalfPayload,
+    user: dict = Depends(require_roles("admin")),
+):
+    """Send a draft back for the brand. Through
+    `_request_draft_changes_decision`, which counts the round trip."""
+    collab, campaign, record = await _brand_step_on_behalf_or_409(
+        collab_id, user, payload.reason
+    )
+    collab = await _settle_review_window_of(collab)
+    if collab.get("state") != "draft_submitted":
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "The review window ran out and the draft approved itself."
+                if collab.get("draft_approved_by") == "system_auto"
+                else "There's no draft waiting for review here."
+            ),
+        )
+    updated = await _request_draft_changes_decision(
+        user, collab, campaign, payload.note, on_behalf=record
+    )
+    await _tell_brand_step_taken(
+        campaign, collab, user, "asked for changes to the draft from", record["reason"]
+    )
+    return {**_serialize_draft(updated), "on_behalf": _on_behalf_block(updated)}
+
+
+@admin_router.post("/collaborations/{collab_id}/on-behalf/approve-content")
+async def approve_content_on_behalf(
+    collab_id: str,
+    payload: ReviewOnBehalfPayload,
+    user: dict = Depends(require_roles("admin")),
+):
+    """Approve the live content for the brand. Through
+    `_approve_content_decision`, with the second disclosure checkpoint in it."""
+    collab, campaign, record = await _brand_step_on_behalf_or_409(
+        collab_id, user, payload.reason
+    )
+    result = await _approve_content_decision(
+        user, collab, campaign, payload.disclosure_confirmed, on_behalf=record
+    )
+    await _tell_brand_step_taken(campaign, collab, user, "approved the content from", record["reason"])
+    return {**result, "on_behalf": _on_behalf_block(
+        await db.collaborations.find_one({"_id": collab["_id"]})
+    )}
+
+
+def _on_behalf_actions(collab: dict, campaign: Optional[dict], user: dict) -> list:
+    """**The acts this admin may take for somebody, on this row, now.**
+
+    Decided here like every other action, so the menu lists exactly what the
+    routes would accept: admin only (never `weare_team`), nothing under a
+    dispute, the creator's acts by the campaign's own ladder, the brand's only
+    on a brand-run brief. `side` is how the menu groups them.
+    """
+    if not is_all_access(user) or _dispute_of(collab):
+        return []
+    state = collab.get("state")
+    delivery = _is_delivery(campaign)
+    brand_run = bool(campaign) and not _weare_runs(campaign)
+    acts = []
+    if state == "commercial_agreed" and not delivery:
+        acts.append({"key": "book_slot", "side": "creator", "label": "Book a slot"})
+    if state == "commercial_agreed" and delivery:
+        acts.append({"key": "confirm_address", "side": "creator", "label": "Confirm their address"})
+    if state == "dispatched" and delivery:
+        acts.append({"key": "mark_received", "side": "creator", "label": "Mark it received",
+                     "needs_evidence": True})
+    if brand_run:
+        if state == "verified":
+            acts.append({"key": "accept", "side": "brand", "label": "Accept this creator"})
+        if state == "draft_submitted":
+            acts.append({"key": "approve_draft", "side": "brand", "label": "Approve the draft",
+                         "needs_disclosure": True})
+            acts.append({"key": "request_draft_changes", "side": "brand",
+                         "label": "Ask for changes to the draft", "needs_note": True})
+        if state == "content_submitted":
+            acts.append({"key": "approve_content", "side": "brand", "label": "Approve the content",
+                         "needs_disclosure": True})
+    return acts
 
 
 @admin_router.post("/collaborations/{collab_id}/revert")
@@ -38341,7 +38844,24 @@ async def approve_draft(
     # for reading the draft — and the draft is exactly the evidence a mediator
     # needs while the collaboration is frozen.
     _refuse_if_disputed(collab)
-    _refuse_unconfirmed_disclosure(campaign, payload.disclosure_confirmed)
+    updated = await _approve_draft_decision(
+        user, collab, campaign, payload.disclosure_confirmed
+    )
+    return _serialize_draft(updated)
+
+
+async def _approve_draft_decision(
+    user: dict,
+    collab: dict,
+    campaign: dict,
+    disclosure_confirmed: bool,
+    *,
+    on_behalf: Optional[dict] = None,
+) -> dict:
+    """`draft_submitted → draft_approved`, for the reviewer and for WeAre
+    acting as the brand. The first disclosure checkpoint is in here, so an
+    override approves a draft on the same terms the brand would."""
+    _refuse_unconfirmed_disclosure(campaign, disclosure_confirmed)
     now = datetime.now(timezone.utc)
     updated = await db.collaborations.find_one_and_update(
         {"_id": collab["_id"], "state": "draft_submitted"},
@@ -38351,6 +38871,7 @@ async def approve_draft(
             "draft_approved_by": ObjectId(user["_id"]),
             "draft_revision_note": None,
             "draft_disclosure_check": _disclosure_record(user, campaign, now),
+            **({"draft_approved_on_behalf": on_behalf} if on_behalf else {}),
         }},
         return_document=True,
     )
@@ -38360,11 +38881,19 @@ async def approve_draft(
         )
 
     await audit(
-        user, "collaboration.approve_draft", "collaboration", collab["_id"],
+        user,
+        "collaboration.approve_draft_on_behalf" if on_behalf else "collaboration.approve_draft",
+        "collaboration",
+        collab["_id"],
         before={"state": "draft_submitted"},
         after={"state": "draft_approved",
-               "disclosure_confirmed": _required_disclosure(campaign)},
-        note=f"Disclosure confirmed: {_disclosure_text(campaign)}.",
+               "disclosure_confirmed": _required_disclosure(campaign),
+               **({"on_behalf": True, "on_behalf_of": "brand"} if on_behalf else {})},
+        note=(
+            f"{on_behalf['reason']} — disclosure confirmed: {_disclosure_text(campaign)}."
+            if on_behalf
+            else f"Disclosure confirmed: {_disclosure_text(campaign)}."
+        ),
         **_campaign_audit_context(campaign),
     )
     await notify(
@@ -38374,7 +38903,7 @@ async def approve_draft(
         body=f"{campaign.get('title')} — publish it, then drop the live link.",
         link="/dashboard",
     )
-    return _serialize_draft(updated)
+    return updated
 
 
 @drafts_router.post("/{collab_id}/request-changes")
@@ -38386,7 +38915,21 @@ async def request_draft_changes(
     """Send it back with a note, and count the round trip."""
     collab, campaign = await _draft_reviewable_or_404(collab_id, user)
     _refuse_if_disputed(collab)
-    note = (payload.note or "").strip()
+    updated = await _request_draft_changes_decision(user, collab, campaign, payload.note)
+    return _serialize_draft(updated)
+
+
+async def _request_draft_changes_decision(
+    user: dict,
+    collab: dict,
+    campaign: dict,
+    note: Optional[str],
+    *,
+    on_behalf: Optional[dict] = None,
+) -> dict:
+    """`draft_submitted → ready to shoot`, with the note and the revision
+    count, for the reviewer and for WeAre acting as the brand."""
+    note = (note or "").strip()
     if not note:
         raise HTTPException(
             status_code=422, detail="Tell the creator what needs to change."
@@ -38407,6 +38950,7 @@ async def request_draft_changes(
                 # The reviewer answered inside the window, so there is
                 # nothing left to elapse until the next draft arrives.
                 "draft_review_deadline_at": None,
+                **({"draft_changes_requested_on_behalf": on_behalf} if on_behalf else {}),
             },
             "$inc": {"draft_revision_count": 1},
         },
@@ -38418,8 +38962,18 @@ async def request_draft_changes(
         )
 
     await audit(
-        user, "collaboration.request_draft_changes", "collaboration", collab["_id"],
-        before={"state": "draft_submitted"}, after={"state": back_to},
+        user,
+        "collaboration.request_draft_changes_on_behalf"
+        if on_behalf
+        else "collaboration.request_draft_changes",
+        "collaboration",
+        collab["_id"],
+        before={"state": "draft_submitted"},
+        after={
+            "state": back_to,
+            **({"on_behalf": True, "on_behalf_of": "brand",
+                "reason": on_behalf["reason"]} if on_behalf else {}),
+        },
         note=note,
         **_campaign_audit_context(campaign),
     )
@@ -38430,7 +38984,7 @@ async def request_draft_changes(
         body=f"{campaign.get('title')} — {note[:160]}",
         link="/dashboard",
     )
-    return _serialize_draft(updated)
+    return updated
 
 
 api_router.include_router(drafts_router)

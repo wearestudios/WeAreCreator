@@ -56,6 +56,7 @@ import {
 } from "@/components/ui/dialog";
 import { IST } from "@/lib/time";
 
+import OnBehalfNote from "@/components/collab/OnBehalfNote";
 const CAT_LABEL = {
     fnb: "F&B",
     hospitality: "Hospitality",
@@ -680,6 +681,11 @@ const ApplicantCard = ({
                     {a.revision_note}
                 </p>
             )}
+
+            {/* A step WeAre took for somebody on this row — the brand's
+                own included, so an acceptance the brand did not make never
+                reads as one it did. */}
+            <OnBehalfNote onBehalf={a.on_behalf} testid={`applicant-on-behalf-${a.id}`} />
 
             {a.exit_reason && (
                 <p className="text-meta text-muted-foreground">

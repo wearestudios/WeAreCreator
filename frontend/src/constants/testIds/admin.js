@@ -174,6 +174,26 @@ export const ADMIN_COLLAB_PAGE = {
 	dispatchLink: 'admin-collab-page-dispatch-link',
 };
 
+// The "Act on behalf of" menu on the collaboration page, and the one dialog
+// behind its five newer acts. The items come from the server's
+// `on_behalf_actions`, grouped by whose step it is.
+export const ADMIN_ACT_ON_BEHALF = {
+	trigger: 'admin-act-on-behalf-trigger',
+	menu: 'admin-act-on-behalf-menu',
+	group: (side) => `admin-act-on-behalf-group-${side}`,
+	item: (key) => `admin-act-on-behalf-${key}`,
+	dialog: 'admin-act-on-behalf-dialog',
+	reason: 'admin-act-on-behalf-reason',
+	note: 'admin-act-on-behalf-note',
+	disclosure: 'admin-act-on-behalf-disclosure',
+	tracking: 'admin-act-on-behalf-tracking',
+	photo: 'admin-act-on-behalf-photo',
+	error: 'admin-act-on-behalf-error',
+	submit: 'admin-act-on-behalf-submit',
+	evidence: 'admin-act-on-behalf-evidence',
+	evidenceImage: 'admin-act-on-behalf-evidence-image',
+};
+
 // Booking a slot for a creator who asked us to: the slot picker and the
 // reason the creator will read.
 export const ADMIN_ON_BEHALF = {

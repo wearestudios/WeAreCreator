@@ -30,6 +30,32 @@ const SAID = {
         you: "WeAre confirmed your delivery address on your behalf",
         they: "Address confirmed by WeAre on the creator's behalf",
     },
+    // The arrival, taken on evidence rather than a reason alone. The evidence
+    // link renders below, so whoever reads it can check it.
+    received: {
+        you: "WeAre marked your delivery received on your behalf",
+        they: "Marked received by WeAre on the creator's behalf",
+    },
+    // The brand's steps, where WeAre stood in for the brand on a brand-run
+    // brief. `you` is the creator's voice on this component, and the creator
+    // is not the party these were done for — so the creator reads which side
+    // took the decision, and everybody else reads the same.
+    accepted: {
+        you: "WeAre accepted you on the brand's behalf",
+        they: "Accepted by WeAre on the brand's behalf",
+    },
+    draft_approved: {
+        you: "WeAre approved your draft on the brand's behalf",
+        they: "Draft approved by WeAre on the brand's behalf",
+    },
+    draft_changes_requested: {
+        you: "WeAre asked for changes on the brand's behalf",
+        they: "Changes asked for by WeAre on the brand's behalf",
+    },
+    content_approved: {
+        you: "WeAre approved your content on the brand's behalf",
+        they: "Content approved by WeAre on the brand's behalf",
+    },
 };
 
 /**
@@ -74,6 +100,16 @@ export default function OnBehalfNote({
                             <span className="mt-0.5 block text-foreground/80">
                                 “{record.reason}”
                             </span>
+                        )}
+                        {record.evidence?.tracking_url && (
+                            <a
+                                href={record.evidence.tracking_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="mt-0.5 block font-medium text-foreground underline underline-offset-4"
+                            >
+                                Courier tracking
+                            </a>
                         )}
                     </span>
                 </p>
