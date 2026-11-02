@@ -63,6 +63,8 @@ import { StoryProofReview } from "@/components/collab/StoryProof";
 import { ReliabilityBadge, ReliabilityPanel } from "@/components/ReliabilityBadge";
 import { RELIABILITY, SHORTFALL } from "@/constants/testIds";
 import ProcessFlow from "./ProcessFlow";
+import NegotiationHistory from "@/components/collab/NegotiationHistory";
+import { NEGOTIATION } from "@/constants/testIds";
 import { IST } from "@/lib/time";
 
 const formatRupees = (n) =>
@@ -179,6 +181,9 @@ export default function ApplicationDetail({
     const [reviewing, setReviewing] = useState(null);
     const [changesReason, setChangesReason] = useState("");
     const [amount, setAmount] = useState("");
+    // Optional, and it lands in the fee history both sides read — so the box
+    // says so, rather than somebody finding out from the creator.
+    const [feeNote, setFeeNote] = useState("");
     // The reason a time was turned down. Required, because without it the
     // creator picks the same impossible slot again.
     const [decliningSlot, setDecliningSlot] = useState(false);
@@ -236,6 +241,8 @@ export default function ApplicationDetail({
         () => Boolean(commercial?.amount_required) && !String(amount).trim(),
         [commercial, amount],
     );
+    // A staff correction to a settled fee costs a note; the server says when.
+    const noteMissing = Boolean(actions.fee_note_required) && feeNote.trim().length < 3;
 
     // **Labelled, not disabled.** The server is the one that refuses, and an
     // admin may legitimately go over with a reason — a button this screen had
@@ -254,14 +261,22 @@ export default function ApplicationDetail({
         act(
             "agree",
             () =>
-                api.post(`/brand/collaborations/${id}/agreed-amount`, {
-                    // Omitted entirely for barter and for a locked fee: the
-                    // server owns those numbers, and sending one back is how a
-                    // stale form rewrites a commercial.
-                    ...(commercial.amount_required
-                        ? { agreed_amount: Number(amount) }
-                        : {}),
-                }),
+                api
+                    .post(`/brand/collaborations/${id}/agreed-amount`, {
+                        // Omitted entirely for barter and for a locked fee: the
+                        // server owns those numbers, and sending one back is
+                        // how a stale form rewrites a commercial.
+                        ...(commercial.amount_required
+                            ? { agreed_amount: Number(amount) }
+                            : {}),
+                        ...(feeNote.trim() ? { note: feeNote.trim() } : {}),
+                    })
+                    // Cleared only once it is recorded: a failure keeps what
+                    // was typed for the retry.
+                    .then((res) => {
+                        setFeeNote("");
+                        return res;
+                    }),
             "Amount recorded — it's the creator's move now",
         );
 
@@ -397,6 +412,26 @@ export default function ApplicationDetail({
                                     the actionable half — it is the difference
                                     between topping the brief up and agreeing a
                                     lower number. */}
+                                <div>
+                                    <Textarea
+                                        data-testid={NEGOTIATION.feeNote}
+                                        rows={2}
+                                        maxLength={500}
+                                        value={feeNote}
+                                        disabled={busy === "agree"}
+                                        onChange={(e) => setFeeNote(e.target.value)}
+                                        placeholder={
+                                            actions.fee_note_required
+                                                ? "Why the fee is changing — required for a correction."
+                                                : "Note (optional) — e.g. Agreed on the call, includes the reel."
+                                        }
+                                        className="border-white/10 bg-background/60 focus-visible:ring-primary"
+                                    />
+                                    <p className="mt-1.5 text-xs text-muted-foreground">
+                                        The creator and the brand both see this in the fee
+                                        history below.
+                                    </p>
+                                </div>
                                 {overBudget !== null && (
                                     <p
                                         data-testid={BUDGET.warning}
@@ -410,7 +445,7 @@ export default function ApplicationDetail({
                                 <Button
                                     data-testid={APPLICATION.agreeCommercial}
                                     onClick={agreeCommercial}
-                                    disabled={busy === "agree" || amountMissing}
+                                    disabled={busy === "agree" || amountMissing || noteMissing}
                                     className="min-h-[2.75rem] w-full sm:w-auto"
                                 >
                                     {busy === "agree" && (
@@ -427,6 +462,17 @@ export default function ApplicationDetail({
                                         somebody agrees one. Enter the amount to continue.
                                     </p>
                                 )}
+                            </div>
+                        )}
+
+                        {/* How the number got here, newest first. Renders
+                            nothing until somebody has offered anything. */}
+                        {app.negotiation?.entries?.length > 0 && (
+                            <div className="mt-8">
+                                <p className="mb-3 text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                                    Fee history
+                                </p>
+                                <NegotiationHistory negotiation={app.negotiation} />
                             </div>
                         )}
                     </Section>
@@ -846,6 +892,7 @@ export default function ApplicationDetail({
                                 draft={app.draft}
                                 canReview={actions.can_review_draft}
                                 disclosureLabel={app.disclosure?.label}
+                                canManageWindow={actions.can_manage_review_window}
                                 onDecided={load}
                             />
                         </Section>

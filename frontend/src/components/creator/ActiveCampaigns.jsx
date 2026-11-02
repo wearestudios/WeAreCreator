@@ -23,7 +23,9 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
-import { CREATOR_ACTIVE as IDS } from "@/constants/testIds";
+import { CREATOR_ACTIVE as IDS, REVIEW_WINDOW as WINDOW_IDS } from "@/constants/testIds";
+import ReviewWindowNote from "@/components/collab/ReviewWindowNote";
+import NegotiationHistory from "@/components/collab/NegotiationHistory";
 import {
     EmptyState,
     Money,
@@ -336,6 +338,24 @@ const ActiveCard = ({ collab, onBook, onSubmit, onDraft, onRefresh }) => {
                     reached approval — the server decides, as everywhere on
                     this card. */}
                 <PayoutDue dueAt={collab.payout_due_at} className="mt-4" />
+
+                {/* When the draft goes through if nobody answers. The
+                    creator is the party waiting, so the date is theirs. */}
+                <ReviewWindowNote
+                    reviewWindow={collab.draft?.review_window}
+                    testid={WINDOW_IDS.creatorNote(collab.id)}
+                />
+
+                {/* **How the fee got here**, in their own card — the one
+                    surface a creator has for one of their applications. */}
+                {collab.negotiation?.entries?.length > 0 && (
+                    <div>
+                        <p className="mb-3 text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                            How the fee was agreed
+                        </p>
+                        <NegotiationHistory negotiation={collab.negotiation} compact />
+                    </div>
+                )}
             </div>
 
             {/* The card's own next-action line stays where the server has

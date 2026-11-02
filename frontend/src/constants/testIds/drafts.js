@@ -35,3 +35,28 @@ export const DRAFT_REVIEW = {
 	changeSubmit: 'draft-review-change-submit',
 	error: 'draft-review-error',
 };
+
+// The window after which an unreviewed draft approves itself. One countdown
+// line on every surface, and the admin's four controls.
+export const REVIEW_WINDOW = {
+	note: 'review-window-note',
+	creatorNote: (id) => `review-window-note-${id}`,
+	controls: 'review-window-controls',
+	extend: 'review-window-extend',
+	pause: 'review-window-pause',
+	resume: 'review-window-resume',
+	approveNow: 'review-window-approve-now',
+	// The campaign setting, on the brand's form and the admin's edit dialog.
+	days: 'review-window-days',
+};
+
+// How a collaboration got to its fee, newest first.
+export const NEGOTIATION = {
+	panel: 'negotiation-history',
+	empty: 'negotiation-history-empty',
+	entry: (i) => `negotiation-entry-${i}`,
+	barterTerms: 'negotiation-barter-terms',
+	backfilled: (i) => `negotiation-entry-backfilled-${i}`,
+	// The fee step's optional note, which lands in this history.
+	feeNote: 'negotiation-fee-note',
+};

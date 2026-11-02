@@ -37,6 +37,7 @@ import { AdvanceDialog, ConfirmDialog } from "@/components/admin/dialogs";
 import { CampaignLink, CreatorLink } from "@/components/admin/links";
 import { PerformancePanel } from "@/components/admin/Performance";
 import DisputePanel from "@/components/DisputePanel";
+import NegotiationHistory from "@/components/collab/NegotiationHistory";
 import { INVOICE } from "@/constants/testIds";
 import { TEXT } from "./console/tokens";
 import { useAdminConsole } from "@/pages/AdminConsole";
@@ -484,6 +485,15 @@ export default function CollaborationDetailPage() {
                                     </Button>
                                 )}
                             </Panel>
+                        </Section>
+                    )}
+
+                    {/* Every offer, counter and correction, with how it was
+                        recorded and by whom — the admin's view is the full
+                        one. Absent until somebody has offered anything. */}
+                    {data.negotiation?.entries?.length > 0 && (
+                        <Section id="negotiation" title="Fee history">
+                            <NegotiationHistory negotiation={data.negotiation} />
                         </Section>
                     )}
 

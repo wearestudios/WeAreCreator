@@ -31,8 +31,14 @@ import {
     COVER,
     EXECUTION,
     PAYOUT as PAYOUT_IDS,
+    REVIEW_WINDOW,
     VISIBILITY,
 } from "@/constants/testIds";
+import {
+    DEFAULT_DRAFT_REVIEW_DAYS,
+    DRAFT_REVIEW_DAYS_MAX,
+    DRAFT_REVIEW_DAYS_MIN,
+} from "@/lib/reviewWindow";
 import { Navbar } from "@/components/Navbar";
 import CampaignTemplates from "@/components/brand/CampaignTemplates";
 import ShootPreferences from "@/components/campaign/ShootPreferences";
@@ -142,6 +148,9 @@ export default function PostCampaign() {
     // brand-run brief: whoever is paying for the work should see it before
     // the creator's audience does. Off is a deliberate choice to make.
     const [requiresDraft, setRequiresDraft] = useState(true);
+    // How long the reviewer has before an unanswered draft approves itself.
+    // A string while it is being typed; the server holds the 1–14 line.
+    const [draftReviewDays, setDraftReviewDays] = useState(String(DEFAULT_DRAFT_REVIEW_DAYS));
     // **Off by default, unlike the draft gate.** On most briefs a booking is
     // the creator picking one of the manager's own published slots, and asking
     // somebody to confirm that is asking them to agree with themselves.
@@ -227,6 +236,7 @@ export default function PostCampaign() {
         apply("compensation_type", setCompensationType);
         apply("visibility", setVisibility);
         apply("requires_draft_approval", setRequiresDraft, Boolean);
+        apply("draft_review_days", setDraftReviewDays, String);
         apply("requires_slot_confirmation", setRequiresSlotConfirmation, Boolean);
         apply("restricted_days", setRestrictedDays);
         apply("shoot_windows", setShootWindows);
@@ -314,6 +324,9 @@ export default function PostCampaign() {
                     // brief that doesn't review drafts would quietly turn the
                     // stage on for everybody already working it.
                     setRequiresDraft(Boolean(data.requires_draft_approval));
+                    setDraftReviewDays(
+                        String(data.draft_review_days ?? DEFAULT_DRAFT_REVIEW_DAYS),
+                    );
                     setRequiresSlotConfirmation(
                         Boolean(data.requires_slot_confirmation)
                     );
@@ -510,6 +523,14 @@ export default function PostCampaign() {
             : {}),
         visibility,
         requires_draft_approval: requiresDraft,
+        // Sent only where there is a draft to review; an empty box falls back
+        // to the default rather than becoming a refusal.
+        ...(requiresDraft
+            ? {
+                  draft_review_days:
+                      Number(draftReviewDays) >= 1 ? Math.round(Number(draftReviewDays)) : DEFAULT_DRAFT_REVIEW_DAYS,
+              }
+            : {}),
         requires_slot_confirmation: requiresSlotConfirmation,
         // **Only the fields this type has.** The server refuses the rest
         // outright (`_SCHEDULING_BY_TYPE`), so sending them on the wrong type
@@ -1456,6 +1477,35 @@ export default function PostCampaign() {
                                     </span>
                                 </span>
                             </label>
+
+                            {requiresDraft && (
+                                <div className="mt-3 rounded-md border border-white/10 bg-card/60 p-5">
+                                    <Label
+                                        htmlFor="pc-draft-review-days"
+                                        className="text-xs uppercase tracking-[0.15em] text-muted-foreground"
+                                    >
+                                        Days to review a draft
+                                    </Label>
+                                    <Input
+                                        id="pc-draft-review-days"
+                                        data-testid={REVIEW_WINDOW.days}
+                                        type="number"
+                                        inputMode="numeric"
+                                        min={DRAFT_REVIEW_DAYS_MIN}
+                                        max={DRAFT_REVIEW_DAYS_MAX}
+                                        value={draftReviewDays}
+                                        onChange={(e) => setDraftReviewDays(e.target.value)}
+                                        className="mt-2 h-11 w-28 border-white/10 bg-background/60 focus-visible:ring-primary"
+                                    />
+                                    <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+                                        If nobody approves or asks for changes within this
+                                        many days, the draft is approved automatically.
+                                        Between {DRAFT_REVIEW_DAYS_MIN} and{" "}
+                                        {DRAFT_REVIEW_DAYS_MAX}; {DEFAULT_DRAFT_REVIEW_DAYS} unless
+                                        you change it.
+                                    </p>
+                                </div>
+                            )}
 
                             {/* And the booking handshake, which is the same
                                 shape of question one step earlier. Off unless
