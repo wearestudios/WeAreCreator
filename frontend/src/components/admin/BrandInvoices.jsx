@@ -23,6 +23,7 @@ import { INVOICE as IDS } from "@/constants/testIds";
 import { formatDateTime } from "@/lib/time";
 import { TEXT } from "./console/tokens";
 
+import { formatInr } from "@/lib/compensation";
 export default function BrandInvoices({ userId, owing, override, onChanged }) {
     const [asking, setAsking] = useState(false);
     const [reason, setReason] = useState("");
@@ -58,8 +59,8 @@ export default function BrandInvoices({ userId, owing, override, onChanged }) {
                     data-testid={IDS.overdue}
                     className="rounded-md border border-destructive/40 bg-destructive/10 p-4 text-meta"
                 >
-                    {owing.count} invoice{owing.count === 1 ? "" : "s"} past due — ₹
-                    {Number(owing.total || 0).toLocaleString("en-IN")}, the oldest{" "}
+                    {owing.count} invoice{owing.count === 1 ? "" : "s"} past due —{" "}
+                    {formatInr(owing.total || 0)}, the oldest{" "}
                     {owing.worst_days} day{owing.worst_days === 1 ? "" : "s"} over.
                     {active
                         ? " They can still post: an override is on."

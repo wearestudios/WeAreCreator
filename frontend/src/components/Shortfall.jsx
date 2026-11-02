@@ -15,7 +15,7 @@ import { CheckCircle2, PackageOpen } from "lucide-react";
 
 import { DELIVERABLE_PLURALS, DELIVERABLE_SINGULARS } from "@/lib/deliverables";
 
-export default function Shortfall({ shortfall, testid, className = "" }) {
+export default function Shortfall({ shortfall, note = null, testid, className = "" }) {
     if (!shortfall) return null;
 
     if (shortfall.complete) {
@@ -59,6 +59,18 @@ export default function Shortfall({ shortfall, testid, className = "" }) {
                     </li>
                 ))}
             </ul>
+            {/* The runner's reason for accepting it anyway. Required on the
+                route, so it is always there on a partial acceptance — and it
+                is the half that tells somebody this was a decision rather
+                than an oversight. */}
+            {note && (
+                <p
+                    data-testid={testid ? `${testid}-note` : undefined}
+                    className="mt-2 border-t border-state-pending/20 pt-2 text-meta text-foreground/80"
+                >
+                    “{note}”
+                </p>
+            )}
         </div>
     );
 }

@@ -27,7 +27,7 @@ import {
 } from "@/components/ui/dialog";
 import { SHORTFALL as IDS } from "@/constants/testIds";
 import { DELIVERABLE_TYPES } from "@/lib/deliverables";
-import { isBarter } from "@/lib/compensation";
+import { formatInr, isBarter } from "@/lib/compensation";
 
 export default function PartialDeliveryDialog({
     open,
@@ -130,7 +130,7 @@ export default function PartialDeliveryDialog({
                                 data-testid={IDS.suggestion}
                                 className="mt-1.5 block text-meta text-muted-foreground"
                             >
-                                Pro-rata would be ₹{suggestion.toLocaleString("en-IN")} —
+                                Pro-rata would be {formatInr(suggestion)} —
                                 a suggestion, not a rule. Two of three stories is not
                                 two-thirds of the value if the reel was the point.
                             </span>

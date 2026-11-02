@@ -62,6 +62,9 @@ export const CREATOR_ACTIVE = {
 	// A step WeAre took for them, as an audited override. Rendered on their
 	// own card so a booking they did not make never reads as one they did.
 	onBehalf: (id) => `creator-active-on-behalf-${id}`,
+	// What arrived short of the brief, with the runner's note on why it was
+	// accepted anyway — only on a partial acceptance.
+	shortfall: (id) => `creator-active-shortfall-${id}`,
 };
 
 export const CREATOR_SLOT_PICKER = {

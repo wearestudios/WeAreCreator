@@ -60,8 +60,45 @@ export const compensationType = (campaign) =>
 
 export const isBarter = (campaign) => compensationType(campaign) === "barter";
 
-const formatRupees = (n) =>
-    typeof n === "number" ? n.toLocaleString("en-IN", { maximumFractionDigits: 0 }) : null;
+/**
+ * **The one rupee formatter in the app.** There were seven, written into seven
+ * files, and they disagreed: three rounded to the rupee, two printed paise to
+ * three places, one returned `null` where the rest drew a dash. A fee shown
+ * as 12,000 on one screen and 12,000.5 on the next is two answers to "what
+ * was agreed". `test_money_display.py` fails a second definition.
+ *
+ * Digits only, grouped the Indian way (lakh, crore), paise only when there
+ * are any. `formatInr` adds the sign. A missing figure is the `fallback` —
+ * `—` by default, because an unknown amount drawn as `0` reads as "agreed,
+ * nothing", which is the barter mistake this module exists to prevent.
+ */
+export const formatRupees = (n, { fallback = "—" } = {}) => {
+    const value = typeof n === "string" && n.trim() !== "" ? Number(n) : n;
+    if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
+    return value.toLocaleString("en-IN", { maximumFractionDigits: 2 });
+};
+
+/** The same figure with the rupee sign, for a slot that shows nothing else. */
+export const formatInr = (n, { fallback = "—" } = {}) => {
+    const digits = formatRupees(n, { fallback: null });
+    return digits == null ? fallback : `₹${digits}`;
+};
+
+/**
+ * What a collaboration is worth, said truthfully for its kind of money.
+ *
+ * A barter collaboration has no amount — `agreed_amount` is `null` on purpose
+ * — so falling back to the creator's quote (which is what the creator's card
+ * did) printed a rupee figure nobody agreed, on a brief that pays a dinner.
+ * Barter reads as barter, with the terms beside it when the server sent them.
+ */
+export function formatCollabMoney({ compensationType: kind, agreed, quoted, barterTerms } = {}) {
+    if (kind === "barter") {
+        return { text: barterTerms ? `Barter · ${barterTerms}` : "Barter", isBarter: true };
+    }
+    const figure = agreed ?? quoted;
+    return { text: formatInr(figure), isBarter: false, quoted: agreed == null && quoted != null };
+}
 
 /**
  * The fee as a creator should read it.
@@ -84,7 +121,7 @@ export function formatCompensation(campaign, { per = null } = {}) {
         return { text: "Barter", amount: null, suffix: null, isBarter: true };
     }
 
-    const rupees = formatRupees(campaign?.budget_per_creator);
+    const rupees = formatRupees(campaign?.budget_per_creator, { fallback: null });
     if (rupees == null) {
         return { text: "—", amount: null, suffix: null, isBarter: false };
     }

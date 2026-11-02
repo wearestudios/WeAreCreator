@@ -21,7 +21,7 @@ import { Loader2 } from "lucide-react";
 
 import { api, formatApiError } from "@/lib/api";
 import { notifyError, notifySuccess } from "@/lib/feedback";
-import { formatCompensation, isBarter } from "@/lib/compensation";
+import { formatCompensation, formatRupees, isBarter } from "@/lib/compensation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -68,8 +68,6 @@ import NegotiationHistory from "@/components/collab/NegotiationHistory";
 import { NEGOTIATION } from "@/constants/testIds";
 import { IST } from "@/lib/time";
 
-const formatRupees = (n) =>
-    typeof n === "number" ? n.toLocaleString("en-IN", { maximumFractionDigits: 0 }) : "—";
 
 /** "20 Aug, 7:00 pm" — a time somebody has to turn up at, so it carries one. */
 const formatDateTime = (iso) => {

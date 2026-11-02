@@ -429,7 +429,13 @@ def test_reading_the_file_is_audited():
 
 
 def test_every_draft_route_writes_an_audit_line():
-    for fn in (server._record_draft, server.approve_draft, server.request_draft_changes):
+    # The two decisions live in shared helpers now, called by both the
+    # reviewer's routes and WeAre's on-behalf routes — read where they are.
+    for fn in (
+        server._record_draft,
+        server._approve_draft_decision,
+        server._request_draft_changes_decision,
+    ):
         assert "await audit(" in source(fn)
         assert "_campaign_audit_context(" in source(fn)
 
@@ -457,11 +463,13 @@ def test_a_draft_routes_to_whoever_runs_the_campaign():
 
 
 def test_the_creator_is_told_both_outcomes():
-    assert 'collab["creator_id"]' in source(server.approve_draft)
-    assert 'collab["creator_id"]' in source(server.request_draft_changes)
+    assert "_approve_draft_decision(" in source(server.approve_draft)
+    assert "_request_draft_changes_decision(" in source(server.request_draft_changes)
+    assert 'collab["creator_id"]' in source(server._approve_draft_decision)
+    assert 'collab["creator_id"]' in source(server._request_draft_changes_decision)
     # The note is the message — a send-back saying only "changes requested"
     # sends the creator back to the app to find out what.
-    assert "note" in source(server.request_draft_changes).split("await notify(")[1]
+    assert "note" in source(server._request_draft_changes_decision).split("await notify(")[1]
 
 
 # --- What the screens are given -----------------------------------------------

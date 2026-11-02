@@ -144,7 +144,8 @@ def test_the_converted_call_sites():
                          or (isinstance(node.func, ast.Attribute) and node.func.attr == "_set_agreed_amount"))):
                 callers.add(f"{path.name}:{owner(node)}")
     assert callers == {
-        "server.py:brand_accept_applicant",
+        # The brand's accept and WeAre's on-behalf accept share this.
+        "server.py:_accept_applicant",
         "server.py:accept_partial_delivery",
         "server.py:brand_record_agreed_amount",
         "server.py:advance_collaboration",

@@ -16,6 +16,7 @@ import {
 import { mediaUrl } from "@/lib/api";
 import { IST } from "@/lib/time";
 
+import { formatRupees } from "@/lib/compensation";
 export const STATE_ORDER = [
     "applied",
     "verified",
@@ -23,6 +24,11 @@ export const STATE_ORDER = [
     "commercial_agreed",
     "slot_booked",
     "attended",
+    // The delivery half sits where the venue half does: one or the other is
+    // on any given campaign's ladder, never both.
+    "address_confirmed",
+    "dispatched",
+    "received",
     "draft_submitted",
     "draft_approved",
     "content_submitted",
@@ -46,6 +52,11 @@ export const STATE_META = {
     commercial_agreed: { label: "Commercial agreed", tone: "bg-state-approved-wash text-state-approved border-state-approved/30" },
     slot_booked: { label: "Slot booked", tone: "bg-state-approved-wash text-state-approved border-state-approved/30" },
     attended: { label: "Attended", tone: "bg-state-done-wash text-state-done border-state-done/30" },
+    // The delivery half. Same tones as the venue rungs they stand beside:
+    // confirmed is agreed, in transit is in progress, arrived is done.
+    address_confirmed: { label: "Address confirmed", tone: "bg-state-approved-wash text-state-approved border-state-approved/30" },
+    dispatched: { label: "Dispatched", tone: "bg-state-progress-wash text-state-progress border-state-progress/30" },
+    received: { label: "Delivered", tone: "bg-state-done-wash text-state-done border-state-done/30" },
     draft_submitted: { label: "Draft in review", tone: "bg-state-done-wash text-state-done border-state-done/30" },
     draft_approved: { label: "Draft approved", tone: "bg-state-approved-wash text-state-approved border-state-approved/30" },
     content_submitted: { label: "Content submitted", tone: "bg-state-done-wash text-state-done border-state-done/30" },
@@ -59,6 +70,32 @@ export const STATE_META = {
     // committed, and an expiry is a decision that never got made.
     withdrawn: { label: "Withdrawn", tone: "bg-muted text-muted-foreground border-border" },
     expired: { label: "No answer", tone: "bg-muted text-muted-foreground border-border" },
+};
+
+/**
+ * The button that takes a collaboration *into* a state, as a verb. Keyed by
+ * the next state the server sends — `next_state` is the campaign's own ladder,
+ * so a barter row's next is `closed` and a delivery row's is a delivery rung.
+ * The pill label ("Closed") was used as the button for years, which made the
+ * barter close read as a state rather than an action; one table for the queue
+ * and the detail page, so the two say the same thing.
+ */
+export const ADVANCE_VERB = {
+    verified: "Verify creator",
+    accepted: "Accept",
+    commercial_agreed: "Agree fee",
+    slot_booked: "Book slot",
+    attended: "Mark attended",
+    address_confirmed: "Confirm address",
+    dispatched: "Record dispatch",
+    received: "Confirm arrival",
+    draft_submitted: "Submit draft",
+    draft_approved: "Approve draft",
+    content_submitted: "Record content",
+    content_approved: "Approve content",
+    in_payment: "Start payment",
+    // Barter's last step: nothing to pay, so the work is closed out.
+    closed: "Close it out",
 };
 
 export const CAMPAIGN_STATUS_META = {
@@ -89,8 +126,9 @@ export const VERIFICATION_META = {
 // and paused ones are out — the creator could not open what they were sent.
 export const INVITABLE_STATUSES = ["upcoming", "open", "in_progress"];
 
-export const formatRupees = (n) =>
-    typeof n === "number" ? n.toLocaleString("en-IN") : "—";
+// The one rupee formatter lives in `lib/compensation.js`; re-exported so the
+// console's imports keep working.
+export { formatRupees };
 
 export const formatDate = (iso) => {
     if (!iso) return "—";

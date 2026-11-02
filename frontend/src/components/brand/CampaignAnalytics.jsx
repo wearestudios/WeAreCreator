@@ -23,10 +23,10 @@ import { notifyError } from "@/lib/feedback";
 import { downloadCsv } from "@/lib/download";
 import { Button } from "@/components/ui/button";
 
+import { formatInr } from "@/lib/compensation";
 const num = (v) =>
     v === null || v === undefined ? "—" : Number(v).toLocaleString("en-IN");
-const money = (v) =>
-    v === null || v === undefined ? "—" : `₹${Number(v).toLocaleString("en-IN")}`;
+const money = (v) => formatInr(v);
 const pct = (v) => (v === null || v === undefined ? "—" : `${v}%`);
 
 /**

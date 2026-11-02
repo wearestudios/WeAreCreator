@@ -554,6 +554,45 @@ DRIVERS = {
             s["collab_id"], server.OnBehalfPayload(reason="Confirmed on a call"), s["admin"]),
         campaign_type="delivery",
     ),
+    "mark_received_on_behalf": Driver(
+        "dispatched",
+        lambda db, s, _: server.mark_received_on_behalf(
+            s["collab_id"], reason="Courier shows it delivered",
+            tracking_url="https://track.example/DTDC-77", file=None, user=s["admin"]),
+        campaign_type="delivery",
+    ),
+    # The brand's steps, taken for the brand on a brand-run brief. Frozen
+    # exactly where the brand's own routes are.
+    "accept_applicant_on_behalf": Driver(
+        "verified",
+        lambda db, s, _: server.accept_applicant_on_behalf(
+            s["collab_id"], server.AcceptOnBehalfPayload(reason="The brand asked us to"),
+            s["admin"]),
+    ),
+    "approve_draft_on_behalf": Driver(
+        "draft_submitted",
+        lambda db, s, _: server.approve_draft_on_behalf(
+            s["collab_id"],
+            server.ReviewOnBehalfPayload(reason="The brand asked us to",
+                                         disclosure_confirmed=True),
+            s["admin"]),
+    ),
+    "request_draft_changes_on_behalf": Driver(
+        "draft_submitted",
+        lambda db, s, _: server.request_draft_changes_on_behalf(
+            s["collab_id"],
+            server.ChangesOnBehalfPayload(reason="The brand asked us to",
+                                          note="Tag the venue."),
+            s["admin"]),
+    ),
+    "approve_content_on_behalf": Driver(
+        "content_submitted",
+        lambda db, s, _: server.approve_content_on_behalf(
+            s["collab_id"],
+            server.ReviewOnBehalfPayload(reason="The brand asked us to",
+                                         disclosure_confirmed=True),
+            s["admin"]),
+    ),
     # Ending a review window early is an approval; a dispute is ended by its
     # resolution, never by approving around it.
     "force_approve_draft": Driver(

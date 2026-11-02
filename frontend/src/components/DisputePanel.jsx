@@ -21,6 +21,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { DISPUTE as IDS } from "@/constants/testIds";
 import { formatDateTime } from "@/lib/time";
 
+import { formatInr } from "@/lib/compensation";
 /**
  * What an admin can decide. Mirrors `DISPUTE_RESOLUTIONS` in server.py — and
  * `cancelled` is deliberately one of the four: sometimes the honest answer is
@@ -150,7 +151,7 @@ export default function DisputePanel({
                             <p className="text-meta">
                                 {dispute.resolution_label || dispute.resolution}
                                 {typeof dispute.resolution_amount === "number"
-                                    ? ` — ₹${dispute.resolution_amount.toLocaleString("en-IN")}`
+                                    ? ` — ${formatInr(dispute.resolution_amount)}`
                                     : ""}
                             </p>
                             {/* The reasoning, always. "Released" with nothing

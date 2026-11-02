@@ -201,22 +201,22 @@ class TestAdvanceStillRefusesAllThree:
             "slot_booked", "address_confirmed", "received",
         }
 
-    def test_received_has_no_override(self):
-        """An admin asserting a parcel arrived at somebody's door is the one
-        of the three with no honest basis, and a required reason would only
-        record the guess. Deliberately left out, and said so beside the list."""
-        assert "received" not in server.ON_BEHALF_STEPS
-        assert set(server.ON_BEHALF_STEPS) == {"slot_booked", "address_confirmed"}
+    def test_received_has_an_override_and_it_costs_evidence(self):
+        """**This used to assert the opposite**, and was right to: an admin
+        asserting a parcel arrived with only a sentence behind it records a
+        guess. It is on the list now on different terms — evidence, not a
+        reason, is what makes it honest — and the route refuses without it
+        (`test_on_behalf_acts.py` drives that). What is pinned here is that
+        the reasoning moved with the decision rather than being deleted."""
+        assert set(server.ON_BEHALF_STEPS) == {"slot_booked", "address_confirmed", "received"}
         paths = [
             r.path for r in server.admin_router.routes if "on-behalf" in getattr(r, "path", "")
         ]
-        assert paths, "the override routes are missing"
-        assert not any("received" in p for p in paths)
-        # And the reasoning is written where the next person will look.
+        assert any(p.endswith("/on-behalf/mark-received") for p in paths)
         src = server.__file__
         text = Path(src).read_text()
-        head = text[text.index("ON_BEHALF_STEPS = ") - 600 : text.index("ON_BEHALF_STEPS = ")]
-        assert "received" in head and "guess" in head
+        head = text[text.index("ON_BEHALF_STEPS = ") - 900 : text.index("ON_BEHALF_STEPS = ")]
+        assert "guess" in head and "evidence" in head
 
 
 # ---------------------------------------------------------------------------

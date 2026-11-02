@@ -34,6 +34,8 @@ import {
     formatRupees,
 } from "./shared";
 import ProcessFlow from "@/components/application/ProcessFlow";
+import Shortfall from "@/components/Shortfall";
+import { formatCollabMoney } from "@/lib/compensation";
 import BrandAvatar from "@/components/BrandAvatar";
 import CampaignCover from "@/components/CampaignCover";
 import DisputePanel from "@/components/DisputePanel";
@@ -82,6 +84,16 @@ const ActiveCard = ({ collab, onBook, onSubmit, onDraft, onRefresh }) => {
     const [releasing, setReleasing] = useState(false);
     const next = collab.next_action || {};
     const Icon = ACTION_ICON[next.action];
+    // **Barter reads as barter.** This was `agreed_amount ?? quoted_rate`
+    // with a rupee sign, and a barter collaboration has no agreed amount on
+    // purpose — so the card printed the creator's own quote as if somebody
+    // had agreed it, on a brief that pays a dinner.
+    const money = formatCollabMoney({
+        compensationType: collab.compensation_type,
+        agreed: collab.agreed_amount,
+        quoted: collab.quoted_rate,
+        barterTerms: collab.barter_terms,
+    });
     const amount = collab.agreed_amount ?? collab.quoted_rate;
 
     const cancelSlot = async () => {
@@ -270,12 +282,22 @@ const ActiveCard = ({ collab, onBook, onSubmit, onDraft, onRefresh }) => {
                         {collab.campaign_title || "Untitled campaign"}
                     </Link>
                 </div>
-                <Money
-                    symbolClass="h-4 w-4"
-                    className="font-serif text-h3 leading-none"
-                >
-                    <span data-testid={IDS.amount(collab.id)}>{formatRupees(amount)}</span>
-                </Money>
+                {money.isBarter ? (
+                    <span
+                        data-testid={IDS.amount(collab.id)}
+                        data-barter="true"
+                        className="max-w-[14rem] text-right text-meta leading-snug text-muted-foreground"
+                    >
+                        {money.text}
+                    </span>
+                ) : (
+                    <Money
+                        symbolClass="h-4 w-4"
+                        className="font-serif text-h3 leading-none"
+                    >
+                        <span data-testid={IDS.amount(collab.id)}>{formatRupees(amount)}</span>
+                    </Money>
+                )}
             </div>
 
             {/* **The same eight stages the brand and the admin read.** This
@@ -285,6 +307,20 @@ const ActiveCard = ({ collab, onBook, onSubmit, onDraft, onRefresh }) => {
                 the next line all come from the server — in the creator's
                 voice, because the server knows who asked. */}
             <ProcessFlow process={collab.process} className="mt-6" />
+
+            {/* **What arrived short, and why it was accepted anyway**, on the
+                card of the person it is a judgement about. The shortfall was
+                shipped on this row and drawn nowhere on it, so a creator found
+                out from a smaller payment than they expected. Only when it
+                actually was partial — an ordinary approval says nothing. */}
+            {collab.partial_delivery && (
+                <Shortfall
+                    shortfall={collab.shortfall}
+                    note={collab.partial_note}
+                    testid={IDS.shortfall(collab.id)}
+                    className="mt-5"
+                />
+            )}
 
             {/* **The creator sees both, and sees them first.** A freeze on
                 their own payment and a request to pull their own post are the
