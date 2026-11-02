@@ -5921,6 +5921,13 @@ def _payout_due_at(collab: Optional[dict], campaign: Optional[dict], default_day
     """
     if (collab or {}).get("state") not in _AWAITING_PAYOUT_STATES:
         return None
+    # **Nothing is owed on a barter brief, so nothing falls due.** The barter
+    # card read "Payment due by …" under an approval that closes out with no
+    # money in it, and the health panel's late-payout check — which asks this
+    # same function — would have flagged it a week later as a payout we were
+    # late with.
+    if _compensation_type(campaign) == "barter":
+        return None
     anchor = (collab or {}).get("content_approved_at") or _state_since(collab or {})
     if not anchor:
         return None
@@ -9774,7 +9781,10 @@ async def get_creator_dashboard(
                 },
                 "slot": _serialize_slot(slot) if slot else None,
                 "slot_starts_at": _iso(c.get("scheduled_at")),
-                "can_cancel_slot": bool(c.get("slot_id")),
+                # The route releases a seat only from `slot_booked`; the flag
+                # read `slot_id` alone, so every card past the shoot offered
+                # "release this slot" against a route that answers 409.
+                "can_cancel_slot": bool(c.get("slot_id")) and c.get("state") == "slot_booked",
                 "cancel_cutoff_hours": SLOT_CANCEL_CUTOFF_HOURS,
                 # Absent on a campaign that doesn't review drafts, so the card
                 # has nothing to render rather than an empty panel.
@@ -27989,10 +27999,17 @@ async def admin_metrics(user: dict = Depends(require_roles("admin"))):
 
     # What is actually sitting on our desk. Counted per queue and summed, so the
     # headline number can always be explained.
-    collab_action_counts = {s: 0 for s in ADMIN_ACTION_STATES}
+    # `commercial_agreed` is counted as well, though it is deliberately not an
+    # admin action state (the next move is the creator's): the overview reports
+    # it as "slots to book". Reading it off a dict built from
+    # ADMIN_ACTION_STATES alone raised a KeyError, so this endpoint answered
+    # 500 on every call — which the browser reports as a CORS failure, since
+    # an unhandled error carries no CORS header.
+    counted_states = (*ADMIN_ACTION_STATES, "commercial_agreed")
+    collab_action_counts = {s: 0 for s in counted_states}
     async for row in db.collaborations.aggregate(
         [
-            {"$match": {"state": {"$in": list(ADMIN_ACTION_STATES)}}},
+            {"$match": {"state": {"$in": list(counted_states)}}},
             {"$group": {"_id": "$state", "n": {"$sum": 1}}},
         ]
     ):

@@ -99,10 +99,13 @@ async def _world(db, *, ladder: str, money: str, total_budget=100000):
     campaign_oid, collab_oid, slot_oid = ObjectId(), ObjectId(), ObjectId()
     await db.users.insert_many(
         [
+            # `email` written as the app writes it: present, and `None` for a
+            # creator who signed up with a number alone.
             {"_id": brand_oid, "role": "brand_manager", "name": "Toit",
-             "brand_id": brand_oid, "phone": "+919900000101"},
+             "brand_id": brand_oid, "phone": "+919900000101",
+             "email": "toit@example.com", "status": "active"},
             {"_id": creator_oid, "role": "creator", "name": "Asha",
-             "phone": "+919900000102"},
+             "phone": "+919900000102", "email": None, "status": "active"},
         ]
     )
     await db.brand_profiles.insert_one(
@@ -290,6 +293,15 @@ def check_personas(collab, campaign, ladder, money):
     state = collab["state"]
     delivery = ladder.startswith("delivery")
     barter = money == "barter"
+
+    # No payment date on a brief that pays nothing — the card read "Payment due
+    # by …" on a barter approval, and the late-payout check asks the same
+    # function.
+    due = server._payout_due_at(collab, campaign, 7)
+    if barter:
+        assert due is None, f"{state}: a barter collaboration has a payment date"
+    elif state in ("content_approved", "in_payment"):
+        assert due is not None, state
 
     # The creator's card.
     mine = server._creator_next_action(collab, campaign, True)
@@ -484,3 +496,21 @@ def test_a_dispute_that_ends_it_leaves_a_terminal_record(ladder, money, at, reso
     mine = server._creator_next_action(collab, campaign, True)
     assert mine["action"] is None
     assert not mine.get("label") or "payment" not in mine["label"].lower()
+
+
+def test_the_admin_overview_counts_answer_rather_than_raise():
+    """`/admin/metrics` read `commercial_agreed` off a dict built from
+    `ADMIN_ACTION_STATES`, which leaves it out on purpose — so the endpoint
+    raised a KeyError on every call and the overview's figures never loaded.
+    Found driving the console in a browser while checking this harness's
+    fixes; driven here so it cannot come back unnoticed."""
+
+    async def body(db):
+        w = await _world(db, ladder="venue", money="paid")
+        await _walk_to(db, w, "commercial_agreed", "venue", "paid")
+        return await server.admin_metrics(ADMIN)
+
+    out = run(body)
+    awaiting = out.get("awaiting") or out.get("awaiting_action") or out
+    assert "slots_to_book" in str(out)
+    assert awaiting.get("slots_to_book", 1) == 1

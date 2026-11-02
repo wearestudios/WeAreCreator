@@ -2998,6 +2998,17 @@ applied → verified → accepted → commercial_agreed → slot_booked → atte
         → content_approved → in_payment → closed
 ```
 
+`_collab_ladder(campaign)` makes **three independent substitutions** over
+that order: the draft gate, venue versus delivery (`address_confirmed →
+dispatched → received` in place of `slot_booked → attended`), and **barter,
+which has no payment rung** (`PAYMENT_STATES`): `content_approved` steps
+straight to `closed`, through the console's Advance ("Close it out"). It used
+to step to `in_payment`, which `advance` refuses without an agreed amount —
+and a barter collaboration never has one, on purpose — so every barter
+approval stood on `content_approved` for good with the creator's card saying
+a payment was being processed. `_ladder_for_standing` rescues a row standing
+on a rung its campaign has since dropped, for all three.
+
 Plus four terminal exits that are **not** steps: `declined`, `cancelled`,
 `withdrawn` and `expired` (`TERMINAL_COLLAB_STATES`) — see "Taking it back, and
 calling it off" and "Expiry". The bracketed pair is optional per campaign — see "The draft gate" below.
@@ -3059,10 +3070,15 @@ because the refusal has to stay *true of the state machine*: a relaxed
 whole reason the override is safe is that it does not — the booking goes
 through `_claim_slot`, so the only way to be booked is still to hold one of
 the campaign's real seats, under the same conditional increment, the same
-venue rules and the same handshake. `received` is deliberately left out and
-the reason is beside `ON_BEHALF_STEPS`: an admin asserting that a parcel
-arrived at somebody's door is the one of the three with no honest basis, and
-a required reason would only record the guess.
+venue rules and the same handshake. **`received` has an override too now,
+on different terms: evidence, not a reason, is what makes it honest.** It
+was deliberately left out, because an admin asserting that a parcel arrived
+with only a sentence behind it records a guess — and `received` starts the
+creator's content clock. `POST /on-behalf/mark-received` refuses without a
+courier tracking link (`http(s)` only) or a proof photo, both stored inside
+`delivery.received_on_behalf`; the photo goes to private storage and leaves
+only through the audited `GET /on-behalf/received-evidence`, fetched by the
+console as a blob. The comment beside `ON_BEHALF_STEPS` carries the reasoning.
 
 - **The record says who, when, why — and, by existing, that it was an
   override.** `slot_booked_on_behalf` lives beside `slot_booked_at` and is
@@ -3104,6 +3120,49 @@ a required reason would only record the guess.
   offered only at `commercial_agreed`, admin only — `weare_team` reaches the
   page and does not get the button, the split the budget override makes.
   `test_on_behalf_overrides.py` drives all of it and reads the database back.
+
+#### The brand's steps, on a brand-run brief
+
+The same pattern for the four steps that are the brand's
+(`ON_BEHALF_BRAND_STEPS`): `/on-behalf/accept`, `/approve-draft`,
+`/request-draft-changes` and `/approve-content`. **Brand-run only** — on a
+weare-run brief those steps are already ours and the ordinary routes take
+them, so the override 409s `weare_run` rather than "acting for" nobody — and
+the campaign's brand must be verified (`_campaign_brand_verified_or_409`,
+because `_verified_brand_or_403` waves an admin through).
+
+- **Each override calls the owner's own implementation**, extracted for the
+  purpose: `_record_delivery_received`, `_accept_applicant`,
+  `_approve_draft_decision`, `_request_draft_changes_decision`,
+  `_approve_content_decision`. The owner's route is now a door plus one call
+  into the same function, so the budget cap, the capacity check, the terms
+  snapshot, both disclosure checkpoints and the notification cannot differ
+  between them. The source-reading tests that looked inside the route
+  bodies (`_campaign_audit_context`, the `_set_agreed_amount` call-site list,
+  the send-back reason) point at the helpers now.
+- **The review window is settled first** on both draft overrides, so a draft
+  the clock already approved is a 409 rather than a second approval in the
+  brand's name.
+- The record lives beside the decision it describes (`accepted_on_behalf`,
+  `draft_approved_on_behalf`, `draft_changes_requested_on_behalf`,
+  `content_approved_on_behalf`); the audit action is `*_on_behalf` with the
+  state before and after; the **brand** is told (`brand_step_taken_for_you`),
+  because it is the party the step was taken for, and the creator hears the
+  ordinary outcome.
+- **`_on_behalf_actions` is the menu**, decided server-side: admin only,
+  nothing under a dispute, the creator's acts by the campaign's ladder, the
+  brand's only on a brand-run brief. `components/admin/ActOnBehalf.jsx` draws
+  it on the collaboration page as one "Act on behalf of" menu grouped
+  **Creator** / **Brand**, and one dialog collects what the act needs (a
+  reason naming who reads it, the disclosure box on an approval, the
+  creator's note on a send-back, evidence on an arrival). `OnBehalfNote`
+  renders every step in both voices, now on the brand's applicant board too.
+- `test_on_behalf_acts.py` drives all five beside the owner's route on an
+  identical world and compares the rows; break-tested (dropping the freeze,
+  the evidence check or the record each fails it).
+- **A `FormData` through `api` needs the multipart header.** The client's
+  default is JSON, and the mark-received upload went out under it and failed
+  validation with nothing on screen. Caught driving the menu in a browser.
 
 ### The draft gate
 
@@ -3779,6 +3838,17 @@ whoever answered. `dispute` on the collaboration is the recourse.
   separately from the collaboration states because a frozen row is still
   sitting at `content_submitted` and would otherwise hide behind a number that
   says somebody is reviewing content.
+- **A refund ends the row, the same as a call-off.** Both resolutions write
+  `cancelled` with `active: False`, the note as `exit_reason` and
+  `cancellation_type` saying which (`dispute_refund` / `dispute`), and cancel
+  the payment. The refund branch used to cancel the payment and leave the
+  collaboration on the rung it was frozen on, so the creator's card said
+  "payment is being processed" about money that had gone back and the budget
+  went on counting it. One terminal state with the kind on a field, not a
+  sixth terminal state every read would have to learn; leaving the committed
+  set is what releases the budget. **The delivery rungs are disputable now**
+  — `DISPUTABLE_STATES` skipped them, so the one ladder with a courier in it
+  was the one that could not be argued about.
 
 ### Taking a live post down
 
@@ -6319,6 +6389,47 @@ setup-level rather than harness-level. Most fixtures register without
 `Secure`, so `requests` will not send them back over plain HTTP — the suite
 needs the backend behind TLS, or every authenticated call reads "Not
 authenticated".
+
+### The unit twin, which does gate a PR
+
+`tests/unit/test_lifecycle_harness.py` walks **every ladder × paid/barter**
+(venue, venue+draft, delivery, delivery+draft) from `applied` to `closed`
+through the real handlers against mongomock, and after every rung reads the
+row back and asks all three parties what happens next: the creator's card
+(`_creator_next_action`), the ladder and `_next_action`, the console's own
+button (`_console_next_step`), and the eight-stage flow in each voice. Plus
+the two dispute outcomes that end an arrangement, at five points across the
+ladders. It was committed red first and failed for exactly the reasons
+above: barter's dead payment rung, a delivery brief telling the creator to
+book a slot, a refund leaving the row live, and undisputable delivery rungs.
+`pipeline.py` and `test_lifecycle_walk.py` carry the same matrix for the
+integration suite (`LADDERS` by shape and money, `creator_next_action`, the
+delivery and barter-close steps, `raise_dispute` / `resolve_dispute`).
+
+- `_console_next_step` is the one reader of "next state, whose, may Advance
+  take it" for the console list and detail page, which had two copies, both
+  written before the delivery ladder: a delivery row read "owner: admin"
+  with an Advance the route refuses. `dispatched` is `_OWN_ROUTE_TRANSITIONS`
+  — it carries a tracking reference, so the page links to the dispatch form.
+- `ADVANCE_VERB` in `admin/shared.jsx` names that button in the queue and on
+  the page, and all three `STATE_META` tables carry the delivery states.
+- A barter collaboration has no `payout_due_at` (the card read "Payment due
+  by…" under an approval with no money in it, and the late-payout check asks
+  the same function), and `can_cancel_slot` follows the route's own
+  `slot_booked` precondition rather than the presence of a `slot_id`.
+
+### One rupee formatter
+
+`formatRupees`, `formatInr` and `formatCollabMoney` in `lib/compensation.js`
+are the only money formatting in the app. There were seven `formatRupees`
+definitions that disagreed (rounded, three-place paise, `null` versus `—`)
+and a dozen inline `₹${x.toLocaleString(…)}`; `test_money_display.py` fails
+a second definition and an inline format outside the marketing mock-ups.
+`formatCollabMoney` is why the creator's card reads "Barter · Dinner for two"
+where it used to print `agreed_amount ?? quoted_rate` with a rupee sign —
+the creator's own quote, as a fee nobody agreed. The row carries
+`compensation_type`, `barter_terms`, `partial_delivery` and `partial_note`,
+and the card draws the shortfall with the runner's note on it.
 
 ### Every route on the admin router has a caller
 

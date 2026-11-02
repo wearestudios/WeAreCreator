@@ -158,7 +158,12 @@ export default function CollaborationDetailPage() {
                 form.append("reason", body.reason);
                 if (body.tracking_url) form.append("tracking_url", body.tracking_url);
                 if (body.file) form.append("file", body.file);
-                return api.post(`/admin/collaborations/${id}/on-behalf/mark-received`, form);
+                // The client's default is JSON; a FormData sent under that
+                // header reaches the route as an unparseable body. The same
+                // explicit header the document and story-proof uploads use.
+                return api.post(`/admin/collaborations/${id}/on-behalf/mark-received`, form, {
+                    headers: { "Content-Type": "multipart/form-data" },
+                });
             }
             if (action.key === "accept") {
                 return api.post(`/admin/collaborations/${id}/on-behalf/accept`, {
