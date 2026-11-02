@@ -79,7 +79,7 @@ export const FACTS = {
  */
 export const AI_FEATURES = {
     campaignSummary: true,
-    nicheMatching: false,
+    nicheMatching: true,
     briefWriter: false,
 };
 
@@ -213,6 +213,9 @@ export const HOME = {
                 title: "Offer",
                 line: "Post the brief: what you want made, what it pays and how you may use it.",
                 creatorLine: "Creators see what it pays, what it asks for and how it may be used before they apply.",
+                // Rendered only while `aiLive(aiKey)`.
+                aiKey: "nicheMatching",
+                aiLine: "Matched creators apply — matched on what they post, not by follower count alone.",
                 screen: { kicker: "New brief", rows: ["Weekend brunch launch", "₹11,000 per creator", "1 reel · 3 stories"] },
                 yours: true,
             },
@@ -238,7 +241,8 @@ export const HOME = {
                 title: "Get paid",
                 line: "You approve the work, and the creator is paid within 7 days of your approval.",
                 creatorLine: "Paid to their UPI or bank within 7 days of your approval — all of it.",
-                // Rendered only while `aiLive("campaignSummary")`.
+                // Rendered only while `aiLive(aiKey)`.
+                aiKey: "campaignSummary",
                 aiLine: "An AI summary then reads your results in plain English, using only your real numbers.",
                 screen: { kicker: "Payment", rows: ["Work approved", "₹12,500 to Kiran", "Paid in full"] },
                 yours: true,
@@ -390,12 +394,17 @@ export const BRANDS = {
             kicker: "Shortlist · Weekend brunch launch",
             matchLabel: "match",
             quoteLabel: "quote",
+            // Drawn product UI, invented creators. `why` is shown only while
+            // `aiLive("nicheMatching")` — it is the line the product prints.
+            whyLabel: "Why this creator",
             rows: [
-                { initials: "KM", name: "Kiran M.", reasons: ["Food & drink", "Your city", "Posts reels"], quote: "₹14,000", match: "94%" },
-                { initials: "PR", name: "Priya R.", reasons: ["Food & drink", "Finished 6 of 6"], quote: "₹12,000", match: "88%" },
-                { initials: "TM", name: "Tanvi M.", reasons: ["Lifestyle", "Your city"], quote: "₹9,500", match: "81%" },
+                { initials: "KM", name: "Kiran M.", reasons: ["Food & drink", "Your city", "Posts reels"], why: "Casual dining · Kannada · English · shoots in Indiranagar", quote: "₹14,000", match: "94%" },
+                { initials: "PR", name: "Priya R.", reasons: ["Food & drink", "Finished 6 of 6"], why: "Cafés & coffee · English · shoots in Koramangala", quote: "₹12,000", match: "88%" },
+                { initials: "TM", name: "Tanvi M.", reasons: ["Lifestyle", "Your city"], why: "Bakery & desserts · Hindi · shoots in HSR Layout", quote: "₹9,500", match: "81%" },
             ],
         },
+        // Rendered only while `aiLive("nicheMatching")`.
+        aiLine: "Creators are matched on what they actually post — cuisine, language and neighbourhood — and you see why each one fits.",
         // The brief: "Messaging runs here". There is no brand–creator
         // messaging; on a brief we run, we are the ones talking to creators.
         closing: "You never see a phone number or an email. We handle the conversations.",
@@ -580,6 +589,8 @@ export const CREATORS = {
         label: "Briefs that fit",
         title: "See the fee before you apply",
         lead: "Every brief comes from a brand we have checked, and shows what it pays, what it asks for and how the work may be used.",
+        // Rendered only while `aiLive("nicheMatching")`.
+        aiLine: "Briefs are matched to what you post, so you see the ones that suit you first.",
         card: {
             kicker: "Brief · Food & drink",
             title: "Weekend brunch launch",

@@ -49,6 +49,7 @@ import { Navbar } from "@/components/Navbar";
 import { CREATOR_ONBOARDING as IDS } from "@/constants/testIds";
 import InstagramConnect from "@/components/creator/InstagramConnect";
 import AddressPicker from "@/components/AddressPicker";
+import TagEditor from "@/components/tags/TagEditor";
 import { CREATOR_TAXONOMY, INDIAN_CITIES } from "@/lib/taxonomy";
 import {
     Select,
@@ -751,6 +752,13 @@ export default function CreatorOnboarding() {
                             placeholder="e.g. streetwear, home workouts — press Enter"
                         />
                     </Section>
+
+                    {/* **Tags from one vocabulary**, which is what matching
+                        reads. With Instagram connected, the model suggests
+                        them from your captions; without it, this is where a
+                        creator picks them. Saved on its own button — a tag
+                        set is not part of the profile's completeness. */}
+                    <TagEditor endpoint="/creator/tags" decide title="Tags briefs are matched on" />
 
                     <Section id="platforms" title="Where you post">
                         <div className="grid gap-3 sm:grid-cols-2">

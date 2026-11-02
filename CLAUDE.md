@@ -4420,10 +4420,51 @@ drawn from the `dashboard` block of `GET /brand/campaigns/{id}/analytics`.
   field** — the one relaxation, and every other "3x" is still refused.
   Prompt is `campaign_summary.v2`.
 
+### Niche tagging and matching
+
+`niche_tagging.py` (pure) is the vocabulary and the match; `lib/niches.js`
+mirrors the vocabulary with a drift test. Niches are grouped by campaign
+category (food and drink first, fifteen of them), plus six languages, five
+tones and 41 Bengaluru localities. **Nothing outside it is ever stored**: the
+model's reply, a person's save and a brief's confirmation all go through
+`_keep`, and an unknown value is dropped rather than refused.
+
+- **Read on connect and weekly** (`tag_creator_from_instagram`, the Instagram
+  loop), from the last 24 posts under the scope we already hold
+  (`instagram_business_basic` covers `/me/media`). The format mix and cadence
+  are counted; niche (with confidence ≥ 0.5), language, tone and areas come
+  from the model reading **captions only** — thumbnail vision is behind
+  `AI_TAGGING_VISION`, off and not built. Captions are untrusted, wrapped as
+  data, and an area survives only if a caption names it. Audience top cities
+  are stored where Instagram gives them and skipped silently otherwise.
+- **What a person said beats what the model guessed.** `creator_tags` keeps
+  `ai`, `confirmed` and `rejected` apart; `effective_tags` lays confirmed over
+  the guesses and keeps a removal removed through every re-read. Disconnecting
+  Instagram (`_drop_ai_tags`) deletes everything it gave and keeps what the
+  creator confirmed. A creator without Instagram picks tags in onboarding;
+  an admin edits the same confirmed set.
+- **Filters read stored fields** (`tag_niches`, `tag_languages`, `tag_areas`,
+  `tag_formats`, written by `flattened` on every save, indexed) — never a
+  model at query time. Applicants and suggestions filter on niche, language,
+  area, format, tier and reliability.
+- **A brief's tags are suggested, never applied.** After a save the model
+  suggests niche, language and area (the area only if the venue text names
+  it); they sit in `tag_suggestions` until the brand confirms them in
+  `BriefTags`. `tags` is the only thing matching reads.
+- `match_score` is five components that sum to the score
+  (`MATCH_WEIGHTS`: niche 35, language 20, area 20, tier 15, reliability 10),
+  unknowns at the midpoint, with a "Why this creator" line naming only what
+  matched. The creator feed adds the same three tags to
+  `score_campaign_for_creator` — still no money term, and barter still opt-in.
+- `backfill_creator_tags.py` is dry-run by default and batched under the day's
+  AI ceiling. The public site's three matching lines render only while
+  `nicheMatching` is on; the step-01 line says "not by follower count alone",
+  because tier fit is a component and the site may not claim otherwise.
+
 ### The public site's switches
 
 `AI_FEATURES` in `content/marketing.js` (`campaignSummary` on since the
-dashboard shipped; `nicheMatching` and `briefWriter` off) and `aiLive(key)`, the only way a page may read them.
+dashboard shipped, `nicheMatching` since matching did; `briefWriter` off) and `aiLive(key)`, the only way a page may read them.
 A switch goes true only in the PR that ships the feature to brands or
 creators; if `AI_ENABLED` goes false in production these go false too, because
 a bundle cannot read the server's environment. `test_ai_switches.py` fails CI

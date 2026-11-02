@@ -32,7 +32,7 @@ import {
 } from "@/components/marketing/SiteParts";
 import StickyCta from "@/components/marketing/StickyCta";
 import { CREATORS_PAGE as IDS } from "@/constants/testIds";
-import { ASK, CREATORS } from "@/content/marketing";
+import { ASK, CREATORS, aiLive } from "@/content/marketing";
 
 /** The navy band: the three states the record moves through, the payout
  * window drawn, and the figure. */
@@ -103,6 +103,15 @@ export default function ForCreators() {
                 <Wrap className="grid gap-12 py-20 md:py-28 lg:grid-cols-12 lg:gap-16">
                     <div className="flex flex-col lg:col-span-5">
                         <SectionHead n={1} label={briefs.label} title={briefs.title} lead={briefs.lead} />
+                        {aiLive("nicheMatching") ? (
+                            <p
+                                data-testid={IDS.briefsAi}
+                                data-track-section="briefs-ai-matching"
+                                className="mkt-body mt-6 text-foreground"
+                            >
+                                {briefs.aiLine}
+                            </p>
+                        ) : null}
                         <Illustration name="creators-cafe-shoot" className="order-first mb-10 lg:order-none lg:mb-0 lg:mt-10" />
                     </div>
                     <div className="lg:col-span-7 lg:pt-16">

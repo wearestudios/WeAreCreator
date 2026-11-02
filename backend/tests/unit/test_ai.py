@@ -436,6 +436,8 @@ class TestCeilings:
 # the new one had.
 PROMPT_FINGERPRINTS = {
     "campaign_summary.v2": "ed480f3a76b24581",
+    "creator_tagging.v1": "cd7a54fee455ac22",
+    "brief_tagging.v1": "ce381cac9b3f8d05",
 }
 
 

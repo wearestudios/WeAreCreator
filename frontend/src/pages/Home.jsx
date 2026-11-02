@@ -205,7 +205,7 @@ function HowItWorks({ n }) {
                                             <dd className="mkt-body mt-1 text-muted-foreground">{step.creatorLine}</dd>
                                         </div>
                                     </dl>
-                                    {step.aiLine && aiLive("campaignSummary") ? (
+                                    {step.aiLine && aiLive(step.aiKey) ? (
                                         <p
                                             data-testid={IDS.stepAi(step.key)}
                                             data-track-section={`step-${step.key}-ai`}

@@ -77,7 +77,19 @@ export default function ForBrands() {
                         <Illustration name="why-roster-tablet" className="order-first lg:order-none lg:col-span-5" />
                     </div>
                     <div className="mt-12 max-w-4xl">
-                        <ShortlistCard card={shortlist.card} rowTestid={IDS.shortlistRow} />
+                        {/* Only while matching is shipped: the "Why this creator"
+                            line and the sentence about it describe what the
+                            brand's own applicant board prints. */}
+                        {aiLive("nicheMatching") ? (
+                            <p
+                                data-testid={IDS.shortlistAi}
+                                data-track-section="shortlist-ai-matching"
+                                className="mkt-body mb-6 text-foreground"
+                            >
+                                {shortlist.aiLine}
+                            </p>
+                        ) : null}
+                        <ShortlistCard card={shortlist.card} rowTestid={IDS.shortlistRow} showWhy={aiLive("nicheMatching")} />
                         <p className="mkt-body mt-6 text-foreground">{shortlist.closing}</p>
                     </div>
                 </Wrap>

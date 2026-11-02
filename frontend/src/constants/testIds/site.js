@@ -13,6 +13,8 @@ export const BRANDS_PAGE = {
 	// The AI summary line under the example report, while its switch is on.
 	reportAi: 'brands-report-ai',
 	shortlistRow: (i) => `brands-shortlist-row-${i}`,
+	// The matching line above the example shortlist, while its switch is on.
+	shortlistAi: 'brands-shortlist-ai',
 	pricing: 'brands-pricing',
 	pricingCard: (key) => `brands-pricing-${key}`,
 	fee: 'brands-pricing-fee',
@@ -35,6 +37,8 @@ export const CREATORS_PAGE = {
 	ctaHow: 'creators-cta-how',
 	ctaBottom: 'creators-cta-bottom',
 	briefs: 'creators-briefs',
+	// The matching line under "Briefs that fit", while its switch is on.
+	briefsAi: 'creators-briefs-ai',
 	money: 'creators-money',
 	moneyAmount: 'creators-money-amount',
 	moneyState: (i) => `creators-money-state-${i}`,

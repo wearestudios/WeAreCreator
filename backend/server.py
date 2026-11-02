@@ -155,6 +155,7 @@ db = client[os.environ["DB_NAME"]]
 # `server.db` for an in-memory database is logging there too.
 import ai  # noqa: E402
 import campaign_summary  # noqa: E402
+import niche_tagging  # noqa: E402
 
 ai.configure(lambda: db)
 
@@ -8841,6 +8842,9 @@ async def finish_instagram_connect(
         creator_oid,
         after={"ig_user_id": ig_user_id, "username": stats.get("username")},
     )
+    # Tag from their last 24 posts, in the background — connecting is not
+    # something to make somebody wait on a model for.
+    _tag_in_background(creator_oid)
     fresh = await db.instagram_connections.find_one({"_id": doc["_id"]})
     return _serialize_instagram(fresh)
 
@@ -8874,6 +8878,9 @@ async def disconnect_instagram(user: dict = Depends(require_roles("creator"))):
         creator_oid,
         before={"ig_user_id": existing.get("ig_user_id")},
     )
+    # What was read from Instagram goes with the connection; what the creator
+    # confirmed is theirs and stays.
+    await _drop_ai_tags(creator_oid)
     return _serialize_instagram(None)
 
 
@@ -13365,6 +13372,9 @@ async def create_brand_campaign(
             note="Published without review — the brand is trusted.",
             **_campaign_audit_context(doc),
         )
+    # Tags for matching, suggested in the background. Nothing applies until
+    # the brand confirms them.
+    _suggest_in_background(result.inserted_id)
     return {
         **_serialize_brand_campaign(doc, 0, payout_default=await creator_payout_days()),
         # **What the brand is getting, said at the moment they post.** All
@@ -13578,6 +13588,7 @@ async def update_brand_campaign(
     counts = await _brand_applicant_counts_for([updated])
     filled_map = await _filled_counts_for([doc["_id"]])
     awaiting = await _awaiting_brand_counts([doc["_id"]])
+    _suggest_in_background(doc["_id"])
     return _serialize_brand_campaign(
         updated,
         counts.get(doc["_id"], 0),
@@ -14974,6 +14985,9 @@ def _brand_visible_creator(
         # long-form field on this surface, and the only one they chose the
         # words of.
         "about": profile.get("about"),
+        # What they post about, in the controlled vocabulary — keys only, no
+        # confidences and no record of who confirmed what.
+        "tags": _public_creator_tags(profile),
         "follower_count": profile.get("follower_count"),
         **_follower_provenance(profile),
         "engagement_rate": profile.get("engagement_rate"),
@@ -15094,10 +15108,468 @@ def _serialize_applicant(
     }
 
 
+# ---------------------------------------------------------------------------
+# Niche tags: what creators post, what briefs want, and why they match
+# ---------------------------------------------------------------------------
+#
+# The vocabulary, the model's schemas and the match score live in
+# `niche_tagging.py` (pure). Here: storage on the creator profile, the weekly
+# read of a creator's last 24 captions, the routes a creator, an admin and a
+# brand edit tags through, and the filters — which read stored fields only,
+# never a model at query time.
+
+NICHE_LITERAL = niche_tagging.NICHE_LITERAL
+LANGUAGE_LITERAL = niche_tagging.LANGUAGE_LITERAL
+TONE_LITERAL = niche_tagging.TONE_LITERAL
+AREA_LITERAL = niche_tagging.AREA_LITERAL
+
+# Captions only. Reading the thumbnails would need image input the AI module
+# does not send yet; the flag exists so turning it on is a decision, and until
+# that path is built it logs and stays on captions.
+CREATOR_TAGGING_VISION = (os.environ.get("AI_TAGGING_VISION") or "").strip().lower() in ("1", "true", "yes")
+CREATOR_TAG_REFRESH_DAYS = 7
+
+
+async def _write_creator_tags(user_id, creator_tags: dict) -> dict:
+    """Store the tags and the flattened fields filters read, in one write."""
+    now = datetime.now(timezone.utc)
+    creator_tags = {**creator_tags, "updated_at": now}
+    await db.creator_profiles.update_one(
+        {"user_id": user_id},
+        {"$set": {"creator_tags": creator_tags, **niche_tagging.flattened(creator_tags)}},
+    )
+    return creator_tags
+
+
+async def _creator_media(conn: dict, token: str) -> list:
+    """The creator's last 24 posts: caption, type, link, time, thumbnail.
+    Never comments or messages — this API is not asked for either."""
+    listing = await _instagram_get(
+        f"/{INSTAGRAM_MEDIA_API_VERSION}/me/media",
+        {
+            "fields": "caption,media_type,media_product_type,permalink,timestamp,thumbnail_url",
+            "limit": niche_tagging.POSTS_PER_TAGGING,
+            "access_token": token,
+        },
+    )
+    return (listing.get("data") or [])[: niche_tagging.POSTS_PER_TAGGING]
+
+
+async def _audience_top_cities(conn: dict, token: str) -> Optional[list]:
+    """Follower cities, where Instagram will give them; `None` silently when
+    it will not (small accounts, missing permission, an API change)."""
+    try:
+        data = await _instagram_get(
+            f"/{INSTAGRAM_MEDIA_API_VERSION}/{conn.get('ig_user_id') or 'me'}/insights",
+            {
+                "metric": "follower_demographics",
+                "period": "lifetime",
+                "metric_type": "total_value",
+                "breakdown": "city",
+                "access_token": token,
+            },
+        )
+        rows = (((data.get("data") or [{}])[0].get("total_value") or {}).get("breakdowns") or [{}])[0].get("results") or []
+        ranked = sorted(rows, key=lambda r: -(r.get("value") or 0))[:5]
+        return [(r.get("dimension_values") or [""])[0].split(",")[0].strip() for r in ranked if r.get("dimension_values")]
+    except Exception:
+        return None
+
+
+async def tag_creator_from_instagram(user_id, *, force: bool = False) -> dict:
+    """Read a creator's last 24 captions and tag them. Never raises.
+
+    The format mix and posting cadence are counted, not inferred; the niche,
+    language, tone and areas come from the model, held to the vocabulary and
+    — for areas — to a caption that names the place. At most once a week per
+    creator unless forced, which is the 24-posts-a-week cap.
+    """
+    if not instagram_configured():
+        return {"tagged": False, "reason": "instagram_off"}
+    conn = await db.instagram_connections.find_one({"user_id": user_id})
+    if not conn or conn.get("status") != "connected":
+        return {"tagged": False, "reason": "not_connected"}
+    token = _decrypt_token(conn.get("access_token"))
+    if not token:
+        return {"tagged": False, "reason": "no_token"}
+    profile = await db.creator_profiles.find_one({"user_id": user_id}) or {}
+    current = profile.get("creator_tags") or {}
+    last = _as_utc((current.get("ai") or {}).get("updated_at") or current.get("read_at"))
+    now = datetime.now(timezone.utc)
+    if not force and last and now - last < timedelta(days=CREATOR_TAG_REFRESH_DAYS):
+        return {"tagged": False, "reason": "fresh"}
+    try:
+        media = await _creator_media(conn, token)
+    except HTTPException as exc:
+        return {"tagged": False, "reason": f"instagram: {exc.detail}"[:120]}
+
+    mix = niche_tagging.format_mix(media)
+    stamps = [_parse_ig_timestamp(m.get("timestamp")) for m in media]
+    updated = {
+        **current,
+        "formats": niche_tagging.formats_posted(mix),
+        "format_mix": mix,
+        "posts_per_week": niche_tagging.posts_per_week(stamps),
+        "posts_read": len(media),
+        "read_at": now,
+    }
+    cities = await _audience_top_cities(conn, token)
+    if cities:
+        updated["audience_top_cities"] = cities
+
+    if CREATOR_TAGGING_VISION:
+        logger.warning("AI_TAGGING_VISION is set, but thumbnail reading is not built; tagging from captions")
+    reason = None
+    if ai.ai_configured() and media:
+        try:
+            result = await ai.generate_json(
+                niche_tagging.CREATOR_PROMPT.task,
+                niche_tagging.CREATOR_PROMPT.system,
+                niche_tagging.caption_payload(media),
+                niche_tagging.CreatorTagging,
+                prompt_version=niche_tagging.CREATOR_PROMPT.version,
+                max_output_tokens=1500,
+                timeout_s=30,
+            )
+            status = ai.ai_status()
+            updated["ai"] = {
+                **niche_tagging.ground_creator_tags(result, media),
+                "model": status["model"],
+                "prompt_version": niche_tagging.CREATOR_PROMPT.version,
+                "updated_at": now,
+            }
+            updated["source"] = "ai"
+        except ai.AIUnavailable as exc:
+            reason = f"ai: {exc.reason}"
+    else:
+        reason = "ai_off" if media else "no_posts"
+    await _write_creator_tags(user_id, updated)
+    return {"tagged": "ai" in updated and reason is None, "reason": reason, "posts": len(media)}
+
+
+_TAG_TASKS: set = set()
+
+
+def _tag_in_background(user_id) -> None:
+    """On connect: tag without making the creator wait on a model."""
+    async def run():
+        try:
+            await tag_creator_from_instagram(user_id, force=True)
+        except Exception:  # pragma: no cover — tagging never fails a connect
+            logger.exception("Creator tagging failed")
+
+    try:
+        task = asyncio.get_running_loop().create_task(run())
+    except RuntimeError:  # pragma: no cover
+        return
+    _TAG_TASKS.add(task)
+    task.add_done_callback(_TAG_TASKS.discard)
+
+
+async def refresh_creator_tags(limit: int = 50) -> dict:
+    """The weekly pass: every connected creator whose tags are a week old.
+    Bounded by `limit` per pass and by the AI module's daily ceiling."""
+    report = {"considered": 0, "tagged": 0, "skipped": 0}
+    if not instagram_configured():
+        report["skipped_all"] = "instagram_off"
+        return report
+    cutoff = datetime.now(timezone.utc) - timedelta(days=CREATOR_TAG_REFRESH_DAYS)
+    conns = await db.instagram_connections.find({"status": "connected"}).to_list(length=2000)
+    for conn in conns:
+        if report["considered"] >= limit:
+            break
+        profile = await db.creator_profiles.find_one({"user_id": conn["user_id"]}, {"creator_tags": 1}) or {}
+        ct = profile.get("creator_tags") or {}
+        last = _as_utc(ct.get("read_at"))
+        if last and last > cutoff:
+            continue
+        report["considered"] += 1
+        out = await tag_creator_from_instagram(conn["user_id"])
+        if out.get("tagged"):
+            report["tagged"] += 1
+        else:
+            report["skipped"] += 1
+            if (out.get("reason") or "").startswith("ai: daily_limit"):
+                break
+    return report
+
+
+async def _drop_ai_tags(user_id) -> None:
+    """On disconnect: everything read from Instagram goes, what the creator
+    confirmed stays — they said it, Instagram did not."""
+    profile = await db.creator_profiles.find_one({"user_id": user_id}, {"creator_tags": 1}) or {}
+    ct = dict(profile.get("creator_tags") or {})
+    for key in ("ai", "formats", "format_mix", "posts_per_week", "posts_read", "read_at",
+                "audience_top_cities", "source"):
+        ct.pop(key, None)
+    await _write_creator_tags(user_id, ct)
+
+
+def _public_creator_tags(profile: Optional[dict]) -> dict:
+    """Tags as a brand or a creator reads them: keys, no confidences, no
+    record of who confirmed what."""
+    eff = niche_tagging.effective_tags((profile or {}).get("creator_tags"))
+    return {
+        "niche": [n["tag"] for n in eff["niche"]],
+        "languages": eff["languages"],
+        "tone": eff["tone"],
+        "shoots_in": eff["shoots_in"],
+        "formats": eff["formats"],
+    }
+
+
+def _creator_tags_payload(profile: Optional[dict], connected: bool) -> dict:
+    ct = (profile or {}).get("creator_tags") or {}
+    return {
+        "vocabulary": niche_tagging.vocabulary(),
+        "effective": niche_tagging.effective_tags(ct),
+        "confirmed": niche_tagging.clean_tag_set(ct.get("confirmed")),
+        "suggestions": niche_tagging.suggestions(ct),
+        "formats": ct.get("formats") or [],
+        "posts_per_week": ct.get("posts_per_week"),
+        "audience_top_cities": ct.get("audience_top_cities") or [],
+        "instagram_connected": connected,
+        "read_at": _iso(ct.get("read_at")),
+        "ai_on": ai.ai_configured(),
+    }
+
+
+class TagSetPayload(BaseModel):
+    """A person's tags. Unknown values are dropped by `clean_tag_set`, not
+    refused — a stale screen offering a retired tag should not fail a save."""
+
+    niche: list[str] = Field(default_factory=list, max_length=12)
+    languages: list[str] = Field(default_factory=list, max_length=6)
+    tone: list[str] = Field(default_factory=list, max_length=5)
+    shoots_in: list[str] = Field(default_factory=list, max_length=20)
+
+
+@creator_router.get("/tags")
+async def get_creator_tags(user: dict = Depends(require_roles("creator"))):
+    oid = ObjectId(user["_id"])
+    profile = await db.creator_profiles.find_one({"user_id": oid})
+    conn = await db.instagram_connections.find_one({"user_id": oid}, {"status": 1})
+    return _creator_tags_payload(profile, bool(conn and conn.get("status") == "connected"))
+
+
+async def _set_confirmed_tags(user_id, payload: TagSetPayload, by: str) -> dict:
+    profile = await db.creator_profiles.find_one({"user_id": user_id})
+    if not profile:
+        raise HTTPException(status_code=404, detail="Creator not found")
+    ct = dict(profile.get("creator_tags") or {})
+    ct["confirmed"] = niche_tagging.clean_tag_set(payload.model_dump())
+    ct["confirmed_by"] = by
+    # A suggestion the person removed from their set stays removed.
+    rejected = niche_tagging.clean_tag_set(ct.get("rejected"))
+    for kind in niche_tagging.TAG_KINDS:
+        guessed = [g["tag"] for g in (ct.get("ai") or {}).get("niche") or []] if kind == "niche" else (ct.get("ai") or {}).get(kind) or []
+        previously = (profile.get("creator_tags") or {}).get("confirmed", {}).get(kind) or []
+        for v in previously:
+            if v not in ct["confirmed"][kind] and v in guessed and v not in rejected[kind]:
+                rejected[kind].append(v)
+    ct["rejected"] = rejected
+    return await _write_creator_tags(user_id, ct)
+
+
+@creator_router.put("/tags")
+async def put_creator_tags(payload: TagSetPayload, user: dict = Depends(require_roles("creator"))):
+    """The creator's own tags. They override the model and survive every
+    refresh; the model's suggestions sit beside them until accepted or
+    removed."""
+    oid = ObjectId(user["_id"])
+    await _set_confirmed_tags(oid, payload, "creator")
+    await audit(user, "creator.tags", "creator_profile", oid, after=payload.model_dump())
+    profile = await db.creator_profiles.find_one({"user_id": oid})
+    conn = await db.instagram_connections.find_one({"user_id": oid}, {"status": 1})
+    return _creator_tags_payload(profile, bool(conn and conn.get("status") == "connected"))
+
+
+@creator_router.post("/tags/suggestions/{kind}/{tag}/{decision}")
+async def decide_creator_tag_suggestion(
+    kind: str, tag: str, decision: Literal["accept", "remove"],
+    user: dict = Depends(require_roles("creator")),
+):
+    """One chip under "Suggested from your posts": keep it, or take it away
+    for good."""
+    if kind not in niche_tagging.TAG_KINDS or tag not in niche_tagging.TAG_KINDS[kind]:
+        raise HTTPException(status_code=404, detail="Unknown tag")
+    oid = ObjectId(user["_id"])
+    profile = await db.creator_profiles.find_one({"user_id": oid}) or {}
+    ct = dict(profile.get("creator_tags") or {})
+    confirmed = niche_tagging.clean_tag_set(ct.get("confirmed"))
+    rejected = niche_tagging.clean_tag_set(ct.get("rejected"))
+    if decision == "accept":
+        if tag not in confirmed[kind]:
+            confirmed[kind].append(tag)
+        rejected[kind] = [t for t in rejected[kind] if t != tag]
+    else:
+        confirmed[kind] = [t for t in confirmed[kind] if t != tag]
+        if tag not in rejected[kind]:
+            rejected[kind].append(tag)
+    ct.update(confirmed=confirmed, rejected=rejected, confirmed_by=ct.get("confirmed_by") or "creator")
+    await _write_creator_tags(oid, ct)
+    await audit(user, f"creator.tag_{decision}", "creator_profile", oid, after={"kind": kind, "tag": tag})
+    profile = await db.creator_profiles.find_one({"user_id": oid})
+    conn = await db.instagram_connections.find_one({"user_id": oid}, {"status": 1})
+    return _creator_tags_payload(profile, bool(conn and conn.get("status") == "connected"))
+
+
+# --- Briefs -----------------------------------------------------------------
+
+
+def _campaign_tags_block(campaign: dict) -> dict:
+    """The brief's tags: what was confirmed, and what is suggested and not."""
+    confirmed = campaign.get("tags") or {}
+    suggested = campaign.get("tag_suggestions") or {}
+    return {
+        "confirmed": {k: list(confirmed.get(k) or []) for k in ("niche", "languages", "areas")},
+        "suggested": {
+            k: [v for v in suggested.get(k) or [] if v not in (confirmed.get(k) or [])]
+            for k in ("niche", "languages", "areas")
+        },
+        "suggested_at": _iso(suggested.get("at")),
+        "ai_on": ai.ai_configured(),
+    }
+
+
+async def _venue_text(campaign: dict) -> str:
+    """Where the brief happens, in words: its area and the brand's outlets.
+    Read from what the brand saved, never from the model."""
+    parts = [campaign.get("area") or ""]
+    profile = await db.brand_profiles.find_one({"user_id": campaign.get("brand_id")}, {"outlets": 1}) or {}
+    for outlet in profile.get("outlets") or []:
+        parts += [outlet.get("area") or "", outlet.get("address") or ""]
+    return " · ".join(p for p in parts if p)
+
+
+async def suggest_campaign_tags(campaign: dict, actor: Optional[dict] = None) -> dict:
+    """Ask the model for the brief's tags and store them as **suggestions**.
+    Nothing is applied: `tags` only changes when a person confirms."""
+    if not ai.ai_configured():
+        return _campaign_tags_block(campaign)
+    venue = await _venue_text(campaign)
+    try:
+        result = await ai.generate_json(
+            niche_tagging.BRIEF_PROMPT.task,
+            niche_tagging.BRIEF_PROMPT.system,
+            niche_tagging.brief_payload(campaign, venue),
+            niche_tagging.BriefTagging,
+            prompt_version=niche_tagging.BRIEF_PROMPT.version,
+            max_output_tokens=800,
+            account=str(campaign.get("brand_id")) if campaign.get("brand_id") else None,
+        )
+    except ai.AIUnavailable:
+        return _campaign_tags_block(campaign)
+    suggested = {
+        **niche_tagging.ground_brief_tags(result, venue),
+        "at": datetime.now(timezone.utc),
+        "prompt_version": niche_tagging.BRIEF_PROMPT.version,
+    }
+    await db.campaigns.update_one({"_id": campaign["_id"]}, {"$set": {"tag_suggestions": suggested}})
+    return _campaign_tags_block({**campaign, "tag_suggestions": suggested})
+
+
+def _suggest_in_background(campaign_id) -> None:
+    """After a brief is saved: suggest without holding the save."""
+    if not ai.ai_configured():
+        return
+
+    async def run():
+        try:
+            campaign = await db.campaigns.find_one({"_id": campaign_id})
+            if campaign:
+                await suggest_campaign_tags(campaign)
+        except Exception:  # pragma: no cover
+            logger.exception("Brief tag suggestion failed")
+
+    try:
+        task = asyncio.get_running_loop().create_task(run())
+    except RuntimeError:  # pragma: no cover
+        return
+    _TAG_TASKS.add(task)
+    task.add_done_callback(_TAG_TASKS.discard)
+
+
+class CampaignTagsPayload(BaseModel):
+    niche: list[str] = Field(default_factory=list, max_length=6)
+    languages: list[str] = Field(default_factory=list, max_length=4)
+    areas: list[str] = Field(default_factory=list, max_length=6)
+
+
+@brand_router.get("/campaigns/{campaign_id}/tags")
+async def get_campaign_tags(campaign_id: str, user: dict = Depends(require_roles(*BRAND_ROLES, "admin"))):
+    campaign = await _own_campaign_or_404(campaign_id, user)
+    return {**_campaign_tags_block(campaign), "vocabulary": niche_tagging.vocabulary()}
+
+
+@brand_router.post("/campaigns/{campaign_id}/tags/suggest")
+async def suggest_campaign_tags_now(campaign_id: str, user: dict = Depends(require_roles(*BRAND_ROLES, "admin"))):
+    campaign = await _own_campaign_or_404(campaign_id, user)
+    return {**await suggest_campaign_tags(campaign, user), "vocabulary": niche_tagging.vocabulary()}
+
+
+@brand_router.put("/campaigns/{campaign_id}/tags")
+async def confirm_campaign_tags(
+    campaign_id: str, payload: CampaignTagsPayload, user: dict = Depends(require_roles(*BRAND_ROLES, "admin"))
+):
+    """The brand's confirmation — the only way a brief gets tags."""
+    campaign = await _own_campaign_or_404(campaign_id, user)
+    tags = {
+        "niche": niche_tagging._keep(payload.niche, niche_tagging.NICHES),
+        "languages": niche_tagging._keep(payload.languages, niche_tagging.LANGUAGES),
+        "areas": niche_tagging._keep(payload.areas, niche_tagging.AREAS),
+    }
+    await db.campaigns.update_one({"_id": campaign["_id"]}, {"$set": {"tags": tags}})
+    await audit(user, "campaign.tags", "campaign", campaign["_id"], after=tags, **_campaign_audit_context(campaign))
+    return {**_campaign_tags_block({**campaign, "tags": tags}), "vocabulary": niche_tagging.vocabulary()}
+
+
+# --- Matching ---------------------------------------------------------------
+
+
+def _match_score(profile: Optional[dict], campaign: dict, *, brand: Optional[dict] = None,
+                 reliability_band: Optional[str] = None) -> dict:
+    """Why this creator, for this brief: niche, language, area, follower tier
+    and reliability, each a component that sums to the score."""
+    tags = niche_tagging.effective_tags((profile or {}).get("creator_tags"))
+    low, high, _tier, _stated = _wanted_reach_tier(campaign, brand)
+    followers = (profile or {}).get("follower_count")
+    fit = _fit_within(followers, low, high) if isinstance(followers, int) and followers > 0 else None
+    return niche_tagging.match_score(
+        tags, campaign.get("tags") or {}, tier_fit=fit, reliability_band=reliability_band
+    )
+
+
+def _creator_tag_filter(
+    niche: Optional[str], language: Optional[str], area: Optional[str],
+    fmt: Optional[str], tier: Optional[str],
+) -> dict:
+    """A Mongo filter on the stored tag fields. Never a call to a model."""
+    q: dict = {}
+    if niche:
+        q["tag_niches"] = niche
+    if language:
+        q["tag_languages"] = language
+    if area:
+        q["tag_areas"] = area
+    if fmt:
+        q["tag_formats"] = fmt
+    if tier and tier in FOLLOWER_TIER_KEYS:
+        low, high = _tier_bounds(tier)
+        q["follower_count"] = {"$gte": low, **({"$lt": high} if high else {})}
+    return q
+
+
 @brand_router.get("/campaigns/{campaign_id}/applicants")
 async def list_campaign_applicants(
     campaign_id: str,
     user: dict = Depends(require_roles(*BRAND_ROLES, "admin")),
+    niche: Optional[str] = None,
+    language: Optional[str] = None,
+    area: Optional[str] = None,
+    format: Optional[str] = None,
+    tier: Optional[str] = None,
+    reliability: Optional[str] = None,
 ):
     """Who applied, what they pitched, what they want to be paid.
 
@@ -15121,6 +15593,19 @@ async def list_campaign_applicants(
         .sort("created_at", -1)
         .to_list(length=500)
     )
+    # Filters on the stored tags and follower count: a query, never a model.
+    # Captured now: `reliability` is reused below for the history lookup.
+    reliability_filter = reliability
+    tag_filter = _creator_tag_filter(niche, language, area, format, tier)
+    filtered = bool(tag_filter or reliability_filter)
+    if tag_filter:
+        keep = {
+            p["user_id"]
+            async for p in db.creator_profiles.find(
+                {"user_id": {"$in": [c["creator_id"] for c in collabs]}, **tag_filter}, {"user_id": 1}
+            )
+        }
+        collabs = [c for c in collabs if c["creator_id"] in keep]
 
     creator_ids = list({c["creator_id"] for c in collabs})
     users_by_id: dict = {}
@@ -15155,6 +15640,17 @@ async def list_campaign_applicants(
         )
         for c in collabs
     ]
+    brand_doc = (await _load_brand_map([campaign["brand_id"]])).get(campaign["brand_id"]) or {}
+    for row, c in zip(rows, collabs):
+        row["match"] = _match_score(
+            profiles_by_uid.get(c["creator_id"]), campaign, brand=brand_doc,
+            reliability_band=_reliability_band(reliability.get(c["creator_id"]))["band"],
+        )
+    if reliability_filter:
+        rows = [
+            r for r in rows
+            if ((r.get("creator") or {}).get("reliability") or {}).get("band") == reliability_filter
+        ]
 
     # Invited and still deciding. The brand asked for these people; a board
     # that showed nothing until one of them pitched made an invite look like it
@@ -15189,6 +15685,10 @@ async def list_campaign_applicants(
         },
         "applicants": rows,
         "invited": invited,
+        # The brief's confirmed tags, which the "Why this creator" lines
+        # are matched against, and whether any filter is narrowing the list.
+        "tags": _campaign_tags_block(campaign),
+        "filtered": filtered,
         "totals": {
             "all": len(rows),
             "invited": len(invited),
@@ -17379,6 +17879,11 @@ async def _suggest_creators_for_campaign(
     max_followers: Optional[int] = None,
     limit: int = 20,
     offset: int = 0,
+    language: Optional[str] = None,
+    area: Optional[str] = None,
+    fmt: Optional[str] = None,
+    tier: Optional[str] = None,
+    reliability_band: Optional[str] = None,
 ) -> dict:
     """The ranked shortlist for a brief, with the filters applied first.
 
@@ -17400,6 +17905,8 @@ async def _suggest_creators_for_campaign(
         if max_followers is not None:
             band["$lte"] = int(max_followers)
         query["follower_count"] = band
+    # The tag filters read stored fields — never a model at query time.
+    query.update(_creator_tag_filter(None, language, area, fmt, tier))
 
     # Anyone already asked, or already applied, is not a suggestion.
     on_campaign = {
@@ -17454,8 +17961,15 @@ async def _suggest_creators_for_campaign(
                 "matched_genres": result["matched_genres"],
                 "unknown_signals": result["unknown_signals"],
                 "campaigns_delivered": (history.get(profile["user_id"]) or {}).get("completed", 0),
+                # "Why this creator", from the tags: niche, language, area.
+                "match": _match_score(
+                    profile, campaign, brand=brand,
+                    reliability_band=_reliability_band(reliability.get(profile["user_id"]))["band"],
+                ),
             }
         )
+    if reliability_band:
+        scored = [r for r in scored if (r.get("reliability") or {}).get("band") == reliability_band]
 
     # Highest score first; ties broken by the bigger audience, then by name so
     # the order is stable across two identical requests.
@@ -17506,6 +18020,11 @@ async def brand_suggested_creators(
     max_followers: Optional[int] = None,
     limit: int = 20,
     offset: int = 0,
+    language: Optional[str] = None,
+    area: Optional[str] = None,
+    format: Optional[str] = None,
+    tier: Optional[str] = None,
+    reliability: Optional[str] = None,
     user: dict = Depends(require_roles(*BRAND_ROLES, "admin")),
 ):
     """Verified creators ranked for this brief, each with the reason.
@@ -17532,6 +18051,11 @@ async def brand_suggested_creators(
         max_followers=max_followers,
         limit=limit,
         offset=offset,
+        language=language,
+        area=area,
+        fmt=format,
+        tier=tier,
+        reliability_band=reliability,
     )
 
 
@@ -33057,6 +33581,7 @@ async def _instagram_loop() -> None:
             await refresh_instagram_tokens()
             await refresh_instagram_stats()
             await refresh_post_insights()
+            await refresh_creator_tags()
         except asyncio.CancelledError:
             raise
         except Exception as exc:
@@ -33071,7 +33596,8 @@ async def run_instagram_jobs(user: dict = Depends(require_roles("admin"))):
     tokens = await refresh_instagram_tokens()
     stats = await refresh_instagram_stats()
     posts = await refresh_post_insights()
-    report = {"tokens": tokens, "stats": stats, "posts": posts}
+    tags = await refresh_creator_tags()
+    report = {"tokens": tokens, "stats": stats, "posts": posts, "tags": tags}
     await audit(user, "job.instagram_refresh", "job", "instagram", after=report)
     return report
 
@@ -36400,6 +36926,10 @@ async def _load_brand_map(brand_ids: list) -> dict:
 # vocabulary (`_campaign_terms`, `_overlap`), so the two ends of the market are
 # matched on one definition of fit rather than two that drift.
 CREATOR_FEED_WEIGHTS = {"work_match": 50, "city": 30, "neighbourhood": 20}
+# **What a brief's confirmed tags add**, on top of the free-text match above.
+# A separate table rather than a re-tuning of the first, so a feed with no
+# tagged briefs ranks exactly as it did — the tags only ever add.
+CREATOR_FEED_TAG_WEIGHTS = {"niche": 60, "language": 25, "area": 25}
 
 
 def score_campaign_for_creator(campaign: dict, profile: Optional[dict]) -> float:
@@ -36445,6 +36975,17 @@ def score_campaign_for_creator(campaign: dict, profile: Optional[dict]) -> float
     if campaign_area and campaign_area in creator_places:
         score += CREATOR_FEED_WEIGHTS["neighbourhood"]
 
+    # The tags: the brief's confirmed niche, language and area against what
+    # this creator posts. A brief nobody tagged adds nothing.
+    wanted = campaign.get("tags") or {}
+    mine = niche_tagging.effective_tags(profile.get("creator_tags"))
+    if set(wanted.get("niche") or []) & {n["tag"] for n in mine["niche"]}:
+        score += CREATOR_FEED_TAG_WEIGHTS["niche"]
+    if set(wanted.get("languages") or []) & set(mine["languages"]):
+        score += CREATOR_FEED_TAG_WEIGHTS["language"]
+    if set(wanted.get("areas") or []) & set(mine["shoots_in"]):
+        score += CREATOR_FEED_TAG_WEIGHTS["area"]
+
     return score
 
 
@@ -36469,6 +37010,7 @@ async def list_campaigns(
     limit: int = 200,
     offset: int = 0,
     user: dict = Depends(require_roles("creator", "admin")),
+    niche_match: bool = False,
 ):
     """Every live brief this caller may see, most relevant first.
 
@@ -36569,6 +37111,12 @@ async def list_campaigns(
         # itself, and the count header has to agree with the list.
         if not _shows_barter_briefs(profile):
             query.setdefault("$and", []).append(_NO_BARTER_QUERY)
+        # "Matches your niche": only briefs whose confirmed niche is one of
+        # this creator's. Stored tags on both sides — no model at query time.
+        # The barter rule above still applies; this narrows, never widens.
+        if niche_match:
+            mine = (profile or {}).get("tag_niches") or []
+            query.setdefault("$and", []).append({"tags.niche": {"$in": mine}})
 
     total = await db.campaigns.count_documents(query)
 
@@ -43746,6 +44294,36 @@ async def public_sitemap():
     )
 
 
+
+# Admin half of the creator tag routes (see "Niche tags" above).
+@admin_router.get("/creators/{creator_id}/tags")
+async def admin_get_creator_tags(creator_id: str, user: dict = Depends(require_roles("admin"))):
+    try:
+        oid = ObjectId(creator_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Creator not found")
+    profile = await db.creator_profiles.find_one({"user_id": oid})
+    if not profile:
+        raise HTTPException(status_code=404, detail="Creator not found")
+    conn = await db.instagram_connections.find_one({"user_id": oid}, {"status": 1})
+    return _creator_tags_payload(profile, bool(conn and conn.get("status") == "connected"))
+
+
+@admin_router.put("/creators/{creator_id}/tags")
+async def admin_put_creator_tags(
+    creator_id: str, payload: TagSetPayload, user: dict = Depends(require_roles("admin"))
+):
+    """An admin's correction, recorded as theirs. Admin-only: a creator's tags
+    decide which briefs find them, across every brand."""
+    try:
+        oid = ObjectId(creator_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Creator not found")
+    await _set_confirmed_tags(oid, payload, "admin")
+    await audit(user, "creator.tags_admin", "creator_profile", oid, after=payload.model_dump())
+    return await admin_get_creator_tags(creator_id, user)
+
+
 # ---------------------------------------------------------------------------
 # Mounting the routers — at the end, and only here.
 #
@@ -44087,6 +44665,11 @@ async def _startup():
     await db.instagram_oauth_states.create_index("state", unique=True)
     await db.instagram_oauth_states.create_index("expires_at", expireAfterSeconds=0)
     await db.creator_profiles.create_index("niches")
+    # The niche filters are equality tests on stored tags — never a model call
+    # at query time — so each one is an index.
+    for field in ("tag_niches", "tag_languages", "tag_areas", "tag_formats"):
+        await db.creator_profiles.create_index(field)
+    await db.campaigns.create_index("tags.niche")
 
     # brand_profiles (1:1 with users)
     await db.brand_profiles.create_index("user_id", unique=True)

@@ -42,6 +42,7 @@ import { ReliabilityPanel } from "@/components/ReliabilityBadge";
 import { RELIABILITY } from "@/constants/testIds";
 import { CampaignLink, CollaborationLink } from "@/components/admin/links";
 import { ViewAsButton } from "@/components/admin/ViewAsButton";
+import TagEditor from "@/components/tags/TagEditor";
 import { useAdminConsole } from "@/pages/AdminConsole";
 
 const COLLAB_GROUPS = [
@@ -522,6 +523,15 @@ export default function CreatorDetailPage() {
                             <CancellationHistory rows={creator.cancellations} />
                         </Section>
                     )}
+
+                    {/* The tags matching reads. Admin-only: a creator's
+                        tags decide which briefs find them across every
+                        brand, which is not a scoped console's call. */}
+                    {allAccess && creator ? (
+                        <Section id="tags" title="Tags">
+                            <TagEditor endpoint={`/admin/creators/${id}/tags`} title="Matched on" />
+                        </Section>
+                    ) : null}
 
                     <Section id="collaborations" title="Every collaboration">
                         <div className="space-y-8">

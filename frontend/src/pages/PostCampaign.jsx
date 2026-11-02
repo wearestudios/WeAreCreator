@@ -80,6 +80,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import PublishGate from "@/components/brand/PublishGate";
+import BriefTags from "@/components/brand/BriefTags";
 import {
     Select,
     SelectContent,
@@ -1906,6 +1907,13 @@ export default function PostCampaign() {
                         </Button>
                     </div>
                 </form>
+                {/* Tags exist once the brief does: suggested in the
+                    background after a save, confirmed here by the brand. */}
+                {isEditing ? (
+                    <div className="mt-10">
+                        <BriefTags campaignId={editingId} />
+                    </div>
+                ) : null}
             </main>
         </div>
     );

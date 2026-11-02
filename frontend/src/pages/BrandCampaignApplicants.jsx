@@ -22,6 +22,7 @@ import { Navbar } from "@/components/Navbar";
 import { SafeSection } from "@/components/ErrorBoundary";
 import { SuggestedCreators } from "@/components/brand/SuggestedCreators";
 import CampaignAnalytics from "@/components/brand/CampaignAnalytics";
+import TagFilterBar from "@/components/tags/TagFilterBar";
 import { Skeleton } from "@/components/ui/skeleton";
 import ProcessFlow from "@/components/application/ProcessFlow";
 import PartialDeliveryDialog from "@/components/brand/PartialDeliveryDialog";
@@ -575,6 +576,16 @@ const ApplicantCard = ({
                         )}
                     </div>
 
+                    {/* **Why this creator**, from the tags: what they post
+                        about, the language and the neighbourhood that match
+                        this brief's confirmed tags. Absent when nothing
+                        matched — a reason with nothing in it is no reason. */}
+                    {a.match?.why ? (
+                        <p data-testid={`applicant-why-${a.id}`} className="mt-2 text-meta text-muted-foreground">
+                            <span className="font-medium text-foreground">Why this creator:</span> {a.match.why}
+                        </p>
+                    ) : null}
+
                     {/* The same eight stages the creator and the admin read,
                         so a phone call between the three of them is about one
                         picture. */}
@@ -964,16 +975,19 @@ export default function BrandCampaignApplicants() {
     const [busyId, setBusyId] = useState(null);
     const [filter, setFilter] = useState("awaiting_you");
     const [dialog, setDialog] = useState({ kind: null, applicant: null });
+    // Tag filters. Sent to the server, which answers from stored tags — the
+    // board never asks a model anything.
+    const [tagFilters, setTagFilters] = useState({});
 
     const load = useCallback(async () => {
         try {
-            const { data } = await api.get(`/brand/campaigns/${id}/applicants`);
+            const { data } = await api.get(`/brand/campaigns/${id}/applicants`, { params: tagFilters });
             setData(data);
             setError("");
         } catch (err) {
             setError(formatApiError(err));
         }
-    }, [id]);
+    }, [id, tagFilters]);
 
     useEffect(() => {
         load();
@@ -1201,8 +1215,9 @@ export default function BrandCampaignApplicants() {
                     take the campaign header, the filters and the suggestions
                     panel down with it, on the one screen a brand uses to decide
                     who gets booked. */}
+                <TagFilterBar value={tagFilters} onChange={setTagFilters} className="mt-6" />
                 <SafeSection name="applicant-board" label="The applicant list couldn't load">
-                <div className="mt-8 overflow-hidden rounded-md border border-border bg-card grain-surface">
+                <div className="mt-4 overflow-hidden rounded-md border border-border bg-card grain-surface">
                     {visible.length === 0 ? (
                         <ListEmptyState
                             Icon={Users}

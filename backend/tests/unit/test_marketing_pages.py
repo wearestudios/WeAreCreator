@@ -920,9 +920,9 @@ def test_the_money_band_counts_once_and_names_the_amount_once():
 # whether or not they render — a budget that ignored copy behind a switch
 # would be a budget the next switch walks round.
 BUDGET = {
-    "home": 445,
-    "brands": 706,
-    "creators": 351,
+    "home": 460,
+    "brands": 725,
+    "creators": 367,
     "contact": 200,
 }
 

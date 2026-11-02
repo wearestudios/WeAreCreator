@@ -34,7 +34,7 @@ const Monogram = ({ text }) => (
 );
 
 /** Scored applicants, the match as a number, the reasons beside it. */
-export function ShortlistCard({ card, rowTestid }) {
+export function ShortlistCard({ card, rowTestid, showWhy = false }) {
     return (
         <div className="rounded-lg border border-border bg-card">
             <p className="border-b border-border px-5 py-4 text-meta font-medium text-foreground sm:px-6">{card.kicker}</p>
@@ -55,6 +55,12 @@ export function ShortlistCard({ card, rowTestid }) {
                                     </li>
                                 ))}
                             </ul>
+                            {showWhy && row.why ? (
+                                <p className="mt-2 text-meta text-muted-foreground">
+                                    <span className="font-medium text-foreground">{card.whyLabel}: </span>
+                                    {row.why}
+                                </p>
+                            ) : null}
                         </div>
                         <p className="hidden text-right md:block">
                             <span className="block text-body text-foreground">{row.quote}</span>
