@@ -593,6 +593,28 @@ DRIVERS = {
                                          disclosure_confirmed=True),
             s["admin"]),
     ),
+    # The revision cap. Asking for an extra round and answering it both change
+    # what was agreed, and a mediator is deciding what was agreed.
+    "request_extra_revision": Driver(
+        "content_submitted",
+        lambda db, s, _: server.request_extra_revision(
+            s["collab_id"], server.ExtraRevisionRequestPayload(), s["brand"]),
+        terms={"revisions_included": 0},
+    ),
+    "accept_extra_revision": Driver(
+        "content_submitted",
+        lambda db, s, _: server.accept_extra_revision(
+            s["collab_id"], server.ExtraRevisionAnswerPayload(), s["creator"]),
+        terms={"revisions_included": 0},
+        extra_revision_request={"state": "requested"},
+    ),
+    "decline_extra_revision": Driver(
+        "content_submitted",
+        lambda db, s, _: server.decline_extra_revision(
+            s["collab_id"], server.ExtraRevisionAnswerPayload(), s["creator"]),
+        terms={"revisions_included": 0},
+        extra_revision_request={"state": "requested"},
+    ),
     # Ending a review window early is an approval; a dispute is ended by its
     # resolution, never by approving around it.
     "force_approve_draft": Driver(

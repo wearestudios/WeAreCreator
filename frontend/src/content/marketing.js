@@ -79,15 +79,22 @@ export function platformFeeText(percent = FACTS.platformFeePercent) {
 // render. **Where the rewrite brief asked for a sentence the product does not
 // keep, the sentence here is the nearest true one**, and
 // `test_site_claims.py` names the untrue one so it cannot come back by
-// accident: money held before the shoot (there is no escrow), a review that
-// clears itself (not on this tree), a revision cap, an exportable statement
-// and a receipt (none exist), offers and counter-offers (a creator quotes and
+// accident: money held before the shoot (there is no escrow), an exportable
+// statement and a receipt (neither exists), offers and counter-offers (a creator quotes and
 // a fee is agreed), "ID-verified" (a person reviews the profile; no ID is
 // collected), "messaging runs here" (it does not), "ranked by whether they
 // finish, not by follower count" (follower fit outweighs delivery in the
 // ranking), a self-serve column (every brand brief is run by us), and "you
 // only pay when a deal is agreed" (a campaign fee exists). Each replacement is
 // listed in the PR that made it.
+//
+// **Two came back when the product caught up, worded to its rules.** The
+// review clock (`draft_review_days`, `_approve_draft_by_window`) applies where
+// a brief reviews drafts: 3 days unless the brief sets 1–14, and an admin may
+// extend or pause it — so nothing here says "never" or "forever". The cap on
+// revisions (`revisions_included`, `_revision_allowance`) is frozen at
+// acceptance and shown as "1 of 2 used" on both sides. `test_site_promises.py`
+// fails either claim if the field behind it goes.
 // ===========================================================================
 
 /** The section rule's numbers, written once: "(01)". */
@@ -293,10 +300,11 @@ export const HOME = {
                 line: "Every fee and term is written down and frozen when a creator is taken on, before a slot is booked.",
             },
             {
-                // The brief: "Reviews cannot stall forever". The review clock
-                // is not on this tree; this is what replaces it.
-                title: "Every creator is checked before they apply",
-                line: "A person reviews each profile. A pitch from somebody not yet checked is held, never shown to a brand.",
+                // The review clock (`_approve_draft_by_window`). Scoped to a
+                // brief that reviews drafts, because that is the only review
+                // with a clock — live content has none.
+                title: "A draft review has a deadline",
+                line: "Where a brief reviews drafts, a draft nobody answers is approved when its window ends — three days unless the brief sets one to fourteen.",
             },
         ],
     },
@@ -484,6 +492,12 @@ export const BRANDS = {
                 showIf: "gstInvoiceConfirmed",
             },
             {
+                // Every brand-posted brief is run by us, so drafts are ours to
+                // review; the window is `draft_review_days` on the brief.
+                q: "What if I don't review in time?",
+                a: "Our team reviews drafts within the window on your brief — three days unless you set one to fourteen. A draft still unanswered when it ends is approved.",
+            },
+            {
                 q: "Can you run a launch night?",
                 a: "Yes. That's the managed side — the venue plan, the creator list, the run of show and the night itself.",
             },
@@ -525,9 +539,10 @@ export const CREATORS = {
             title: "Weekend brunch launch",
             fee: "₹12,000",
             feeLabel: "per creator",
-            // The brief's revision-cap chip: there is no cap. Every send-back
-            // carries a note instead, and the disclosure is stated up front.
-            chips: ["Matches your niche", "In your city", "Usage: organic repost only", "Disclosure: #ad"],
+            // The revisions chip is `revisions_included` on the brief — two
+            // unless the brand sets 0–5 — which a creator reads before
+            // applying.
+            chips: ["Matches your niche", "In your city", "2 rounds of changes", "Usage: organic repost only", "Disclosure: #ad"],
             // "Counter the fee": a creator quotes a rate with the pitch; there
             // is no counter-offer on this tree.
             actions: ["Apply", "Quote your rate"],
@@ -541,7 +556,9 @@ export const CREATORS = {
         title: "The fee is in writing before you travel",
         states: [
             { key: "agreed", title: "Agreed", line: "The fee and the terms are written down and frozen before you book a slot." },
-            { key: "delivered", title: "Delivered", line: "You post what the brief asked for, and the work is approved." },
+            // The second half is the review clock, scoped as it works: only a
+            // brief that reviews drafts has one.
+            { key: "delivered", title: "Delivered", line: "You post what was asked for and it's approved — where drafts are reviewed, when the review window runs out at the latest." },
             // "…with a receipt" is gone: creators are not sent one.
             { key: "paid", title: "Paid", line: "Within 7 days of approval, to your UPI or bank." },
         ],
@@ -561,11 +578,13 @@ export const CREATORS = {
         label: "What protects you",
         title: "Three things on your side",
         items: [
-            // The brief: "a cap on revisions (1 of 2 used)". There is no cap.
-            { title: "A note with every send-back", line: "A brand can't send work back without saying what to change." },
-            // The brief: "a clock on the review". Not on this tree.
-            { title: "A date on your payment", line: "Once the work is approved, your card shows the date you'll be paid by." },
-            { title: "The terms, frozen", line: "The fee, the usage and the deliverables are frozen the moment you're taken on." },
+            // `revisions_included`, frozen at acceptance; the card prints
+            // exactly "1 of 2 used". Past it, an extra round is a request the
+            // creator accepts or declines.
+            { title: "A cap on revisions", line: "The brief sets the rounds of changes and your card counts them — 1 of 2 used. Any extra round is yours to agree to." },
+            // `_approve_draft_by_window`, on a brief that reviews drafts.
+            { title: "A clock on the review", line: "Where a brief reviews drafts, yours is approved if nobody answers within its review window." },
+            { title: "The terms, frozen", line: "The fee, usage, deliverables and rounds of changes are frozen the moment you're taken on." },
         ],
     },
     payouts: {

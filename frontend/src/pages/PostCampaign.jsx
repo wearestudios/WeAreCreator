@@ -32,6 +32,7 @@ import {
     EXECUTION,
     PAYOUT as PAYOUT_IDS,
     REVIEW_WINDOW,
+    REVISIONS,
     VISIBILITY,
 } from "@/constants/testIds";
 import {
@@ -39,6 +40,11 @@ import {
     DRAFT_REVIEW_DAYS_MAX,
     DRAFT_REVIEW_DAYS_MIN,
 } from "@/lib/reviewWindow";
+import {
+    DEFAULT_REVISIONS_INCLUDED,
+    REVISIONS_INCLUDED_MAX,
+    REVISIONS_INCLUDED_MIN,
+} from "@/lib/revisions";
 import { Navbar } from "@/components/Navbar";
 import CampaignTemplates from "@/components/brand/CampaignTemplates";
 import ShootPreferences from "@/components/campaign/ShootPreferences";
@@ -151,6 +157,7 @@ export default function PostCampaign() {
     // How long the reviewer has before an unanswered draft approves itself.
     // A string while it is being typed; the server holds the 1–14 line.
     const [draftReviewDays, setDraftReviewDays] = useState(String(DEFAULT_DRAFT_REVIEW_DAYS));
+    const [revisionsIncluded, setRevisionsIncluded] = useState(String(DEFAULT_REVISIONS_INCLUDED));
     // **Off by default, unlike the draft gate.** On most briefs a booking is
     // the creator picking one of the manager's own published slots, and asking
     // somebody to confirm that is asking them to agree with themselves.
@@ -237,6 +244,7 @@ export default function PostCampaign() {
         apply("visibility", setVisibility);
         apply("requires_draft_approval", setRequiresDraft, Boolean);
         apply("draft_review_days", setDraftReviewDays, String);
+        apply("revisions_included", setRevisionsIncluded, String);
         apply("requires_slot_confirmation", setRequiresSlotConfirmation, Boolean);
         apply("restricted_days", setRestrictedDays);
         apply("shoot_windows", setShootWindows);
@@ -326,6 +334,9 @@ export default function PostCampaign() {
                     setRequiresDraft(Boolean(data.requires_draft_approval));
                     setDraftReviewDays(
                         String(data.draft_review_days ?? DEFAULT_DRAFT_REVIEW_DAYS),
+                    );
+                    setRevisionsIncluded(
+                        String(data.revisions_included ?? DEFAULT_REVISIONS_INCLUDED),
                     );
                     setRequiresSlotConfirmation(
                         Boolean(data.requires_slot_confirmation)
@@ -424,6 +435,7 @@ export default function PostCampaign() {
         campaignType,
         creatorsNeeded,
         threshold: brandProfile?.execution?.large_campaign_threshold,
+        launchIsWeareRun: brandProfile?.execution?.launch_is_weare_run,
     });
 
     const validateBase = () => {
@@ -532,6 +544,12 @@ export default function PostCampaign() {
               }
             : {}),
         requires_slot_confirmation: requiresSlotConfirmation,
+        // Always sent: content send-backs count against it too, so it is a
+        // term on every brief, not only one that reviews drafts.
+        revisions_included: Math.min(
+            REVISIONS_INCLUDED_MAX,
+            Math.max(REVISIONS_INCLUDED_MIN, Math.round(Number(revisionsIncluded) || 0)),
+        ),
         // **Only the fields this type has.** The server refuses the rest
         // outright (`_SCHEDULING_BY_TYPE`), so sending them on the wrong type
         // is a 422 rather than a field quietly stored and never read.
@@ -1507,6 +1525,40 @@ export default function PostCampaign() {
                                 </div>
                             )}
 
+                            {/* **How many rounds of changes the brief includes.**
+                                A term the creator reads before applying and
+                                that is frozen when they are taken on — so it
+                                is asked whether or not drafts are reviewed:
+                                sending live content back counts too. */}
+                            <div className="mt-3 rounded-md border border-border bg-card/60 p-5">
+                                <Label
+                                    htmlFor="pc-revisions-included"
+                                    className="text-xs uppercase tracking-[0.15em] text-muted-foreground"
+                                >
+                                    Rounds of changes included
+                                </Label>
+                                <Input
+                                    id="pc-revisions-included"
+                                    data-testid={REVISIONS.briefField}
+                                    type="number"
+                                    inputMode="numeric"
+                                    min={REVISIONS_INCLUDED_MIN}
+                                    max={REVISIONS_INCLUDED_MAX}
+                                    value={revisionsIncluded}
+                                    onChange={(e) => setRevisionsIncluded(e.target.value)}
+                                    className="mt-2 h-11 w-28 border-border bg-background/60 focus-visible:ring-primary"
+                                />
+                                <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+                                    How many times the work can be sent back for changes
+                                    — a draft or the live post. The creator sees this
+                                    before applying, and it is fixed once they're taken
+                                    on. Past it, you can ask for one extra round and they
+                                    decide. Between {REVISIONS_INCLUDED_MIN} and{" "}
+                                    {REVISIONS_INCLUDED_MAX}; {DEFAULT_REVISIONS_INCLUDED} unless you
+                                    change it.
+                                </p>
+                            </div>
+
                             {/* And the booking handshake, which is the same
                                 shape of question one step earlier. Off unless
                                 the venue really does have to check the day —
@@ -1783,6 +1835,10 @@ export default function PostCampaign() {
                     <PublishGate
                         verification={brandProfile?.verification}
                         trust={brandProfile?.trust}
+                        block={brandProfile?.publish_block}
+                        reviewReason={
+                            existing?.status === "draft" ? existing?.review_reason : null
+                        }
                     />
 
                     <div className="flex flex-col-reverse items-stretch gap-3 border-t border-border pt-8 md:flex-row md:items-center md:justify-between">
@@ -1820,7 +1876,12 @@ export default function PostCampaign() {
                                 submitting ||
                                 savingDraft ||
                                 (brandProfile?.verification &&
-                                    brandProfile.verification.state !== "verified")
+                                    brandProfile.verification.state !== "verified") ||
+                                // A lapsed check or an overdue invoice stops a
+                                // brief going out; editing a live one is not
+                                // sending it, so that save stays open.
+                                (Boolean(brandProfile?.publish_block) &&
+                                    (!isEditing || existing?.status === "draft"))
                             }
                             className="group h-12 rounded-full bg-primary px-7 text-primary-foreground hover:bg-primary-hover md:ml-auto"
                         >

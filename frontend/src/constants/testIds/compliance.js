@@ -6,6 +6,7 @@
 // is one component on every surface, so the ids do not vary by console.
 export const DISPUTE = {
 	panel: 'dispute-panel',
+	teamNote: 'dispute-queue-team-note',
 	open: 'dispute-open',
 	reason: 'dispute-reason',
 	submit: 'dispute-submit',
@@ -135,6 +136,19 @@ export const BRAND_PUBLISH = {
 	gateLink: 'brand-publish-gate-link',
 	trusted: 'brand-publish-trusted',
 	slotToggle: 'pc-slot-confirmation',
+	// The two refusals that sit on top of a verified brand.
+	blocked: 'brand-publish-blocked',
+	// A brief we sent back, on the form that fixes it.
+	changesRequested: 'brand-publish-changes-requested',
+};
+
+// Where a brand stands, on its own dashboard.
+export const BRAND_STANDING = {
+	pill: 'brand-standing-pill',
+	notice: 'brand-standing-notice',
+	changesRequested: (id) => `brand-campaign-changes-requested-${id}`,
+	pauseReason: (id) => `brand-campaign-pause-reason-${id}`,
+	commercial: (id) => `brand-campaign-commercial-${id}`,
 };
 
 // Disclosure, usage rights and the frozen terms — on the brief before a

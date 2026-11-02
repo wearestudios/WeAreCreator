@@ -1061,7 +1061,8 @@ as it takes somebody to notice. That is why one rejection ends it.
 ## Finding a brief, and sending one on
 
 `GET /campaigns` lists everything live — `open` and `upcoming` — with **no
-filter applied by default**, and narrows on `city`, `area`, `category`,
+filter applied by default** except one a creator chose: **barter is opt-in**
+(see "Barter in a creator's feed" below). It narrows on `city`, `area`, `category`,
 `campaign_type` and `compensation_type`. It is paginated with the matched total
 in `X-Total-Count`; it used to be a bare array capped at 200 with no way to know
 anything had been cut off.
@@ -1321,8 +1322,9 @@ evaluated in node rather than regexing JSX.
   Escape closes it, and so does any change of path or hash.
 - **Claims were checked against the code, and four were replaced** rather
   than shipped: "money is held before the shoot" (there is no escrow), the
-  review clock (not merged — every mention removed), a revision cap and a
-  statement export (neither exists). `test_site_claims.py` pins each
+  review clock (not merged then), a revision cap and a statement export
+  (neither existed). **The clock and the cap came back** once the product
+  kept them — see "Every promise, held to its code". `test_site_claims.py` pins each
   replacement and refuses the originals by name. "A brand never gets a
   creator's number" is kept because `_brand_visible_creator` makes it true.
 - **Budgets**: home 390 (374 used), `/for-brands` 620 (600), `/for-creators`
@@ -2564,6 +2566,66 @@ rather than a rule.
   `ALL_COMPENSATION_OPTIONS` is still the admin's, used by exactly one
   control, `CampaignEditDialog`.
 
+### Every promise, held to its code
+
+The rule for the public site is that it claims only what the code does, worded
+to the code's actual rules. `test_site_claims.py` refuses the sentences the
+product cannot back; **`test_site_promises.py` is the other direction** — each
+claim that *is* made fails there if the field or function behind it goes.
+
+- **The review clock** is claimed on home (third promise), on /for-creators
+  (the clock card and the money band) and in a /for-brands FAQ — always as
+  "where a brief reviews drafts", because live content has no clock, and never
+  as "never" or "forever", because an admin can pause a window. Three days
+  unless the brief sets 1–14, quoted from `DEFAULT_DRAFT_REVIEW_DAYS`. The FAQ
+  says *our team* reviews drafts, which is true on every brand-posted brief.
+- **The revision cap** — "1 of 2 used" — is `_revision_allowance`'s label,
+  printed identically on both sides. See "A cap on revisions" below.
+- **"Paid within 7 days of approval"** is held by `_CREATOR_PAYOUT_MAX`: the
+  window can be shortened per brief and never set longer than the promise.
+
+### A cap on revisions
+
+`revisions_included` on the brief (0–5, default 2, `lib/revisions.js` mirrors
+the bounds), shown before applying, asked on the brief form, and **frozen into
+the terms** (`terms.revisions_included`). A round is a send-back — a draft or
+live content returned for changes — counted together on `revisions_used`.
+
+- **Past the cap the send-back is refused** (409 `no_revisions_left`, "No
+  revisions left — approve, or ask for an extra round"), in
+  `_request_draft_changes_decision` and `brand_request_changes`, so the
+  admin's on-behalf send-back is held to it too. The counter is
+  compare-and-set (`_revision_precondition`), so two send-backs racing for the
+  last round take one between them.
+- **An extra round is a request, not a right.** The reviewer (`_question_staff_
+  may_see`, the draft-review reader) asks; the creator accepts or declines on
+  their card. Accepting `$inc`s `revisions_extra` and writes an
+  `extra_revision` entry on the negotiation history, with no amount — it is a
+  change to what was agreed.
+- **Existing collaborations are unlimited.** The number is read only from the
+  frozen terms, so anything without it keeps the path it was on.
+- **The terms now freeze wherever the fee is agreed.** `_issue_terms_snapshot`
+  was called only by the brand's own accept, and every brand-posted brief is
+  accepted through the console's Advance, so most collaborations had no
+  snapshot at all. It is also called at the console's fee step and the fee
+  route, once-only by its own precondition. That same fee step read the fee
+  from a dict that no longer carried it, so every paid creator was sent the
+  barter wording — fixed with it.
+- `RevisionAllowance` is the one component, on the creator's card, the shared
+  application screen and the brand's board.
+
+### Barter in a creator's feed
+
+`show_barter_briefs` on the creator profile, **off unless they turn it on**,
+switched on the feed itself (`BarterFeedToggle`, worded as the setting:
+"Show barter briefs (a meal or product instead of a fee)"). The site leads
+creators with "Paid briefs"; a feed of dinners would make that untrue.
+`_shows_barter_briefs` is the reader, and the cut (`_NO_BARTER_QUERY`,
+appended to `$and`) is applied to the feed, the suggestions and the filter
+options, for creators only. Brands still post barter and may still invite
+anybody to it; `BarterLabel` marks it on every feed card and invitation. Not
+material, not consent, not in completeness.
+
 ### When a brief pays, said on the brief
 
 Late payment is what creators name most often as the thing that goes wrong —
@@ -2586,6 +2648,13 @@ everybody who did the work. The settings rows sit deliberately **adjacent**
 on the console rather than apart: editing the wrong one is the failure, and
 the two blurbs side by side is what stops it.
 
+- **The window is capped at the promise: 0–7 days** (`_CREATOR_PAYOUT_MAX`),
+  on the platform setting and the campaign field. It was 0–180, which let a
+  form field quietly break "paid within 7 days". `clamp_creator_payout_days`
+  brings stored values inside it on every boot (and `clamp_payout_days.py`
+  lists them first), audited, never touching frozen terms. An approval unpaid
+  for `PAYOUT_ALERT_DAYS` (5) is flagged `payout_at_risk` on the admin row and
+  goes to the top of the action queue with its due date.
 - `creator_payout_days()` lays a stored override over the default, cached 30
   seconds in a module global and cleared by the writer — the `sla_targets()`
   arrangement, **including its cache discipline**: a test that stores a value
@@ -4942,6 +5011,60 @@ reading a web page and retyping it.
   `href` at the API rides along in production and silently does not on a
   plain-http laptop. A refusal arrives as a Blob too, so the handler reads the
   bytes back before formatting the message.
+
+## Mounting the routers, and a route nobody calls
+
+**Every `api_router.include_router(...)` sits at the end of `server.py`**, just
+before `app.include_router(api_router)`. `include_router` copies a router's
+routes at the moment it is called, so a route declared on a router after its
+include was never served: `GET /admin/disputes`, its resolution and both
+`verification/confirm` routes were 404s in production while every unit test,
+which calls handlers directly, passed. `test_console_complete.py` drives the
+app's own route table for every router.
+
+`test_router_callers.py` extends the "every route has a caller" rule to the
+brand, creator and drafts routers. Each call form must end where the path ends,
+so `${API_BASE}/drafts/${id}/file` cannot stand in for `GET /drafts/{id}`.
+Exemptions sit in three named lists: `INDIRECT_CALLERS` (checked against the
+file they name), `ALLOWED` (each says why it needs no screen) and `UNBUILT` (a
+ratchet). `test_unread_payload_keys.py` does the same for payload keys: every
+key the persona payload builders emit must be mentioned by some frontend file,
+or be listed with a reason, and a listed key that gets rendered fails until its
+line is deleted.
+
+## What the server decided, said on the screen
+
+- **The creator's home** carries `profile.block` (`_creator_block`) and draws a
+  suspended account full-width with the admin's reason. `_claim_slot` refuses a
+  suspended creator's own claim, so the card and the route agree. The admin
+  override is unaffected, and nothing already booked moves. A booking the venue
+  has not confirmed reads "Waiting for the venue to confirm" in
+  `_creator_next_action`, `_next_action` and the process flow, never "Turn up".
+  Finished work is its own tab, barter included, labelled "Finished" rather than
+  "Paid", with the takedown panel on every row. `held_resolved` shows pitches
+  that came off the table, with the reason.
+- **`can_cancel_slot` asks `_slot_cancel_refusal`**, the one decider for the
+  24-hour cutoff and the reschedule cap, shared with the route, and
+  `cancel_blocked_reason` says why.
+- **`_brand_publish_block` is the brand gate's four refusals** (no profile,
+  unverified, lapsed, invoice overdue). `_verified_brand_or_403` raises its
+  answer, and `GET /brand/profile` and `/brand/dashboard` carry it as
+  `publish_block`, so `PublishGate` and the dashboard's `BrandStanding` say it
+  before publish.
+- **Frozen means frozen on the screen**: while a dispute is open, every
+  state-moving action flag on `get_application` and `_serialize_applicant` is
+  false.
+
+## The scoped console's reads
+
+`GET /admin/creators/{id}` and `GET /admin/managers` are `CONSOLE_ROLES` now.
+The creator page goes through `_console_creator_or_404`, which gives a 404
+outside the team's creators. It narrows the work shown to the team's briefs and
+drops `_TEAM_HIDDEN_CREATOR_FIELDS` (contact, address, pin, payout). `scope:
+"team"` tells the page to leave out the admin's decisions. A team member gets
+manager names and load only. The sidebar's `adminOnly` flags are checked
+against the server's own guards (`SECTION_READS` in `test_access_matrix.py`)
+rather than against a hand-kept list.
 
 ## The admin console
 

@@ -26,6 +26,9 @@ const KIND = {
     accept: "Agreed",
     decline: "Declined",
     adjust: "Adjusted",
+    // Not money: one more round of changes than the brief included, agreed
+    // by the creator. On this history because it changes what was agreed.
+    extra_revision: "Extra round agreed",
 };
 
 const WHO = {

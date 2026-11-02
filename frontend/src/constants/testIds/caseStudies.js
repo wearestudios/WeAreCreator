@@ -57,4 +57,11 @@ export const CASE_STUDIES = {
 	publish: 'case-study-publish',
 	unpublish: 'case-study-unpublish',
 	viewLive: 'case-study-view-live',
+
+	// The running order, and removing a draft.
+	moveUp: (id) => `case-study-move-up-${id}`,
+	moveDown: (id) => `case-study-move-down-${id}`,
+	delete: 'case-study-delete',
+	deleteDialog: 'case-study-delete-dialog',
+	deleteConfirm: 'case-study-delete-confirm',
 };

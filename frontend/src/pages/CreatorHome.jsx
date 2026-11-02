@@ -18,13 +18,14 @@
 // once it has arrived, and every piece of it checks prefers-reduced-motion.
 import React, { useCallback, useEffect, useState } from "react";
 import { Link, Navigate } from "react-router-dom";
-import { Clock, RotateCw, Send, Sparkles, Wallet, XCircle } from "lucide-react";
+import { Ban, Clock, RotateCw, Send, Sparkles, Wallet, XCircle } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Navbar } from "@/components/Navbar";
 import { api, formatApiError } from "@/lib/api";
 import {
     CREATOR_ACTIVE as ACTIVE_IDS,
     CREATOR_APPLICATIONS as APPLICATIONS_IDS,
+    CREATOR_BLOCK as BLOCK_IDS,
     CREATOR_COMPLETENESS as COMPLETENESS_IDS,
     CREATOR_EARNINGS as EARNINGS_IDS,
     CREATOR_HOME as IDS,
@@ -40,6 +41,7 @@ import ActiveCampaigns from "@/components/creator/ActiveCampaigns";
 import Suggested from "@/components/creator/Suggested";
 import Applications from "@/components/creator/Applications";
 import Earnings from "@/components/creator/Earnings";
+import Finished from "@/components/creator/Finished";
 import PlatformProtections from "@/components/creator/PlatformProtections";
 
 // ---------------------------------------------------------------------------
@@ -66,6 +68,38 @@ const Banner = ({ Icon, tone, testid, children }) => (
 const StatusBanners = ({ profile, completeness, justOnboarded }) => {
     const status = profile?.verification_status;
     const items = [];
+
+    // **A suspended account is the situation, so it goes first and full
+    // width.** `_creator_block` refused the act at the apply route and the
+    // home page said nothing, so a creator found out from a 403 on a brief
+    // they had just chosen. The message is the server's — the reason the
+    // admin recorded — and what to do next follows it. Apply and booking
+    // are disabled by the flags the server sends with each of them.
+    if (profile?.block?.code === "suspended") {
+        items.push(
+            <div
+                key="suspended"
+                data-testid={BLOCK_IDS.banner}
+                role="alert"
+                className="rounded-md border border-state-rejected/30 bg-state-rejected-wash p-5 text-state-rejected"
+            >
+                <p className="flex items-center gap-2 font-medium">
+                    <Ban className="h-4 w-4 flex-none" />
+                    Your account is on hold
+                </p>
+                <p className="mt-2 text-body leading-relaxed">{profile.block.message}</p>
+                <p className="mt-2 text-body leading-relaxed">
+                    Until it&apos;s lifted you can&apos;t pitch for new briefs or book a new
+                    slot. Work you&apos;re already booked on carries on as normal. Reply to
+                    our WhatsApp or write in through{" "}
+                    <Link to="/contact" className="underline underline-offset-4 hover:no-underline">
+                        the contact page
+                    </Link>{" "}
+                    and we&apos;ll go through it with you.
+                </p>
+            </div>,
+        );
+    }
 
     // Finished but never sent. Without this a creator can sit at 100% forever
     // waiting on a review nobody was asked for — the completeness panel hides
@@ -146,7 +180,17 @@ const StatusBanners = ({ profile, completeness, justOnboarded }) => {
                 tone="border-state-progress/30 bg-state-progress-wash text-state-progress"
             >
                 You're still live and visible to brands. We're just taking a second
-                look at the details you changed.
+                look at the details you changed
+                {/* **Which ones, on the home page too.** The names were on
+                    the payload and only `/profile` printed them. */}
+                {profile?.pending_review_fields?.length > 0 ? (
+                    <span data-testid={BLOCK_IDS.recheckFields}>
+                        {": "}
+                        {profile.pending_review_fields.join(", ")}
+                    </span>
+                ) : null}
+                . New pitches wait until we&apos;ve looked; work you&apos;re already on
+                carries on.
             </Banner>,
         );
     }
@@ -328,6 +372,7 @@ export default function CreatorHome({ user, justOnboarded }) {
                         <SafeSection name="held" className="mt-10 md:mt-12">
                             <HeldApplications
                                 held={data.held_applications}
+                                resolved={data.held_resolved}
                                 outstanding={data.verification_outstanding}
                                 onChanged={load}
                             />
@@ -365,6 +410,15 @@ export default function CreatorHome({ user, justOnboarded }) {
                                                 label: "Applications",
                                                 count: applicationsCount,
                                             },
+                                            {
+                                                value: "finished",
+                                                label: "Finished",
+                                                // A takedown waiting on them is
+                                                // the one thing in here to act on.
+                                                count: (groups.completed || []).filter(
+                                                    (r) => r.can_respond_takedown,
+                                                ).length,
+                                            },
                                             { value: "earnings", label: "Earnings" },
                                         ].map((t) => (
                                             <TabsTrigger
@@ -400,6 +454,14 @@ export default function CreatorHome({ user, justOnboarded }) {
                                                     onChanged={load}
                                                 />
                                             </div>
+                                        </SafeSection>
+                                    </TabsContent>
+                                    <TabsContent value="finished" className="mt-8">
+                                        <SafeSection name="finished">
+                                            <Finished
+                                                rows={groups.completed}
+                                                onChanged={load}
+                                            />
                                         </SafeSection>
                                     </TabsContent>
                                     <TabsContent value="earnings" className="mt-8">

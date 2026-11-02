@@ -808,6 +808,9 @@ def test_the_brand_faq_is_the_questions_the_brief_names():
         "Is this only for Bengaluru?",
         "Do I have to use escrow?",
         "Do I get a GST invoice?",
+        # Added with the review clock: the claim the brand most needs before
+        # handing a brief over, answered in the timer's own terms.
+        "What if I don't review in time?",
         "Can you run a launch night?",
     ]
     assert [i.get("showIf") for i in items].count("gstInvoiceConfirmed") == 1
@@ -905,10 +908,15 @@ def test_the_money_band_counts_once_and_names_the_amount_once():
 # with a number; /for-creators (313) fits its old one. The per-headline (12) and
 # per-line (32) caps did not move. Drawn product UI is illustration and does
 # not count; the meta title and description are held by the meta tests.
+# Moved by exactly what was added, the precedent the look restoration set: the
+# promises PR restored two claims the product now keeps (the review clock and
+# the revision cap) and added the brands FAQ on the clock. /for-brands +15 for
+# the FAQ; /for-creators +21 for the cap card, the clock card, the money band's
+# clock sentence and the brief's revisions chip, after tightening each.
 BUDGET = {
     "home": 430,
-    "brands": 670,
-    "creators": 330,
+    "brands": 685,
+    "creators": 351,
     "contact": 200,
 }
 

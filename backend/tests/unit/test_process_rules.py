@@ -2159,8 +2159,10 @@ class TestCoordinationDetailsAreEarned:
     def test_the_slot_list_is_gated_the_same_way(self):
         import inspect
 
-        src = inspect.getsource(server.list_slots_for_creator)
-        assert "_ONBOARD_COLLAB_STATES" in src
+        # The live list; the duplicate under /campaigns is gone.
+        assert not hasattr(server, "list_slots_for_creator")
+        src = inspect.getsource(server.list_creator_slots)
+        assert "_ONBOARD_COLLAB_STATES" in src or "commercial_agreed" in src
 
 
 # ---------------------------------------------------------------------------
@@ -2993,8 +2995,10 @@ class TestCreatorSlotCancellation:
         import inspect
 
         src = inspect.getsource(server.creator_cancel_slot)
-        assert "SLOT_CANCEL_CUTOFF_HOURS" in src
+        assert "_slot_cancel_refusal" in src
         assert "409" in src
+        # One decider, shared with the card's `can_cancel_slot`.
+        assert "SLOT_CANCEL_CUTOFF_HOURS" in inspect.getsource(server._slot_cancel_refusal)
 
     def test_cancelling_returns_them_to_commercial_agreed(self):
         # They are still on the campaign and still owed a place — just not

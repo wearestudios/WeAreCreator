@@ -14,16 +14,64 @@ import { Clock, Loader2, X } from "lucide-react";
 
 import { api } from "@/lib/api";
 import { notifyError, notifySuccess } from "@/lib/feedback";
-import { HELD as IDS } from "@/constants/testIds";
+import { HELD as IDS, HELD_RESOLVED as RESOLVED_IDS } from "@/constants/testIds";
 import { formatDate } from "@/lib/time";
 import { SectionHead } from "./shared";
 
-export default function HeldApplications({ held, outstanding, onChanged }) {
+// Why a held pitch came off the table, by the state it was resolved to.
+const RESOLVED_LABEL = {
+    withdrawn: "Didn't go in",
+    declined: "Taken back",
+    lapsed: "Lapsed",
+};
+
+/**
+ * Held pitches that did not become applications, with the reason on each.
+ *
+ * The reason was always written — the brief filled while we checked them, it
+ * closed, or the profile was not approved — and the home page read only the
+ * rows still held, so a pitch that came off the table just vanished.
+ */
+function ResolvedHeld({ rows }) {
+    if (!rows?.length) return null;
+    return (
+        <div data-testid={RESOLVED_IDS.panel} className="mt-6">
+            <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                Pitches that didn&apos;t go in
+            </p>
+            <ul className="mt-3 divide-y divide-divider overflow-hidden rounded-md border border-border bg-card">
+                {rows.map((row) => (
+                    <li key={row.id} data-testid={RESOLVED_IDS.row(row.id)} className="px-5 py-4 sm:px-6">
+                        <span className="flex flex-wrap items-baseline justify-between gap-2">
+                            <Link
+                                to={`/campaigns/${row.campaign_id}`}
+                                className="min-w-0 truncate text-meta transition-colors duration-200 hover:text-primary"
+                            >
+                                {row.campaign_title || "A campaign"}
+                            </Link>
+                            <span className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                                {RESOLVED_LABEL[row.state] || "Closed"}
+                                {row.resolved_at ? ` · ${formatDate(row.resolved_at)}` : ""}
+                            </span>
+                        </span>
+                        <span className="mt-1 block text-body leading-relaxed text-muted-foreground">
+                            {row.reason}
+                        </span>
+                    </li>
+                ))}
+            </ul>
+        </div>
+    );
+}
+
+export default function HeldApplications({ held, resolved, outstanding, onChanged }) {
     const [busy, setBusy] = useState(null);
 
     // Renders nothing when there is nothing waiting — which is almost always,
     // because a verified creator's pitches go straight in.
-    if (!held?.length) return null;
+    if (!held?.length) {
+        return resolved?.length ? <ResolvedHeld rows={resolved} /> : null;
+    }
 
     const cancel = async (row) => {
         setBusy(row.id);
@@ -118,6 +166,7 @@ export default function HeldApplications({ held, outstanding, onChanged }) {
                     </li>
                 ))}
             </ul>
+            <ResolvedHeld rows={resolved} />
         </section>
     );
 }

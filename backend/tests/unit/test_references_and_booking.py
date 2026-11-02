@@ -349,7 +349,9 @@ def test_the_scheduled_stage_says_which_of_the_two_it_is():
     )
 
     assert waiting["stage"] == agreed["stage"] == "scheduled"
-    assert waiting["next_action"]["label"] == "Your slot is waiting to be confirmed"
+    # Said as the venue's move, and readable by the brand as well as the
+    # creator — "your slot" was the wrong voice for one of them.
+    assert waiting["next_action"]["label"] == "Waiting for the venue to confirm the slot"
     assert agreed["next_action"]["label"] == "Turn up on the day"
 
 

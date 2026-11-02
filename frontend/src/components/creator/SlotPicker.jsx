@@ -245,6 +245,21 @@ export default function SlotPicker({ open, onOpenChange, collab, onBooked }) {
 
                 {data && !reviewing && (
                     <div className="mt-5 space-y-6">
+                        {/* **Why the last time came back**, above the times
+                            to choose from. The reason is required on a
+                            decline precisely so this can be said; without it
+                            the creator picks the same impossible time again. */}
+                        {collab?.slot_declined_reason && (
+                            <p
+                                data-testid={IDS.declined}
+                                className="flex items-start gap-2 rounded-md border border-state-pending/30 bg-state-pending-wash px-4 py-3 text-body leading-relaxed text-state-pending"
+                            >
+                                <AlertCircle className="mt-1 h-4 w-4 flex-none" />
+                                <span>
+                                    Your last time was declined: {collab.slot_declined_reason}
+                                </span>
+                            </p>
+                        )}
                         {/* Say the rule before the grid rather than after a
                             creator wonders why Tuesday isn't there. */}
                         <ShootWindowNote campaign={data} />

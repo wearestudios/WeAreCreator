@@ -90,8 +90,14 @@ export const isWeareRun = (campaign) => executionOwner(campaign) === "weare";
  * the form, at the moment the brand picks the type or types the headcount,
  * rather than letting them choose and then quietly overriding them.
  */
-export const weareRunReason = ({ campaignType, creatorsNeeded, threshold }) => {
-    if (campaignType === "launch") {
+export const weareRunReason = ({ campaignType, creatorsNeeded, threshold, launchIsWeareRun }) => {
+    // **The server's flag, not a constant here.** `LAUNCH_IS_WEARE_RUN` rides
+    // on `GET /brand/profile` as `execution.launch_is_weare_run`; hardcoding
+    // it meant the form would keep telling a brand "we run launches" the day
+    // the operation stopped. Absent (a profile that has not loaded) reads as
+    // the server's default, true, so the form does not flash a picker the
+    // route would override.
+    if (campaignType === "launch" && launchIsWeareRun !== false) {
         return {
             code: "launch",
             title: "We run launches",

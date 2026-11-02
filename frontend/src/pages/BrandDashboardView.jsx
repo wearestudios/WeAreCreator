@@ -35,10 +35,16 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ListSkeleton } from "@/components/data/DenseView";
-import { BRAND_CAMPAIGN_CONTROLS, CAMPAIGN_TEMPLATES as TEMPLATES, VISIBILITY } from "@/constants/testIds";
+import {
+    BRAND_CAMPAIGN_CONTROLS,
+    BRAND_STANDING,
+    CAMPAIGN_TEMPLATES as TEMPLATES,
+    VISIBILITY,
+} from "@/constants/testIds";
 import { SaveAsTemplate } from "@/components/brand/CampaignTemplates";
 import { BrandAnalyticsSummary } from "@/components/brand/CampaignAnalytics";
 import { SafeSection } from "@/components/ErrorBoundary";
+import { StandingNotice, StandingPill } from "@/components/brand/BrandStanding";
 import {
     Dialog,
     DialogContent,
@@ -58,6 +64,7 @@ import {
     AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { IST } from "@/lib/time";
+import { formatInr } from "@/lib/compensation";
 
 const CAT_LABEL = {
     fnb: "F&B",
@@ -386,6 +393,10 @@ export default function BrandDashboardView({ user, justOnboarded = false }) {
                                 </h1>
                                 {data.profile && (
                                     <div className="mt-4 flex flex-wrap items-center gap-3 text-meta text-muted-foreground">
+                                        <StandingPill
+                                            verification={data.verification}
+                                            block={data.publish_block}
+                                        />
                                         {data.profile.category && (
                                             <span className="inline-flex items-center gap-1.5">
                                                 <Building2 className="h-4 w-4" />
@@ -466,6 +477,14 @@ export default function BrandDashboardView({ user, justOnboarded = false }) {
                                 </p>
                             </div>
                         )}
+
+                        {/* Pending, rejected, lapsed or paused for an
+                            overdue invoice — said here, before a brief is
+                            written, rather than in a toast after it. */}
+                        <StandingNotice
+                            verification={data.verification}
+                            block={data.publish_block}
+                        />
 
                         {profileMissing && (
                             <div
@@ -703,7 +722,57 @@ export default function BrandDashboardView({ user, justOnboarded = false }) {
                                                                     {c.filled_slots ?? 0} of {c.creators_needed}{" "}
                                                                     confirmed
                                                                 </span>
+                                                                {/* What we charge on this brief, where
+                                                                    one was set — both are on every
+                                                                    invoice the brand pays. */}
+                                                                {(c.commission_percent != null ||
+                                                                    c.campaign_fee != null) && (
+                                                                    <span
+                                                                        data-testid={BRAND_STANDING.commercial(c.id)}
+                                                                    >
+                                                                        ·{" "}
+                                                                        {[
+                                                                            c.commission_percent != null
+                                                                                ? `${c.commission_percent}% commission`
+                                                                                : null,
+                                                                            c.campaign_fee != null
+                                                                                ? `${formatInr(c.campaign_fee)} campaign fee`
+                                                                                : null,
+                                                                        ]
+                                                                            .filter(Boolean)
+                                                                            .join(" · ")}
+                                                                    </span>
+                                                                )}
                                                             </div>
+                                                            {/* **Sent back, and why.** A brief we
+                                                                returned went back to draft and read
+                                                                as an ordinary draft; the reason was
+                                                                on the payload and on no screen. */}
+                                                            {c.status === "draft" && c.review_reason && (
+                                                                <p
+                                                                    data-testid={BRAND_STANDING.changesRequested(c.id)}
+                                                                    className="mt-3 rounded-md border border-state-pending/30 bg-state-pending-wash px-3 py-2 text-meta leading-relaxed text-state-pending"
+                                                                >
+                                                                    <span className="font-medium">Changes requested</span>
+                                                                    {c.reviewed_at
+                                                                        ? ` · ${formatDate(c.reviewed_at)}`
+                                                                        : ""}
+                                                                    : {c.review_reason} Edit it and send it again.
+                                                                </p>
+                                                            )}
+                                                            {c.status === "paused" && c.pause_reason && (
+                                                                <p
+                                                                    data-testid={BRAND_STANDING.pauseReason(c.id)}
+                                                                    className="mt-3 text-meta leading-relaxed text-muted-foreground"
+                                                                >
+                                                                    Paused: {c.pause_reason}
+                                                                </p>
+                                                            )}
+                                                            {c.reviewed_at && c.status !== "draft" && (
+                                                                <p className="mt-2 text-meta text-muted-foreground">
+                                                                    Reviewed {formatDate(c.reviewed_at)}
+                                                                </p>
+                                                            )}
                                                         </div>
 
                                                         <div className="flex items-center gap-6 md:min-w-[240px] md:justify-end">

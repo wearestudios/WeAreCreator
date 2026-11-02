@@ -549,7 +549,10 @@ class TestVerificationExpiry:
         assert "collaborations" not in inspect.getsource(server._creator_block)
 
     def test_a_lapsed_brand_cannot_publish(self):
-        src = inspect.getsource(server._verified_brand_or_403)
+        # The four refusals live in `_brand_publish_block`, the one decider
+        # the route and the brand's own screens share.
+        assert "_brand_publish_block" in inspect.getsource(server._verified_brand_or_403)
+        src = inspect.getsource(server._brand_publish_block)
         assert "_verification_lapsed" in src
 
 
@@ -813,15 +816,16 @@ class TestInvoices:
     def test_money_owed_blocks_new_work_and_not_work_under_way(self):
         """Punishing the creators already on a campaign for the brand's
         accounts payable would be the one outcome worse than the debt."""
-        src = inspect.getsource(server._verified_brand_or_403)
+        src = inspect.getsource(server._brand_publish_block)
         assert "_brand_overdue_invoices" in src
         # The gate is on publishing, and nothing in it reaches collaborations.
         assert "collaborations" not in src
+        assert "collaborations" not in inspect.getsource(server._verified_brand_or_403)
 
     def test_the_override_is_the_way_past_it(self):
         """An invoice is overdue because a brand is not paying, or because our
         own accounts sent it to the wrong address."""
-        src = inspect.getsource(server._verified_brand_or_403)
+        src = inspect.getsource(server._brand_publish_block)
         assert 'invoice_override' in src
 
     def test_the_override_demands_a_reason(self):

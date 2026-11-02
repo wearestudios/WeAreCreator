@@ -672,6 +672,10 @@ class CreatorProfileUpdate(BaseModel):
     # it alone" like every other field here — a builder saving one step must
     # not silently switch this off because that step did not carry it.
     homepage_opt_in: Optional[bool] = None
+    # Whether barter briefs (a meal or a product instead of a fee) appear in
+    # this creator's feed. Off unless they say otherwise — see
+    # `_shows_barter_briefs`.
+    show_barter_briefs: Optional[bool] = None
 
 
 PAN_RE = re.compile(r"^[A-Z]{5}[0-9]{4}[A-Z]$")
@@ -904,7 +908,6 @@ def _content_fit(profile: dict, wanted: list) -> Optional[float]:
 # scoring unknowns at zero would rank every creator without a connected
 # Instagram account below every creator with a poor one.
 _UNKNOWN_SIGNAL = 0.5
-
 
 
 class BrandProfileUpdate(BaseModel):
@@ -1890,6 +1893,13 @@ DEFAULT_DRAFT_REVIEW_DAYS = 3
 DRAFT_REVIEW_DAYS_MIN = 1
 DRAFT_REVIEW_DAYS_MAX = 14
 
+# How many rounds of changes a brief includes. Up here for the same reason: the
+# campaign payloads validate against the bounds at class definition. See
+# `_revision_allowance` for what a round is and how the cap is held.
+DEFAULT_REVISIONS_INCLUDED = 2
+REVISIONS_INCLUDED_MIN = 0
+REVISIONS_INCLUDED_MAX = 5
+
 
 def _ready_to_shoot_state(campaign: Optional[dict]) -> str:
     """The state at which this campaign's creator has the thing and can shoot.
@@ -2581,6 +2591,12 @@ class PostCampaignPayload(BriefDetailFields):
     draft_review_days: Optional[int] = Field(
         default=None, ge=DRAFT_REVIEW_DAYS_MIN, le=DRAFT_REVIEW_DAYS_MAX
     )
+    # How many rounds of changes the brief includes — a term the creator reads
+    # before applying and that is frozen at acceptance. Absent means the
+    # default; see `_revision_allowance`.
+    revisions_included: Optional[int] = Field(
+        default=None, ge=REVISIONS_INCLUDED_MIN, le=REVISIONS_INCLUDED_MAX
+    )
     # Off unless asked for — see `_requires_slot_confirmation`.
     requires_slot_confirmation: Optional[bool] = None
     # When a shoot may happen. Both optional and both default to "no
@@ -2729,6 +2745,11 @@ class UpdateCampaignPayload(BriefDetailFields):
     draft_review_days: Optional[int] = Field(
         default=None, ge=DRAFT_REVIEW_DAYS_MIN, le=DRAFT_REVIEW_DAYS_MAX
     )
+    # Changes only what a *future* acceptance freezes: every collaboration
+    # already taken on carries its own number in its terms.
+    revisions_included: Optional[int] = Field(
+        default=None, ge=REVISIONS_INCLUDED_MIN, le=REVISIONS_INCLUDED_MAX
+    )
     # Off unless asked for — see `_requires_slot_confirmation`.
     requires_slot_confirmation: Optional[bool] = None
     restricted_days: Optional[list[int]] = None
@@ -2752,7 +2773,8 @@ class UpdateCampaignPayload(BriefDetailFields):
     # the brand's edit route as well as the admin's, so the brand path refuses
     # it through `_refuse_brand_payout_window`, the same shape
     # `execution_owner` and barter already use. `None` clears the override.
-    creator_payout_days: Optional[int] = Field(default=None, ge=0, le=180)
+    # Never longer than the public promise — see `_CREATOR_PAYOUT_MAX`.
+    creator_payout_days: Optional[int] = Field(default=None, ge=0, le=7)
 
 
 class CreateTeamMemberPayload(BaseModel):
@@ -4276,6 +4298,10 @@ NOTIFY_EVENTS = {
     # The barter close: there is no payment to send, so the end of the work
     # is its own message rather than a payment notice with no money in it.
     "collaboration_closed": "Your collaboration is wrapped up",
+    # The revision cap. The reviewer has used the rounds the brief included
+    # and asks for one more; the creator decides, and whoever asked is told.
+    "extra_revision_requested": "You've been asked for an extra round of changes",
+    "extra_revision_answered": "A creator answered your request for an extra round",
     "new_applicant": "A creator applied to your campaign",
     "application_withdrawn": "A creator withdrew their application",
     "collaboration_cancelled": "A collaboration you were on was cancelled",
@@ -5771,9 +5797,20 @@ _CREATOR_PAYOUT_SETTINGS_ID = "creator_payout_days"
 CREATOR_PAYOUT_DAYS = 7
 
 # Zero is a real answer — "same day as approval" is a promise somebody might
-# make — so the floor is 0 rather than 1. The ceiling is a sanity bound on a
-# number typed into a form, not a policy.
-_CREATOR_PAYOUT_MIN, _CREATOR_PAYOUT_MAX = 0, 180
+# make — so the floor is 0 rather than 1.
+#
+# **The ceiling is the public promise, not a sanity bound.** It was 180, which
+# let any brief — or the platform setting itself — say "paid within 90 days"
+# while every public page says "paid within 7 days of approval". A promise the
+# site makes in public cannot be one a form field can quietly lengthen, so the
+# window may be shortened per brief and never stretched past what we say.
+# `clamp_creator_payout_days` brought every stored value inside it.
+_CREATOR_PAYOUT_MIN, _CREATOR_PAYOUT_MAX = 0, CREATOR_PAYOUT_DAYS
+
+# The day an unpaid approval goes to the top of the admin action queue. Two
+# days of a seven-day promise left: early enough to raise and pay it, late
+# enough not to be noise on every approval.
+PAYOUT_ALERT_DAYS = 5
 
 # Read on every campaign serialize and every collaboration row, changed about
 # never — so cached with a short life, the arrangement `sla_targets` uses, and
@@ -7732,12 +7769,6 @@ async def withdraw_deletion_request(user: dict = Depends(get_current_user)):
     return _serialize_deletion_request(updated)
 
 
-api_router.include_router(deletion_router)
-
-
-api_router.include_router(auth_router)
-
-
 # --- Creator endpoints -----------------------------------------------------
 
 creator_router = APIRouter(prefix="/creator", tags=["creator"])
@@ -7790,6 +7821,8 @@ def _serialize_creator_profile(doc: dict) -> dict:
         # **off** — consent is given, never assumed, so every profile written
         # before this field existed is one nobody has asked yet.
         "homepage_opt_in": bool(doc.get("homepage_opt_in", False)),
+        # Whether barter briefs appear in their feed. Absent reads as off.
+        "show_barter_briefs": _shows_barter_briefs(doc),
         "payout_ready": payout_ready(doc),
         # Named, so the dashboard can say what is still needed rather than
         # showing a disabled state with no explanation.
@@ -8960,6 +8993,11 @@ async def update_creator_profile(
         update["platforms"] = list(dict.fromkeys(payload.platforms))
     if "base_rate" in sent:
         update["base_rate"] = payload.base_rate
+    if "show_barter_briefs" in sent:
+        # A feed preference, nothing more: not material, not consent, not in
+        # completeness. Changing it re-queues nobody and takes effect on the
+        # next feed read.
+        update["show_barter_briefs"] = bool(payload.show_barter_briefs)
     if "homepage_opt_in" in sent:
         # Consent, stored as the plain boolean it is. **Deliberately not in
         # `MATERIAL_PROFILE_FIELDS`**: putting somebody back in a verification
@@ -9131,6 +9169,11 @@ def _serialize_collab_row(
         "delivery": _delivery_block(collab),
         "slot_confirmed": _slot_confirmed(collab),
         "slot_declined_reason": collab.get("slot_declined_reason"),
+        # Why the runner moved the booking. Required when it is moved, and
+        # until now read by nobody — the creator found a different time on
+        # their card with no word about why.
+        "reschedule_reason": collab.get("reschedule_reason"),
+        "rescheduled_at": _iso(collab.get("rescheduled_at")),
         # **Which steps WeAre took for them, with who and why.** This is the
         # creator's own card, and a booking they did not make has to read as
         # one — the rule is "booked by WeAre on your behalf", never a bare
@@ -9171,6 +9214,11 @@ def _serialize_collab_row(
         # says what is missing; this says why it was accepted anyway.
         "partial_delivery": bool(collab.get("partial_delivery")),
         "partial_note": collab.get("partial_note"),
+        # The rounds of changes agreed, and how many are used — the same
+        # "1 of 2 used" the reviewer reads. And whether an extra round is
+        # waiting on their answer, which is theirs alone to give.
+        "revisions": _revision_allowance(collab),
+        "can_answer_extra_revision": _revision_allowance(collab)["extra_pending"],
         "agreed_at": _iso(collab.get("agreed_at")),
         "content_url": collab.get("content_url"),
         "content_urls": collab.get("content_urls")
@@ -9406,6 +9454,22 @@ def _creator_next_action(collab: dict, campaign: Optional[dict], can_be_paid: bo
             "waiting_on": "you",
         }
     on_behalf = _on_behalf_block(collab) or {}
+    if state == "slot_booked" and not _slot_confirmed(collab):
+        # **Not "turn up" until somebody has said yes.** On a campaign that
+        # asks the venue to confirm, a booking is a request; telling the
+        # creator to turn up before the venue agreed is how somebody arrives
+        # at a shoot nobody planned for. `_slot_confirmed` is the one reader.
+        return {
+            "action": "await_slot_confirmation",
+            "label": (
+                "WeAre booked this slot for you — waiting for the venue to "
+                "confirm it. Release it if it doesn't work."
+                if on_behalf.get("slot_booked")
+                else "Waiting for the venue to confirm your slot. We'll message "
+                "you the moment they do."
+            ),
+            "waiting_on": "weare" if _execution_owner(campaign) == "weare" else "brand",
+        }
     if state == "slot_booked":
         # **Said in the creator's own next line, not only in a note beside
         # it.** A seat somebody else chose for them is the one thing on this
@@ -9506,6 +9570,25 @@ def _creator_next_action(collab: dict, campaign: Optional[dict], can_be_paid: bo
     return {"action": None, "label": None, "waiting_on": None}
 
 
+def _shows_barter_briefs(profile: Optional[dict]) -> bool:
+    """Does this creator want barter briefs in their feed? **Off unless they
+    said yes.**
+
+    The public site leads creators with "Paid briefs", and a feed where every
+    third card pays a dinner makes that a sentence the product does not keep.
+    Barter is not hidden from the platform — brands still post it, and a brand
+    may still invite anybody to one, labelled as barter — it is hidden from the
+    browsing of somebody who never asked for it. Absent reads as off, so every
+    profile written before the setting existed browses paid work only.
+    """
+    return bool((profile or {}).get("show_barter_briefs"))
+
+
+# The one clause that keeps barter out of a feed. Appended into `$and`, never
+# assigned, like every other clause the feed composes.
+_NO_BARTER_QUERY = {"compensation_type": {"$ne": "barter"}}
+
+
 async def _suggested_campaigns(
     profile: dict, exclude_ids: set, limit: int = 6
 ) -> list[dict]:
@@ -9531,6 +9614,9 @@ async def _suggested_campaigns(
             {
                 "status": {"$in": list(LIVE_CAMPAIGN_STATUSES)},
                 "_id": {"$nin": list(exclude_ids)},
+                # A suggestion is a feed too: barter only for a creator who
+                # asked to see it.
+                **({} if _shows_barter_briefs(profile) else _NO_BARTER_QUERY),
                 # A recommendation is a disclosure. Private briefs reach a
                 # creator through their invitation and the browse list's
                 # invited-door, never through "you might like".
@@ -9615,6 +9701,12 @@ async def get_creator_dashboard(
         "follower_count": (profile or {}).get("follower_count"),
         "base_rate": (profile or {}).get("base_rate"),
         "payout_ready": payout_ready(profile or {}),
+        # **Why they may not take on new work, said on their own home page.**
+        # `_creator_block` refused the act at the apply route and nothing told
+        # the creator before they pressed the button — a suspended account
+        # found out from a 403. The same reader, so the banner and the API
+        # cannot disagree. `None` for almost everybody.
+        "block": _creator_block(profile, user),
         # Where the follower number came from, said out loud. It is measured
         # while Instagram is connected and self-reported otherwise, and the
         # two are never presented as the same thing.
@@ -9756,6 +9848,9 @@ async def get_creator_dashboard(
 
     payout_default = await creator_payout_days()
     can_be_paid = payout_ready(profile or {})
+    suspended = (_creator_block(profile, user) or {}).get("code") == "suspended"
+    cancel_limit = await reschedule_limit()
+    now = datetime.now(timezone.utc)
     active_rows = []
     for c in grouped["active"]:
         camp = campaign_map.get(c["campaign_id"]) or {}
@@ -9783,20 +9878,44 @@ async def get_creator_dashboard(
                 "slot_starts_at": _iso(c.get("scheduled_at")),
                 # The route releases a seat only from `slot_booked`; the flag
                 # read `slot_id` alone, so every card past the shoot offered
-                # "release this slot" against a route that answers 409.
-                "can_cancel_slot": bool(c.get("slot_id")) and c.get("state") == "slot_booked",
+                # "release this slot" against a route that answers 409. It now
+                # also asks the cutoff and the reschedule cap — the same
+                # `_slot_cancel_refusal` the route asks — so the control is
+                # disabled with the reason instead of refused after the tap.
+                "can_cancel_slot": bool(c.get("slot_id"))
+                and c.get("state") == "slot_booked"
+                and _slot_cancel_refusal(c, cancel_limit, now) is None,
+                "cancel_blocked_reason": (
+                    (_slot_cancel_refusal(c, cancel_limit, now) or {}).get("message")
+                    if c.get("slot_id") and c.get("state") == "slot_booked"
+                    else None
+                ),
                 "cancel_cutoff_hours": SLOT_CANCEL_CUTOFF_HOURS,
+                "reschedule_count": _reschedule_count(c),
+                "reschedule_limit": cancel_limit,
                 # Absent on a campaign that doesn't review drafts, so the card
                 # has nothing to render rather than an empty panel.
                 "draft": _serialize_draft(c) if _requires_draft_approval(camp) else None,
                 "next_action": _creator_next_action(c, camp, can_be_paid),
             }
         )
+        # **Booking waits while the account is on hold**, decided here so the
+        # card offers no picker the route would refuse (`_claim_slot` holds the
+        # same line). Work already booked is untouched — nobody is evicted
+        # from Saturday's shoot.
+        if suspended and active_rows[-1]["next_action"].get("action") == "book_slot":
+            active_rows[-1]["next_action"] = {
+                "action": None,
+                "label": "Booking is paused while your account is on hold. "
+                "Get in touch and we'll go through it.",
+                "waiting_on": "weare",
+            }
     grouped["active"] = active_rows
 
     completeness = _profile_completeness(profile or {})
     invitations = await _creator_invitations(creator_oid)
     held = await _creator_held_applications(creator_oid)
+    held_resolved = await _creator_held_resolved(creator_oid)
     suggestions = await _suggested_campaigns(
         profile or {}, {c["campaign_id"] for c in collabs}
     )
@@ -9815,6 +9934,10 @@ async def get_creator_dashboard(
         # one list of "briefs I have put my name to", and splitting it by
         # whose queue the record happens to be in is our filing, not theirs.
         "held_applications": held,
+        # Held pitches that came off the table in the last month, with the
+        # reason on each — the brief filled, it closed, or the profile was not
+        # approved. Released ones are absent: they are applications now.
+        "held_resolved": held_resolved,
         "verification_outstanding": _verification_outstanding(profile) if held else None,
         "collaborations": grouped,
         "upcoming": upcoming,
@@ -9846,7 +9969,6 @@ async def get_creator_dashboard(
             "declined": len(grouped["declined"]),
         },
     }
-
 
 
 @creator_router.post("/collaborations/{collab_id}/submit_content")
@@ -10220,7 +10342,10 @@ async def list_creator_slots(
         "state": collab.get("state"),
         # Booking is the step out of commercial_agreed; the flag saves the UI
         # re-deriving the state machine to decide whether to show the button.
-        "can_book": collab.get("state") == "commercial_agreed" and not _is_delivery(campaign),
+        "can_book": collab.get("state") == "commercial_agreed"
+        and not _is_delivery(campaign)
+        # The line `_claim_slot` holds: a suspended account takes no new seat.
+        and user.get("status") != "suspended",
         "picks_own_time": campaign.get("campaign_type") == "personal_table",
         "how_it_works": _slot_window_note(campaign),
         # The brand's days and hours, so a creator picking their own time on a
@@ -10804,38 +10929,14 @@ async def creator_cancel_slot(
             detail=f"Your collaboration is {collab.get('state')} — there's no booking to cancel.",
         )
 
-    when = _as_utc(collab.get("scheduled_at"))
     now = datetime.now(timezone.utc)
-    if when and when - now < timedelta(hours=SLOT_CANCEL_CUTOFF_HOURS):
-        raise HTTPException(
-            status_code=409,
-            detail=(
-                f"It's inside {SLOT_CANCEL_CUTOFF_HOURS} hours of your slot — "
-                "message the campaign manager instead."
-            ),
-        )
-
-    # **The cap, and the way through it.** A venue rearranges its staffing
-    # around a booking, so the third move is a different kind of ask from the
-    # first. The refusal names the number and points at the person who can
-    # still do it, because "no" with no next step is how somebody just stops
-    # turning up instead.
+    when = _as_utc(collab.get("scheduled_at"))
     limit = await reschedule_limit()
-    moved = _reschedule_count(collab)
-    if moved >= limit:
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "message": (
-                    f"You've already moved this booking {moved} "
-                    f"time{'' if moved == 1 else 's'}. Message whoever runs the "
-                    "campaign and they can move it for you."
-                ),
-                "code": "reschedule_limit",
-                "limit": limit,
-                "moved": moved,
-            },
-        )
+    refusal = _slot_cancel_refusal(collab, limit, now)
+    if refusal and refusal["code"] == "cancel_cutoff":
+        raise HTTPException(status_code=409, detail=refusal["message"])
+    if refusal:
+        raise HTTPException(status_code=409, detail=refusal)
 
     slot_oid = collab["slot_id"]
     # The collaboration moves first. If the seat were released first and this
@@ -10880,7 +10981,11 @@ async def creator_cancel_slot(
         note=(payload.reason or "").strip() or None,
     )
     # The manager is the one who has to fill the seat or re-plan the day.
-    await _tell_manager_a_seat_freed(collab, "cancelled by the creator")
+    reason = (payload.reason or "").strip()
+    await _tell_manager_a_seat_freed(
+        collab,
+        f"cancelled by the creator ({reason})" if reason else "cancelled by the creator",
+    )
 
     return {
         "id": collab_id,
@@ -10889,7 +10994,6 @@ async def creator_cancel_slot(
         "scheduled_at": None,
         "next_step": "Pick another slot when you're ready.",
     }
-
 
 
 # ---------------------------------------------------------------------------
@@ -10920,8 +11024,6 @@ def _extract_ig_handle(raw: str) -> Optional[str]:
     if not re.fullmatch(r"[a-z0-9._]{1,60}", raw):
         return None
     return raw
-
-
 
 
 # ---------------------------------------------------------------------------
@@ -10990,6 +11092,46 @@ async def reschedule_limit() -> int:
     except (TypeError, ValueError):
         return RESCHEDULE_LIMIT_DEFAULT
     return value if 0 <= value <= RESCHEDULE_LIMIT_MAX else RESCHEDULE_LIMIT_DEFAULT
+
+
+def _slot_cancel_refusal(collab: Optional[dict], limit: int, now: datetime) -> Optional[dict]:
+    """Why this creator may not release their slot now, or `None`.
+
+    **One decider for the route and the card.** `can_cancel_slot` used to read
+    the state alone, so the card offered "release this slot" inside the
+    24-hour cutoff and past the reschedule cap and the route answered 409
+    both times. Returns the sentence rather than raising, the
+    `_scheduling_refusal` shape, so the dashboard can disable the control and
+    say why.
+    """
+    collab = collab or {}
+    when = _as_utc(collab.get("scheduled_at"))
+    if when and when - now < timedelta(hours=SLOT_CANCEL_CUTOFF_HOURS):
+        return {
+            "code": "cancel_cutoff",
+            "message": (
+                f"It's inside {SLOT_CANCEL_CUTOFF_HOURS} hours of your slot — "
+                "message the campaign manager instead."
+            ),
+        }
+    # **The cap, and the way through it.** A venue rearranges its staffing
+    # around a booking, so the third move is a different kind of ask from the
+    # first. The refusal names the number and points at the person who can
+    # still do it, because "no" with no next step is how somebody just stops
+    # turning up instead.
+    moved = _reschedule_count(collab)
+    if moved >= limit:
+        return {
+            "message": (
+                f"You've already moved this booking {moved} "
+                f"time{'' if moved == 1 else 's'}. Message whoever runs the "
+                "campaign and they can move it for you."
+            ),
+            "code": "reschedule_limit",
+            "limit": limit,
+            "moved": moved,
+        }
+    return None
 
 
 def _reschedule_count(collab: Optional[dict]) -> int:
@@ -11146,6 +11288,52 @@ async def _invitation_or_404(invitation_id: str, creator_oid):
     if not invite:
         raise HTTPException(status_code=404, detail="Invitation not found")
     return invite
+
+
+# How long a held pitch that did not go in stays on the creator's home page.
+HELD_RESOLVED_VISIBLE_DAYS = 30
+
+
+async def _creator_held_resolved(creator_oid) -> list:
+    """Held pitches that did not become applications, recently, with why.
+
+    The reason was written on every one (`_resolve_held`,
+    `_withdraw_held_applications`) and the dashboard only ever read the rows
+    still held — so a pitch that came off the table because the brief filled
+    while we were checking them simply vanished from the page. A creator's own
+    take-back carries no reason and is left out: they know why.
+    """
+    since = datetime.now(timezone.utc) - timedelta(days=HELD_RESOLVED_VISIBLE_DAYS)
+    rows = await db.held_applications.find(
+        {
+            "creator_id": creator_oid,
+            "state": {"$nin": ["held", "released"]},
+            "reason": {"$nin": [None, ""]},
+            "resolved_at": {"$gte": since},
+        }
+    ).sort("resolved_at", -1).to_list(length=50)
+    if not rows:
+        return []
+    campaigns = {
+        c["_id"]: c
+        for c in await db.campaigns.find(
+            {"_id": {"$in": list({r["campaign_id"] for r in rows})}}
+        ).to_list(length=len(rows))
+    }
+    brand_map = await _load_brand_map(
+        [c["brand_id"] for c in campaigns.values() if c.get("brand_id")]
+    )
+    out = []
+    for row in rows:
+        campaign = campaigns.get(row["campaign_id"]) or {}
+        brand = brand_map.get(campaign.get("brand_id")) or {}
+        out.append(
+            _serialize_held(
+                row,
+                {**campaign, "brand_name": brand.get("business_name") or brand.get("name")},
+            )
+        )
+    return out
 
 
 async def _creator_held_applications(creator_oid) -> list:
@@ -11311,7 +11499,97 @@ async def decline_invitation(
     return {"ok": True, "state": "declined"}
 
 
-api_router.include_router(creator_router)
+class ExtraRevisionRequestPayload(BaseModel):
+    """Asking for one more round than the brief included. The note is what the
+    creator reads when deciding, so it is worth a sentence, but a request is
+    complete without one."""
+
+    note: Optional[str] = Field(default=None, max_length=500)
+
+
+class ExtraRevisionAnswerPayload(BaseModel):
+    note: Optional[str] = Field(default=None, max_length=500)
+
+
+# Where a send-back can happen, and so where asking for one more makes sense.
+_SEND_BACK_STATES = ("draft_submitted", "content_submitted")
+
+
+async def _answer_extra_revision(collab_id: str, user: dict, accept: bool, note) -> dict:
+    """The creator's answer. **One implementation for both**, so a decline and
+    an accept are recorded, audited and announced the same way."""
+    collab = await _own_collab_or_404(collab_id, user)
+    _refuse_if_disputed(collab)
+    if not _revision_allowance(collab)["extra_pending"]:
+        raise HTTPException(status_code=409, detail="There's no request waiting for your answer.")
+    campaign = await db.campaigns.find_one({"_id": collab["campaign_id"]}) or {}
+    now = datetime.now(timezone.utc)
+    note = (note or "").strip() or None
+    update: dict = {
+        "$set": {
+            "extra_revision_request.state": "accepted" if accept else "declined",
+            "extra_revision_request.answered_at": now,
+            "extra_revision_request.answer_note": note,
+            "updated_at": now,
+        }
+    }
+    if accept:
+        # One more round, and the record of it beside the fee: a change to
+        # what was agreed, agreed by the person it costs.
+        update["$inc"] = {"revisions_extra": 1}
+        update["$push"] = {"negotiation_history": _negotiation_step(
+            kind="extra_revision", amount=None, user=user,
+            note=note or "One extra round of changes, beyond what the brief included.",
+            source="in_app", campaign=campaign, at=now,
+        )}
+    updated = await db.collaborations.find_one_and_update(
+        {"_id": collab["_id"], "extra_revision_request.state": "requested"},
+        update,
+        return_document=True,
+    )
+    if not updated:
+        raise HTTPException(status_code=409, detail="This was just answered — reload.")
+    await audit(
+        user,
+        "collaboration.extra_revision_accepted" if accept else "collaboration.extra_revision_declined",
+        "collaboration", collab["_id"],
+        before={"extra_revision_request": "requested"},
+        after={"extra_revision_request": "accepted" if accept else "declined",
+               "revisions": _revision_allowance(updated)["label"]},
+        note=note,
+        **_campaign_audit_context(campaign),
+    )
+    who = user.get("name") or "The creator"
+    await _escalate_to_whoever_runs_it(
+        campaign,
+        "extra_revision_answered",
+        title="Extra round accepted" if accept else "Extra round declined",
+        body=(
+            f"{who} agreed to one more round of changes on {campaign.get('title')}."
+            if accept
+            else f"{who} declined an extra round of changes on {campaign.get('title')} — "
+            "approve the work as it stands, or talk to us."
+        ),
+    )
+    return {"revisions": _revision_allowance(updated)}
+
+
+@creator_router.post("/collaborations/{collab_id}/revisions/extra/accept")
+async def accept_extra_revision(
+    collab_id: str,
+    payload: ExtraRevisionAnswerPayload,
+    user: dict = Depends(require_roles("creator")),
+):
+    return await _answer_extra_revision(collab_id, user, True, payload.note)
+
+
+@creator_router.post("/collaborations/{collab_id}/revisions/extra/decline")
+async def decline_extra_revision(
+    collab_id: str,
+    payload: ExtraRevisionAnswerPayload,
+    user: dict = Depends(require_roles("creator")),
+):
+    return await _answer_extra_revision(collab_id, user, False, payload.note)
 
 
 # --- Brand router ----------------------------------------------------------
@@ -11429,6 +11707,7 @@ def _serialize_brand_campaign(
         "visibility": _campaign_visibility(doc),
         "requires_draft_approval": _requires_draft_approval(doc),
         "draft_review_days": _draft_review_days(doc),
+        "revisions_included": _revisions_included(doc),
         "requires_slot_confirmation": _requires_slot_confirmation(doc),
         # Launch only, and `None` everywhere else — the payload validator
         # refuses it on the other two types, so absent here means the same
@@ -11618,26 +11897,22 @@ async def _campaign_brand_verified_or_409(campaign: Optional[dict]) -> dict:
     return profile
 
 
-async def _verified_brand_or_403(user: dict) -> dict:
-    """Assert the caller's brand has been verified by us.
+async def _brand_publish_block(profile: Optional[dict]) -> Optional[dict]:
+    """Why this brand may not reach creators right now, or `None`.
 
-    Anyone can sign up and claim to be any business, so this is the line
-    between a claim and a checked one. Drafting a brief and editing your own
-    profile stay open — they cost nobody anything and a rejected brand has to
-    be able to fix itself. Everything that *reaches a creator* is behind here:
-    publishing, the directory, the applicant list, and every action that
-    notifies somebody.
+    **The one decider behind both the 403 and the form.** `_verified_brand_or_403`
+    had four refusals and the publish form knew two of them — so a brand
+    whose verification had lapsed, or who owed us money, filled in a brief,
+    pressed publish, and met the wall in a toast. The profile payload carries
+    this answer now (`publish_block`), so the gate and the route are one rule.
     """
-    if user.get("role") == "admin":
-        return {}
-    profile = await db.brand_profiles.find_one({"user_id": _brand_scope(user)})
     if not profile:
-        raise HTTPException(
-            status_code=403,
-            detail="Finish your brand profile before submitting a campaign.",
-        )
+        return {
+            "code": "no_profile",
+            "message": "Finish your brand profile before submitting a campaign.",
+        }
     if not profile.get("verified", False):
-        raise HTTPException(status_code=403, detail=_why_brand_is_blocked(profile))
+        return {"code": "unverified", "message": _why_brand_is_blocked(profile)}
     # **Checked once is not checked.** A business verified two years ago may
     # not be trading, and the record still says "verified" because nothing
     # expired. A lapse is not a rejection: `verified` stays true and the
@@ -11645,17 +11920,14 @@ async def _verified_brand_or_403(user: dict) -> dict:
     # is still current, and the fix is a confirmation rather than a
     # resubmission.
     if _verification_lapsed(profile, await verification_validity_days()):
-        raise HTTPException(
-            status_code=403,
-            detail={
-                "message": (
-                    "It's been a while since we checked your business details. "
-                    "Confirm they're still right and you can post again — "
-                    "campaigns already running are not affected."
-                ),
-                "code": "verification_lapsed",
-            },
-        )
+        return {
+            "message": (
+                "It's been a while since we checked your business details. "
+                "Confirm they're still right and you can post again — "
+                "campaigns already running are not affected."
+            ),
+            "code": "verification_lapsed",
+        }
     # **Money owed stops new work, not work under way.** A brand with three
     # unpaid invoices posting a fourth brief is the arrangement that ends with
     # creators unpaid for work somebody was never billed for. Campaigns already
@@ -11667,23 +11939,43 @@ async def _verified_brand_or_403(user: dict) -> dict:
             profile["user_id"]
         )
         if owing:
-            raise HTTPException(
-                status_code=403,
-                detail={
-                    "message": (
-                        f"{owing['count']} invoice"
-                        f"{'' if owing['count'] == 1 else 's'} "
-                        f"(₹{owing['total']:,.0f}) "
-                        f"{'is' if owing['count'] == 1 else 'are'} past due. "
-                        "Settle them and you can post again — campaigns already "
-                        "running carry on either way."
-                    ),
-                    "code": "invoice_overdue",
-                    "count": owing["count"],
-                    "total": owing["total"],
-                    "days_overdue": owing["worst_days"],
-                },
-            )
+            return {
+                "message": (
+                    f"{owing['count']} invoice"
+                    f"{'' if owing['count'] == 1 else 's'} "
+                    f"(₹{owing['total']:,.0f}) "
+                    f"{'is' if owing['count'] == 1 else 'are'} past due. "
+                    "Settle them and you can post again — campaigns already "
+                    "running carry on either way."
+                ),
+                "code": "invoice_overdue",
+                "count": owing["count"],
+                "total": owing["total"],
+                "days_overdue": owing["worst_days"],
+            }
+    return None
+
+
+async def _verified_brand_or_403(user: dict) -> dict:
+    """Assert the caller's brand has been verified by us.
+
+    Anyone can sign up and claim to be any business, so this is the line
+    between a claim and a checked one. Drafting a brief and editing your own
+    profile stay open — they cost nobody anything and a rejected brand has to
+    be able to fix itself. Everything that *reaches a creator* is behind here:
+    publishing, the directory, the applicant list, and every action that
+    notifies somebody. The four reasons are `_brand_publish_block`'s.
+    """
+    if user.get("role") == "admin":
+        return {}
+    profile = await db.brand_profiles.find_one({"user_id": _brand_scope(user)})
+    block = await _brand_publish_block(profile)
+    if block:
+        # The first two have always answered with a plain sentence, which is
+        # what the older screens read; the other two carry a code.
+        if block["code"] in ("no_profile", "unverified"):
+            raise HTTPException(status_code=403, detail=block["message"])
+        raise HTTPException(status_code=403, detail=block)
     return profile
 
 
@@ -12180,6 +12472,18 @@ async def _brand_profile_response(profile: dict) -> dict:
     # step on: first "are we allowed to reach creators", then "do we still
     # queue behind a review to do it".
     out["trust"] = await _trust_block(profile)
+    # **Whether a brief may go out, and why not**, decided by the same reader
+    # the publish route uses — so the form can say "your verification lapsed"
+    # or "two invoices are past due" before the button rather than after it.
+    out["publish_block"] = await _brand_publish_block(profile)
+    # The overdue state itself, which the profile used to omit entirely.
+    owing = (await _brand_overdue_invoices([profile["user_id"]])).get(profile["user_id"])
+    out["invoices"] = {
+        "overdue": owing,
+        # An admin can lift the block while the money is chased; the brand
+        # should know why it is not blocked as much as why it is.
+        "override": bool(profile.get("invoice_override")),
+    }
     out["verification"] = {
         "state": state,
         # When the check runs out, folded into the block the verification
@@ -12952,6 +13256,13 @@ async def create_brand_campaign(
             else bool(payload.requires_draft_approval)
         ),
         "draft_review_days": payload.draft_review_days or DEFAULT_DRAFT_REVIEW_DAYS,
+        # `is None`, not `or`: zero is a real answer ("no rounds of changes
+        # included") and must not be read as "use the default".
+        "revisions_included": (
+            DEFAULT_REVISIONS_INCLUDED
+            if payload.revisions_included is None
+            else payload.revisions_included
+        ),
         # **Default off, unlike the draft gate.** A booking on most briefs is
         # the creator picking one of the manager's own published slots, and
         # asking somebody to confirm that is asking them to agree with
@@ -14077,6 +14388,13 @@ def _serialize_applicant(
         # The same flow the creator and the admin read, in the brand's voice.
         "process": _process_flow(collab, campaign, viewer={"role": "brand_manager"}),
         "slot_confirmed": _slot_confirmed(collab),
+        # Why the last booked time was turned down, required on every decline.
+        "slot_declined_reason": collab.get("slot_declined_reason"),
+        # Why the runner moved the booking. Required when it is moved, and
+        # until now read by nobody — the creator found a different time on
+        # their card with no word about why.
+        "reschedule_reason": collab.get("reschedule_reason"),
+        "rescheduled_at": _iso(collab.get("rescheduled_at")),
         "state": state,
         # **The brand gets the verdict, unlike the creator.** Where the wait is
         # theirs — an unanswered pitch, an unapproved draft — the target is a
@@ -14107,7 +14425,10 @@ def _serialize_applicant(
         "location_note": collab.get("location_note"),
         "exit_reason": collab.get("exit_reason"),
         "revision_note": collab.get("revision_note"),
-        # Which of this row's steps WeAre took for somebody — the brand's own
+        # The rounds of changes agreed and used, on the board where the
+        # send-back button is — so "No revisions left" is said before the
+        # button is pressed rather than after.
+        "revisions": _revision_allowance(collab),
         # included, so a brand reading its board sees "accepted by WeAre on
         # your behalf" rather than an acceptance it does not remember making.
         "on_behalf": _on_behalf_block(collab),
@@ -14115,15 +14436,26 @@ def _serialize_applicant(
         "updated_at": _iso(collab.get("updated_at")),
         # Actions the brand can take on this row, decided server-side so the UI
         # never offers a button the API will refuse.
-        "can_accept": state == "verified",
-        "can_decline": state in ("applied", "verified", "accepted"),
-        "can_review_content": state == "content_submitted",
+        # **`not frozen` on each**: a disputed row offered Accept and Approve
+        # on the board while every one of those routes refused it.
+        "frozen": bool(_dispute_of(collab)),
+        "can_accept": state == "verified" and not _dispute_of(collab),
+        "can_decline": state in ("applied", "verified", "accepted") and not _dispute_of(collab),
+        "can_review_content": state == "content_submitted" and not _dispute_of(collab),
+        # Past the agreed rounds, the brand's send-back is refused and asking
+        # for one more is the way on — only on a brief the brand runs, where
+        # it is the reviewer.
+        "can_request_extra_revision": state in _SEND_BACK_STATES
+        and not _weare_runs(campaign or {})
+        and _revision_allowance(collab)["exhausted"]
+        and not _revision_allowance(collab)["extra_pending"],
         # **Only where the brief counted what it asked for.** A campaign
         # written before `deliverable_items` has a sentence and no structure,
         # so there is nothing to be short of and the route refuses it — the
         # button is absent rather than present and 409ing.
         "can_accept_partial": state == "content_submitted"
-        and bool(_deliverable_items(campaign)),
+        and bool(_deliverable_items(campaign))
+        and not _dispute_of(collab),
         "creator": _brand_visible_creator(profile, creator_user, reliability=reliability),
         "payment": (
             {
@@ -14845,18 +15177,21 @@ async def brand_request_changes(
         raise HTTPException(
             status_code=422, detail="Tell the creator what needs to change."
         )
+    # The agreed number of rounds, shared with the draft send-back.
+    _refuse_if_no_revisions_left(collab)
 
     now = datetime.now(timezone.utc)
     # The campaign's own ready state — `received` on a delivery brief, where
     # `attended` is not a state the ladder has.
     back_to = _ready_to_shoot_state(campaign)
     result = await db.collaborations.update_one(
-        {"_id": collab["_id"], "state": "content_submitted"},
+        {"_id": collab["_id"], "state": "content_submitted", **_revision_precondition(collab)},
         {
             "$set": {
                 **_state_stamp(back_to, now),
                 "revision_note": payload.reason.strip(),
-            }
+            },
+            "$inc": {"revisions_used": 1},
         },
     )
     if result.modified_count == 0:
@@ -14922,6 +15257,21 @@ async def get_brand_dashboard(user: dict = Depends(require_roles(*BRAND_ROLES)))
 
     return {
         "profile": _serialize_brand_profile(profile),
+        # **Where the brand stands, on the screen it lands on.** Pending,
+        # rejected, lapsed or blocked by an overdue invoice were all decided on
+        # the server and said only at the moment of publishing. The pill and
+        # the notice read these two, which are the same readers the publish
+        # route uses.
+        "verification": {
+            "state": _brand_verification_state(profile or {}),
+            "verification_reason": (profile or {}).get("verification_reason"),
+            **(
+                _verification_ageing(profile, await verification_validity_days()) or {}
+                if profile
+                else {}
+            ),
+        },
+        "publish_block": await _brand_publish_block(profile),
         "campaigns": campaign_rows,
         "totals": {
             "total_campaigns": len(campaign_rows),
@@ -16988,6 +17338,12 @@ async def brand_record_agreed_amount(
     # And the brand, on a campaign they handed to us: this is the first they
     # hear of this creator, and it comes with the number already agreed.
     await _tell_brand_about_shortlist(campaign, collab, amount)
+    # **The terms freeze here when they did not at acceptance.** A brief we run
+    # is accepted through the console's Advance, which records no fee and so
+    # never froze anything — this is the first moment every term is known.
+    # Once only, by `_issue_terms_snapshot`'s own precondition, so a brand-run
+    # collaboration frozen at acceptance is left exactly as it was.
+    await _issue_terms_snapshot({**collab, "agreed_amount": amount}, campaign)
     await notify(
         collab["creator_id"],
         "commercial_agreed",
@@ -17090,9 +17446,6 @@ async def brand_campaign_roster(
         "no_shows": sum(1 for r in rows if r["attendance"] == "no_show"),
         "roster": rows,
     }
-
-
-api_router.include_router(brand_router)
 
 
 # --- Admin router ----------------------------------------------------------
@@ -17255,6 +17608,15 @@ def _next_action(collab: dict, campaign: Optional[dict] = None) -> dict:
     if state == "commercial_agreed" and _is_delivery(campaign):
         label = "Confirm your address"
         detail = "Check the delivery address on your profile, then confirm it."
+
+    # **Booked is not agreed** where the campaign asks the venue to confirm.
+    # The table's "Turn up" was unconditional, so every screen reading this
+    # told the creator to go before anybody had said yes. Until the runner
+    # answers, the move is theirs.
+    if state == "slot_booked" and not _slot_confirmed(collab):
+        owner = "brand"
+        label = "Confirm the booking"
+        detail = "The creator picked a time. Whoever runs the campaign confirms or declines it."
 
     # On a campaign that reviews drafts, what follows attendance is a draft,
     # not a live link. The state is the same; the instruction is not, and the
@@ -17461,7 +17823,7 @@ _PROCESS_ACTION = {
         "Waiting for the creator to confirm their address",
     ),
     # Booked, and waiting on whoever runs the campaign to say the time works.
-    "slot_pending": ("runner", "Confirm the creator's slot", "Your slot is waiting to be confirmed"),
+    "slot_pending": ("runner", "Confirm the creator's slot", "Waiting for the venue to confirm the slot"),
     "slot_booked": ("creator", "Turn up on the day", "Booked — waiting for the day"),
     # The same two, where WeAre booked the seat for the creator. **Never a
     # bare "booked"**: the creator reads that somebody else chose their day,
@@ -17732,7 +18094,11 @@ async def _tell_brand_about_shortlist(
 #   with no reason is the entry somebody asks about six months later.
 # ---------------------------------------------------------------------------
 
-NEGOTIATION_KINDS = ("offer", "counter", "accept", "decline", "adjust")
+# `extra_revision` is the one entry that is not about money: a round of
+# changes beyond what the brief included, agreed by the creator. It sits on the
+# same history because it changes what was agreed, and that is what this
+# history is the record of. It never carries an amount.
+NEGOTIATION_KINDS = ("offer", "counter", "accept", "decline", "adjust", "extra_revision")
 NEGOTIATION_SOURCES = ("in_app", "recorded_offline", "admin_adjustment", "backfill")
 NEGOTIATION_ROLES = ("brand", "creator", "admin", "system")
 NEGOTIATION_CURRENCY = "INR"
@@ -18350,12 +18716,38 @@ async def list_incomplete_creators(user: dict = Depends(require_roles("admin")))
     return await _hydrate_creator_rows(profiles)
 
 
+# What a scoped console never receives about a creator, even one on its own
+# brands' briefs. `weare_team` has no creator contact details (the rule the
+# brand-facing projection holds for a different reason), and payout identity
+# and the home address are the platform's to hold, not a brand team's.
+_TEAM_HIDDEN_CREATOR_FIELDS = (
+    "email", "phone", "address", "full_address",
+    "location_lat", "location_lng", "location_place_id",
+    "payout_upi_masked", "payout_account_name", "payout_account_number_masked",
+    "payout_ifsc", "pan_masked", "gstin_masked",
+    "terms_accepted_at",
+)
+
+
 @admin_router.get("/creators/{user_id}")
 async def get_creator_detail(
     user_id: str,
-    user: dict = Depends(require_roles("admin")),
+    user: dict = Depends(require_roles(*CONSOLE_ROLES)),
 ):
-    """One creator, whole picture.
+    """One creator, whole picture — or, for a scoped console, their picture
+    on this team's brands.
+
+    **A scoped read, not a second page.** Every creator name in the console is
+    a link here, and the page used to be admin-only, so a team member clicking
+    a name on their own applicant board was handed "Insufficient permissions".
+    `weare_team` now reads the creators `_console_creator_ids` gives them —
+    people who applied to or were invited onto one of their brands' briefs —
+    with the collaborations, bookings and cancellations narrowed to those
+    briefs, and without contact details, the address or payout identity
+    (`_TEAM_HIDDEN_CREATOR_FIELDS`). Anybody else is a **404**, the scope rule
+    everywhere: whether a creator we have no work with exists is not something
+    this console answers. `scope` says which reading was served, so the page
+    can leave out the decisions (approve, suspend, view-as) that stay admin's.
 
     Declared after /creators/pending, /changed and /incomplete so those fixed
     paths keep matching first.
@@ -18365,16 +18757,22 @@ async def get_creator_detail(
     except Exception:
         raise HTTPException(status_code=404, detail="Creator not found")
 
+    campaign_scope = await _console_creator_or_404(oid, user)
+
     account = await db.users.find_one({"_id": oid, "role": "creator"})
     profile = await db.creator_profiles.find_one({"user_id": oid})
     if not account or not profile:
         raise HTTPException(status_code=404, detail="Creator not found")
 
+    collab_match: dict = {"creator_id": oid}
+    if campaign_scope is not None:
+        collab_match["campaign_id"] = {"$in": campaign_scope}
+
     # Every collaboration with its campaign, brand and payment attached in one
     # pipeline — the alternative is three queries per row.
     rows = await db.collaborations.aggregate(
         [
-            {"$match": {"creator_id": oid}},
+            {"$match": collab_match},
             {"$sort": {"created_at": -1}},
             {
                 "$lookup": {
@@ -18498,16 +18896,21 @@ async def get_creator_detail(
             "joined_at": _iso(account.get("created_at")),
             # Work that fell over around this creator, and on whose call. Read
             # before taking somebody onto a shoot that costs money to staff.
-            "cancellations": await _cancellation_history(creator_id=oid),
+            "cancellations": await _cancellation_history(
+                creator_id=oid, campaign_ids=campaign_scope
+            ),
         }
     )
+    if campaign_scope is not None:
+        for key in _TEAM_HIDDEN_CREATOR_FIELDS:
+            detail.pop(key, None)
 
     # Slots this creator holds, with the campaign they belong to. Separate from
     # the collaboration rows because a booking is a commitment to be somewhere
     # at a time — the question "where is this person on Saturday" is not
     # answerable from a list of states.
     slot_ids = [c["slot_id"] for c in await db.collaborations.find(
-        {"creator_id": oid, "slot_id": {"$ne": None}}
+        {**collab_match, "slot_id": {"$ne": None}}
     ).to_list(length=500) if c.get("slot_id")]
     bookings = []
     if slot_ids:
@@ -18537,6 +18940,9 @@ async def get_creator_detail(
 
     return {
         "creator": detail,
+        # Which reading this is: `all` for an admin, `team` for a scoped
+        # console. The page leaves out the decisions that stay admin's on it.
+        "scope": "all" if campaign_scope is None else "team",
         # The connection, not the token — _serialize_instagram cannot return
         # one. Absent credentials is a supported state, so this is present and
         # says `configured: false` rather than being missing.
@@ -19748,9 +20154,10 @@ async def _console_creator_ids(user: Optional[dict]) -> Optional[list]:
     `None` for an admin — the whole roster. For a `weare_team` member it is the
     people who applied to or were invited to one of their brands' campaigns,
     which is the requirement stated exactly: creators reach them **through**
-    the work, not through a directory. The global roster, the vetting queue and
-    a creator's own page stay admin-only, so this set is only ever used to
-    narrow a search result to somebody they could already see on a board.
+    the work, not through a directory. The global roster and the vetting queue
+    stay admin-only; this set narrows a search result, and is the door to a
+    creator's own page (`get_creator_detail`), to somebody they could already
+    see on a board.
     """
     campaign_ids = await _console_campaign_ids(user)
     if campaign_ids is None:
@@ -19764,6 +20171,20 @@ async def _console_creator_ids(user: Optional[dict]) -> Optional[list]:
         "creator_id", {"campaign_id": {"$in": campaign_ids}}
     )
     return list({*applied, *invited})
+
+
+async def _console_creator_or_404(creator_oid: ObjectId, user: dict) -> Optional[list]:
+    """The scoped door onto one creator, beside the brand, campaign, collab
+    and payment doors — and a **404**, never a 403, for the same reason.
+
+    Returns the caller's campaign scope (`None` for an admin) so the handler
+    can narrow everything it reads about the creator to the same briefs.
+    """
+    campaign_scope = await _console_campaign_ids(user)
+    if campaign_scope is not None:
+        if creator_oid not in (await _console_creator_ids(user) or []):
+            raise HTTPException(status_code=404, detail="Creator not found")
+    return campaign_scope
 
 
 _REFERENCE_GROUP_LABELS = {
@@ -23368,6 +23789,10 @@ async def get_admin_campaign_detail(
             # What the fee position is, and the sentence explaining it. `None`
             # on a brief with no campaign fee, which is most of them.
             "refund": await _refund_assessment(campaign),
+            # What running it cost us, so its margin is a margin. Ours, and
+            # deliberately not on the brand's serializer. `None` until somebody
+            # types it — the margin reports revenue until then and says so.
+            "delivery_cost": campaign.get("delivery_cost"),
             # The brand's own serializer stops at the manager's name and phone,
             # which is right for the brand. An admin assigns the manager, so
             # the id has to come back or the picker can't show the current one.
@@ -23931,6 +24356,9 @@ _CAMPAIGN_BRIEF_FIELDS = (
     "visibility",
     "requires_draft_approval",
     "draft_review_days",
+    # A brand that always includes two rounds of changes includes them on the
+    # copy too.
+    "revisions_included",
     "requires_slot_confirmation",
     "restricted_days",
     "shoot_windows",
@@ -25409,6 +25837,23 @@ def _serialize_admin_collab(
         "location_note": collab.get("location_note"),
         "exit_reason": collab.get("exit_reason"),
         "revision_note": collab.get("revision_note"),
+        # **The no-show, with the note the manager had to write.** The note is
+        # required at the door and was read by nothing — the admin deciding
+        # whether to suspend somebody for repeated no-shows could see the
+        # count and not one sentence about any of them.
+        "no_show": (
+            {
+                "note": collab.get("no_show_note"),
+                "reported_at": _iso(collab.get("no_show_reported_at")),
+            }
+            if collab.get("no_show_reported")
+            else None
+        ),
+        "reschedule_reason": collab.get("reschedule_reason"),
+        "rescheduled_at": _iso(collab.get("rescheduled_at")),
+        "reschedule_count": _reschedule_count(collab),
+        "slot_cancel_reason": collab.get("slot_cancel_reason"),
+        "slot_cancelled_at": _iso(collab.get("slot_cancelled_at")),
         "agreed_at": _iso(collab.get("agreed_at")),
         "created_at": _iso(collab.get("created_at")),
         "updated_at": _iso(collab.get("updated_at")),
@@ -25453,6 +25898,41 @@ def _serialize_admin_collab(
             if payment
             else None
         ),
+        # **Day five of the seven-day promise, still unpaid.** Decided here so
+        # the queue never works it out, and read off the same anchor every
+        # payment date is (`_payout_unpaid_days`).
+        **_payout_alert(collab, campaign, payment),
+    }
+
+
+def _payout_unpaid_days(collab: Optional[dict], campaign: Optional[dict]) -> Optional[int]:
+    """Whole days since approval on a collaboration still waiting to be paid,
+    or `None` where nothing is owed: not approved yet, already closed, or a
+    barter brief, which pays nothing."""
+    collab = collab or {}
+    if collab.get("state") not in _AWAITING_PAYOUT_STATES:
+        return None
+    if _compensation_type(campaign) == "barter":
+        return None
+    anchor = _aware(collab.get("content_approved_at") or _state_since(collab))
+    if not anchor:
+        return None
+    return int((datetime.now(timezone.utc) - anchor).total_seconds() // 86400)
+
+
+def _payout_alert(collab: Optional[dict], campaign: Optional[dict], payment: Optional[dict]) -> dict:
+    """`payout_at_risk` once an approval has gone `PAYOUT_ALERT_DAYS` unpaid —
+    the point at which the public "within 7 days" promise needs a person on
+    it, rather than finding out from the health panel after it broke."""
+    days = _payout_unpaid_days(collab, campaign)
+    paid = (payment or {}).get("state") == "paid"
+    at_risk = days is not None and days >= PAYOUT_ALERT_DAYS and not paid
+    return {
+        "payout_unpaid_days": days,
+        "payout_at_risk": at_risk,
+        "payout_due_at": _iso(_payout_due_at(collab, campaign, CREATOR_PAYOUT_DAYS))
+        if at_risk
+        else None,
     }
 
 
@@ -25930,11 +26410,18 @@ async def advance_collaboration(
         # The next move is the creator's, so say so — this is the message that
         # turns "agreed" into somebody booking a slot. A barter brief has no
         # amount to quote, and inventing ₹0 here would read as an insult.
-        agreed_value = update.get("agreed_amount")
+        # Off the row as written. `update` stopped carrying the fee when
+        # `_set_agreed_amount` became its only writer, so reading it there
+        # sent every paid creator the barter wording ("this one's a barter
+        # brief") and would freeze no fee into the terms below.
+        agreed_value = updated.get("agreed_amount")
         await _warn_if_budget_tight(campaign)
         # Same as the brand's own fee route: on a weare-run campaign this is
         # the moment the brand meets the creator.
         await _tell_brand_about_shortlist(campaign, collab, agreed_value)
+        # The same first-moment freeze as the brand's fee route: a weare-run
+        # collaboration is accepted through Advance and has no snapshot yet.
+        await _issue_terms_snapshot({**collab, "agreed_amount": agreed_value}, campaign)
         booking = _next_action({"state": "commercial_agreed"}, campaign)["label"].lower()
         terms = (
             f"agreed at ₹{agreed_value:,.0f}"
@@ -26705,7 +27192,9 @@ async def decline_applicant(
 
 
 @admin_router.post("/collaborations/{collab_id}/cancel")
-async def _cancellation_history(*, creator_id=None, brand_ids=None) -> list:
+async def _cancellation_history(
+    *, creator_id=None, brand_ids=None, campaign_ids=None
+) -> list:
     """Every collaboration that ended badly, for the entity page it belongs to.
 
     **On both sides, from one query shape**, because the same event is two
@@ -26721,6 +27210,11 @@ async def _cancellation_history(*, creator_id=None, brand_ids=None) -> list:
     query: dict = {"state": {"$in": ["cancelled", "withdrawn"]}}
     if creator_id is not None:
         query["creator_id"] = creator_id
+    # A scoped console's reading: only what happened on its own brands' briefs.
+    if campaign_ids is not None:
+        if not campaign_ids:
+            return []
+        query["campaign_id"] = {"$in": list(campaign_ids)}
     if brand_ids is not None:
         campaign_ids = await db.campaigns.distinct("_id", {"brand_id": {"$in": brand_ids}})
         if not campaign_ids:
@@ -29078,6 +29572,17 @@ async def admin_creator_survey(user: dict = Depends(require_roles("admin"))):
         "responses": rows,
         "open_text_fields": list(SURVEY_FREE_TEXT_FIELDS),
         "open_text_warning": SURVEY_OPEN_TEXT_WARNING,
+        # The wording each answer was given under, from the same table the
+        # page renders — so the console reads "Which city are you based in?"
+        # and "More than 10", not `city` and `more_than_10`.
+        "questions": [
+            {
+                "field": q["field"],
+                "text": q["text"],
+                "options": {str(v): str(label) for v, label in q.get("options") or []},
+            }
+            for q in _survey_questions()
+        ],
     }
 
 
@@ -29632,7 +30137,8 @@ class AdminCreateCampaignPayload(PostCampaignPayload):
     # The payout window, staff-settable here because this route is staff. The
     # brand's own `PostCampaignPayload` deliberately has no such key, so the
     # generic copy loop on its create path has nothing to let through.
-    creator_payout_days: Optional[int] = Field(default=None, ge=0, le=180)
+    # Never longer than the public promise — see `_CREATOR_PAYOUT_MAX`.
+    creator_payout_days: Optional[int] = Field(default=None, ge=0, le=7)
 
 
 @admin_router.post("/campaigns")
@@ -29714,6 +30220,13 @@ async def admin_create_campaign(
             else bool(payload.requires_draft_approval)
         ),
         "draft_review_days": payload.draft_review_days or DEFAULT_DRAFT_REVIEW_DAYS,
+        # `is None`, not `or`: zero is a real answer ("no rounds of changes
+        # included") and must not be read as "use the default".
+        "revisions_included": (
+            DEFAULT_REVISIONS_INCLUDED
+            if payload.revisions_included is None
+            else payload.revisions_included
+        ),
         "requires_slot_confirmation": bool(payload.requires_slot_confirmation),
         "restricted_days": _clean_restricted_days(payload.restricted_days),
         "shoot_windows": _clean_shoot_windows(payload.shoot_windows),
@@ -29988,9 +30501,18 @@ async def admin_create_creator(
 
 
 @admin_router.get("/managers")
-async def list_managers(user: dict = Depends(require_roles("admin"))):
+async def list_managers(user: dict = Depends(require_roles(*CONSOLE_ROLES))):
     """Every manager, with how many campaigns each is currently carrying —
-    the number you look at before assigning them another one."""
+    the number you look at before assigning them another one.
+
+    **Readable by the scoped console, because assigning is.**
+    `assign-manager` is `CONSOLE_ROLES`, and the picker that feeds it read this
+    admin-only list and swallowed the 403 — so a team member was told "There
+    are no WeAre managers yet" on a platform with several. A team member gets
+    the names and the load, which is what picking needs; the managers' email
+    and phone stay on the admin's reading, where account management happens.
+    Creating a manager is still admin-only (`POST /admin/managers`).
+    """
     managers = (
         await db.users.find({"role": "campaign_manager"})
         .sort("name", 1)
@@ -30013,12 +30535,16 @@ async def list_managers(user: dict = Depends(require_roles("admin"))):
     ):
         load[row["_id"]] = row["n"]
 
+    full = is_all_access(user)
     return [
         {
             "id": str(m["_id"]),
             "name": m.get("name"),
-            "email": m.get("email"),
-            "phone": m.get("phone"),
+            **(
+                {"email": m.get("email"), "phone": m.get("phone")}
+                if full
+                else {}
+            ),
             "active_campaigns": load.get(m["_id"], 0),
         }
         for m in managers
@@ -30787,6 +31313,110 @@ DRAFT_REVIEW_REMINDER_HOURS = 24
 # than as a blank actor or as the person who did not act.
 _SYSTEM_AUTO_ACTOR = {"role": "system_auto", "name": "WeAre (review window elapsed)"}
 DRAFT_AUTO_APPROVE_REASON = "brand_review_window_elapsed"
+
+
+def _revisions_included(campaign: Optional[dict]) -> int:
+    """How many rounds of changes this brief includes. Absent, unparseable or
+    out of range reads as the default — every brief offers some number, and
+    one written before the field existed offers what a new one does."""
+    try:
+        n = int((campaign or {}).get("revisions_included"))
+    except (TypeError, ValueError):
+        return DEFAULT_REVISIONS_INCLUDED
+    if not REVISIONS_INCLUDED_MIN <= n <= REVISIONS_INCLUDED_MAX:
+        return DEFAULT_REVISIONS_INCLUDED
+    return n
+
+
+# ---------------------------------------------------------------------------
+# A cap on revisions, as an agreed term
+#
+# Every send-back used to be free and unlimited, so "one more change" was a
+# request with no end a creator could point to. Now a brief says how many
+# rounds of changes it includes, the number is frozen into the terms when the
+# creator is taken on, and a send-back past it is refused. **A round is a
+# send-back**: a draft returned for changes or live content returned for
+# changes, counted together on `revisions_used` — they are the same request
+# at two moments, and two separate allowances would be twice the cap.
+#
+# **Past the cap is a question, not a wall.** The reviewer can ask for one
+# extra round; the creator accepts or declines, and accepting adds a round
+# and writes it on the negotiation history beside the fee, because it is a
+# change to what was agreed.
+#
+# **Existing collaborations are unlimited.** The cap is read from the frozen
+# terms, so a collaboration with no snapshot, or a snapshot from before this
+# existed, has no number and nothing in flight changes. Only new acceptances
+# carry one.
+# ---------------------------------------------------------------------------
+
+NO_REVISIONS_LEFT = "No revisions left — approve, or ask for an extra round."
+EXTRA_REVISION_STATES = ("requested", "accepted", "declined")
+
+
+def _revision_allowance(collab: Optional[dict]) -> dict:
+    """The one reader of the cap on a collaboration. Pure.
+
+    `included` is `None` — unlimited — when the frozen terms carry no number,
+    which is every collaboration accepted before the cap existed.
+    """
+    collab = collab or {}
+    terms = collab.get("terms") or {}
+    included = terms.get("revisions_included") if "revisions_included" in terms else None
+    try:
+        included = None if included is None else int(included)
+    except (TypeError, ValueError):
+        included = None
+    extra = int(collab.get("revisions_extra") or 0)
+    used = int(collab.get("revisions_used") or 0)
+    allowed = None if included is None else included + extra
+    remaining = None if allowed is None else max(0, allowed - used)
+    request = collab.get("extra_revision_request") or None
+    return {
+        "unlimited": allowed is None,
+        "included": included,
+        "extra": extra,
+        "allowed": allowed,
+        "used": used,
+        "remaining": remaining,
+        # "1 of 2 used": the same words on both sides, decided here.
+        "label": None if allowed is None else f"{used} of {allowed} used",
+        "exhausted": remaining == 0,
+        "extra_request": (
+            {
+                "state": request.get("state"),
+                "note": request.get("note"),
+                "requested_at": _iso(request.get("requested_at")),
+                "requested_by_name": request.get("requested_by_name"),
+                "answered_at": _iso(request.get("answered_at")),
+            }
+            if request
+            else None
+        ),
+        "extra_pending": bool(request and request.get("state") == "requested"),
+    }
+
+
+def _refuse_if_no_revisions_left(collab: Optional[dict]) -> None:
+    """The cap, at every send-back. A 409 with a code the reviewer screen
+    dispatches on, and the sentence it shows."""
+    allowance = _revision_allowance(collab)
+    if allowance["exhausted"]:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": NO_REVISIONS_LEFT,
+                "code": "no_revisions_left",
+                "revisions": allowance,
+            },
+        )
+
+
+def _revision_precondition(collab: Optional[dict]) -> dict:
+    """Compare-and-set on the counter, so two send-backs racing for the last
+    round take one between them."""
+    used = (collab or {}).get("revisions_used")
+    return {"revisions_used": used} if used is not None else {"revisions_used": {"$exists": False}}
 
 
 def _draft_review_days(campaign: Optional[dict]) -> int:
@@ -32673,9 +33303,6 @@ async def delete_case_study(
     return {"status": "deleted"}
 
 
-api_router.include_router(admin_router)
-
-
 # ---------------------------------------------------------------------------
 # Campaign manager router — scoped to assigned campaigns
 # ---------------------------------------------------------------------------
@@ -33189,6 +33816,13 @@ async def _roster_rows(campaign: dict, *, reveal_contact: bool = True) -> list:
                 # before ringing them rather than after.
                 "on_behalf": _on_behalf_block(r),
                 "agreed_amount": r.get("agreed_amount"),
+                # **Why a seat came free, on the day plan.** The manager was
+                # told "cancelled by the creator" in a message and nothing on
+                # the roster said it at all; the creator's reason was stored
+                # and never read. Absent on everybody who did not release one.
+                "slot_cancelled_at": _iso(r.get("slot_cancelled_at")),
+                "slot_cancel_reason": r.get("slot_cancel_reason"),
+                "reschedule_reason": r.get("reschedule_reason"),
             }
         )
     return out
@@ -33922,11 +34556,6 @@ async def broadcast_to_campaign(
     }
 
 
-api_router.include_router(manager_router)
-
-
-
-
 # --- Campaigns router ------------------------------------------------------
 
 campaigns_router = APIRouter(prefix="/campaigns", tags=["campaigns"])
@@ -33966,6 +34595,7 @@ def _serialize_campaign(
         "requires_draft_approval": _requires_draft_approval(doc),
         # And how long a review can take before it settles itself.
         "draft_review_days": _draft_review_days(doc),
+        "revisions_included": _revisions_included(doc),
         # When a shoot may happen. Shipped on every campaign shape rather than
         # only the owner's, because the creator deciding whether to apply is
         # the person most affected by "Saturdays only, evenings".
@@ -34561,6 +35191,10 @@ def _build_terms(
             "label": _disclosure_text(campaign),
         },
         "cancellation_terms": CANCELLATION_TERMS,
+        # **How many rounds of changes are included, frozen like the fee.** The
+        # brief can be edited afterwards; what this creator agreed to cannot.
+        # `_revision_allowance` reads it from here and nowhere else.
+        "revisions_included": _revisions_included(campaign),
         # **When they get paid, frozen with everything else.** The same reason
         # the cancellation policy is here: a later change to the platform
         # window must not reach backwards into an arrangement somebody has
@@ -34929,6 +35563,11 @@ async def list_campaigns(
             {"$or": [PUBLIC_CAMPAIGN_QUERY, {"_id": {"$in": allowed}}]}
         )
         profile = await db.creator_profiles.find_one({"user_id": creator_oid})
+        # **Barter is opt-in for a creator's feed.** Not a filter they can
+        # clear from the URL: it is their own setting, changed on the feed
+        # itself, and the count header has to agree with the list.
+        if not _shows_barter_briefs(profile):
+            query.setdefault("$and", []).append(_NO_BARTER_QUERY)
 
     total = await db.campaigns.count_documents(query)
 
@@ -34998,6 +35637,13 @@ async def campaign_filters(
     # option would announce its existence to everyone the privacy is for —
     # and an invited creator losing one dropdown entry costs nothing.
     base = {"status": {"$in": list(_LIVE_STATUSES)}, **PUBLIC_CAMPAIGN_QUERY}
+    # The same barter cut the feed makes, or the dropdown offers "Barter" to a
+    # creator whose feed will never show one — a filter whose only outcome is
+    # an empty list, which this endpoint exists to avoid.
+    if user["role"] == "creator":
+        me = await db.creator_profiles.find_one({"user_id": ObjectId(user["_id"])})
+        if not _shows_barter_briefs(me):
+            base = {**base, "$and": [_NO_BARTER_QUERY]}
     areas = await db.campaigns.distinct("area", base)
     categories = await db.campaigns.distinct("category", base)
     cities = await db.campaigns.distinct("city", base)
@@ -35101,6 +35747,15 @@ async def get_campaign(
             .sort("starts_at", 1)
             .to_list(length=200)
         ]
+
+    # **Why we sent it back, for the brand that has to fix it.** The edit form
+    # loads this route, not the brand list, so a brief returned to draft with a
+    # reason opened as an ordinary draft and the reason was on a different
+    # screen. Owner and admin only: a creator never sees why a brief was
+    # returned, and never sees a returned brief at all.
+    if is_brand_side(user) or user["role"] == "admin":
+        payload["review_reason"] = doc.get("review_reason")
+        payload["reviewed_at"] = _iso(doc.get("reviewed_at"))
 
     # Whether the current creator has already applied.
     payload["has_applied"] = False
@@ -35698,6 +36353,13 @@ async def _claim_slot(
     soid = slot["_id"]
     now = datetime.now(timezone.utc)
 
+    # **A suspended account does not take a new seat.** Only the creator's
+    # own claim — an admin booking on their behalf is a decision made with
+    # the account in front of them. Read off the session's account, which is
+    # where `_creator_block` reads suspension. Nothing already booked moves.
+    if on_behalf_reason is None and (user or {}).get("status") == "suspended":
+        raise HTTPException(status_code=403, detail=_creator_block(None, user))
+
     # On a personal table the creator named the time, so the plain refusal is
     # the right thing to say. On a fixed slot they only chose which of the
     # manager's slots to take, so pointing them at their own picker would be
@@ -35908,46 +36570,11 @@ async def _claim_slot(
     }
 
 
-@campaigns_router.get("/{campaign_id}/slots")
-async def list_slots_for_creator(
-    campaign_id: str,
-    user: dict = Depends(require_roles("creator", "admin")),
-):
-    """The bookable slots, as the creator sees them.
-
-    Only a creator who has been accepted onto the campaign sees the schedule —
-    a slot list names dates, a venue's rhythm and capacity, none of which
-    belongs to an applicant the brand hasn't taken."""
-    try:
-        oid = ObjectId(campaign_id)
-    except Exception:
-        raise HTTPException(status_code=404, detail="Campaign not found")
-    campaign = await db.campaigns.find_one({"_id": oid})
-    if not campaign:
-        raise HTTPException(status_code=404, detail="Campaign not found")
-
-    collab = None
-    if user["role"] == "creator":
-        collab = await db.collaborations.find_one(
-            {"campaign_id": oid, "creator_id": ObjectId(user["_id"]), "active": True}
-        )
-        if not collab or collab.get("state") not in _ONBOARD_COLLAB_STATES:
-            raise HTTPException(status_code=404, detail="Campaign not found")
-
-    docs = (
-        await db.campaign_slots.find({"campaign_id": oid})
-        .sort("starts_at", 1)
-        .to_list(length=500)
-    )
-    return {
-        "campaign_id": campaign_id,
-        "campaign_type": campaign.get("campaign_type"),
-        # Booking is the step out of commercial_agreed; the flag saves the UI
-        # from re-deriving the state machine.
-        "can_book": bool(collab) and collab.get("state") == "commercial_agreed",
-        "booked_slot_id": str(collab["slot_id"]) if collab and collab.get("slot_id") else None,
-        "slots": [_serialize_slot(d) for d in docs],
-    }
+# `GET /campaigns/{campaign_id}/slots` was here: a second slot list, with no
+# caller anywhere, that let an *admin* read it where the live one
+# (`GET /creator/campaigns/{id}/slots`, `list_creator_slots`) is creator-only.
+# Two answers to "who may read the schedule" is one too many, so it is gone;
+# admins read slots on the console's campaign page.
 
 
 @campaigns_router.post("/slots/{slot_id}/book")
@@ -36001,9 +36628,6 @@ async def book_slot(
         )
 
     return await _claim_slot(user, collab, campaign, slot)
-
-
-api_router.include_router(campaigns_router)
 
 
 # --- Public (unauthenticated) preview ---------------------------------------
@@ -36500,7 +37124,6 @@ async def submit_creator_survey(payload: CreatorSurveyPayload, request: Request)
     return {"stored": True}
 
 
-
 # --- The contact form, for anybody ----------------------------------------
 #
 # An unauthenticated public write, modelled on the creator survey because that
@@ -36781,9 +37404,6 @@ async def get_public_case_study(slug: str):
     return await _public_case_study(doc)
 
 
-api_router.include_router(public_router)
-
-
 # --- Notifications ----------------------------------------------------------
 
 notifications_router = APIRouter(prefix="/notifications", tags=["notifications"])
@@ -36828,9 +37448,6 @@ async def mark_notifications_read(user: dict = Depends(get_current_user)):
         {"$set": {"read": True, "read_at": datetime.now(timezone.utc)}},
     )
     return {"success": True, "marked": result.modified_count}
-
-
-api_router.include_router(notifications_router)
 
 
 # --- Work notes on a collaboration -----------------------------------------
@@ -37250,6 +37867,80 @@ async def dispatch_delivery(
         link=f"/dashboard?collab={str(collab['_id'])}",
     )
     return _delivery_block(updated)
+
+
+@notes_router.post("/{collab_id}/revisions/extra")
+async def request_extra_revision(
+    collab_id: str,
+    payload: ExtraRevisionRequestPayload,
+    user: dict = Depends(require_roles(*BRAND_ROLES, "admin", "campaign_manager")),
+):
+    """The reviewer has used every included round and asks the creator for one
+    more. **A request, not a right**: the creator accepts or declines, and
+    nothing about the work moves until they do.
+
+    Through the reviewer's door — `_question_staff_may_see`, the reader the
+    draft review uses — so on a weare-run brief it is our team asking, never
+    the brand, and the brand gets a 404 like every other door it is not
+    behind.
+    """
+    collab, campaign = await _note_readable_collab_or_404(collab_id, user)
+    if not _question_staff_may_see(campaign, user):
+        raise HTTPException(status_code=404, detail="Collaboration not found")
+    _refuse_if_disputed(collab)
+    allowance = _revision_allowance(collab)
+    if collab.get("state") not in _SEND_BACK_STATES:
+        raise HTTPException(
+            status_code=409, detail="There's nothing waiting for review to send back."
+        )
+    if not allowance["exhausted"]:
+        raise HTTPException(
+            status_code=409,
+            detail="There are rounds of changes left on this one — use those first.",
+        )
+    if allowance["extra_pending"]:
+        raise HTTPException(
+            status_code=409, detail="You've already asked — the creator hasn't answered yet."
+        )
+
+    now = datetime.now(timezone.utc)
+    request = {
+        "state": "requested",
+        "note": (payload.note or "").strip() or None,
+        "requested_at": now,
+        "requested_by_id": ObjectId(user["_id"]),
+        "requested_by_name": user.get("name"),
+        "requested_by_role": _negotiation_role(user),
+        "answered_at": None,
+    }
+    updated = await db.collaborations.find_one_and_update(
+        {
+            "_id": collab["_id"],
+            "state": collab.get("state"),
+            "extra_revision_request.state": {"$ne": "requested"},
+        },
+        {"$set": {"extra_revision_request": request, "updated_at": now}},
+        return_document=True,
+    )
+    if not updated:
+        raise HTTPException(status_code=409, detail="This just moved — reload and try again.")
+    await audit(
+        user, "collaboration.extra_revision_requested", "collaboration", collab["_id"],
+        before={"revisions": allowance["label"]},
+        after={"extra_revision_request": "requested"},
+        note=request["note"],
+        **_campaign_audit_context(campaign),
+    )
+    await notify(
+        collab["creator_id"],
+        "extra_revision_requested",
+        title="Asked for an extra round of changes",
+        body=f"{campaign.get('title')} — the rounds of changes your brief included are used. "
+        "You've been asked for one more; it's yours to accept or decline."
+        + (f" “{request['note']}”" if request["note"] else ""),
+        link=f"/dashboard?collab={collab_id}",
+    )
+    return {"revisions": _revision_allowance(updated)}
 
 
 disputes_router = APIRouter(prefix="/disputes", tags=["disputes"])
@@ -38005,9 +38696,6 @@ async def respond_to_takedown(
     return {"id": collab_id, "takedown_state": state}
 
 
-api_router.include_router(disputes_router)
-
-
 ratings_router = APIRouter(prefix="/ratings", tags=["ratings"])
 
 # Who is rating whom. The word matters on screen: a runner rates *the creator*,
@@ -38185,10 +38873,6 @@ async def rate_collaboration(
         **_campaign_audit_context(campaign),
     )
     return _serialize_rating(row)
-
-
-api_router.include_router(ratings_router)
-api_router.include_router(notes_router)
 
 
 # --- Creator questions on a campaign ----------------------------------------
@@ -38571,9 +39255,6 @@ async def unanswered_questions(user: dict = Depends(require_roles(*CONSOLE_ROLES
     return rows
 
 
-api_router.include_router(questions_router)
-
-
 # --- The draft gate ----------------------------------------------------------
 #
 # Before this, a creator submitted a link to something already published: the
@@ -38951,11 +39632,14 @@ async def _request_draft_changes_decision(
         raise HTTPException(
             status_code=422, detail="Tell the creator what needs to change."
         )
+    # The cap, here and not in the routes, so the reviewer's send-back and
+    # WeAre's on-behalf send-back are held to the same number.
+    _refuse_if_no_revisions_left(collab)
 
     now = datetime.now(timezone.utc)
     back_to = _ready_to_shoot_state(campaign)
     updated = await db.collaborations.find_one_and_update(
-        {"_id": collab["_id"], "state": "draft_submitted"},
+        {"_id": collab["_id"], "state": "draft_submitted", **_revision_precondition(collab)},
         {
             # Back to "shoot done, draft owed" — the campaign's own ready
             # state, which is `received` on a delivery brief. Writing
@@ -38969,7 +39653,10 @@ async def _request_draft_changes_decision(
                 "draft_review_deadline_at": None,
                 **({"draft_changes_requested_on_behalf": on_behalf} if on_behalf else {}),
             },
-            "$inc": {"draft_revision_count": 1},
+            # `draft_revision_count` is the reliability signal (how often
+            # drafts come back); `revisions_used` is the agreed allowance,
+            # which counts live-content send-backs too.
+            "$inc": {"draft_revision_count": 1, "revisions_used": 1},
         },
         return_document=True,
     )
@@ -39004,9 +39691,6 @@ async def _request_draft_changes_decision(
     return updated
 
 
-api_router.include_router(drafts_router)
-
-
 # --- One application, on its own ------------------------------------------
 #
 # Everything a single application needs, in one call, for one screen that the
@@ -39039,6 +39723,7 @@ async def get_application(
     brand = brand_map.get(campaign["brand_id"]) or {}
 
     state = collab.get("state", "applied")
+    frozen = bool(_dispute_of(collab))
     is_admin = (user or {}).get("role") == "admin"
     # **Who sees the record and who sees the reading of it.** The staff roles
     # get the counts; the brand gets the band on the creator block, which is
@@ -39074,6 +39759,11 @@ async def get_application(
         # Booked and agreed, or booked and waiting. See `_slot_confirmed`.
         "slot_confirmed": _slot_confirmed(collab),
         "slot_declined_reason": collab.get("slot_declined_reason"),
+        # Why the runner moved the booking. Required when it is moved, and
+        # until now read by nobody — the creator found a different time on
+        # their card with no word about why.
+        "reschedule_reason": collab.get("reschedule_reason"),
+        "rescheduled_at": _iso(collab.get("rescheduled_at")),
         # Steps WeAre took on the creator's behalf. On the shared screen for
         # the same reason it is on the creator's card: a booking an admin
         # made must not read as the creator's own on any surface.
@@ -39127,6 +39817,8 @@ async def get_application(
         # the manager read which side moved.
         "negotiation": _serialize_negotiation(collab, campaign, full=is_admin),
         "terms": _serialize_terms(collab),
+        # "1 of 2 used", the same block the creator's card reads.
+        "revisions": _revision_allowance(collab),
         # Read off the campaign rather than the snapshot, so an application
         # that has not reached acceptance still shows the current grant.
         "usage": _usage_block(campaign),
@@ -39200,35 +39892,55 @@ async def get_application(
         ),
         # Decided server-side so neither console offers a button the API will
         # refuse — the brand owns exactly two transitions and no more.
+        # **Frozen means frozen on the screen too.** `_refuse_if_disputed`
+        # refuses every door that moves this collaboration while a dispute is
+        # open, and the flags below used to be computed as if it did not —
+        # so both consoles offered Accept, Approve and Advance on a frozen row
+        # and every press produced the 409. Each state-moving flag carries
+        # `not frozen`; reading, notes and the dispute's own buttons do not.
+        "frozen": frozen,
         "actions": {
-            "can_approve_profile": is_admin and state == "applied",
-            "can_accept": state == "verified" and (is_admin or is_brand_side(user)),
+            "can_approve_profile": is_admin and state == "applied" and not frozen,
+            "can_accept": state == "verified" and (is_admin or is_brand_side(user)) and not frozen,
             "can_decline": state in ("applied", "verified", "accepted")
-            and (is_admin or is_brand_side(user)),
+            and (is_admin or is_brand_side(user))
+            and not frozen,
             # The brand records the fee too — they are the ones who negotiated
             # it. Mirrors POST /brand/collaborations/{id}/agreed-amount, which
             # takes BRAND_ROLES and admin and accepts both `accepted` (agree
             # it) and `commercial_agreed` (correct it).
             "can_agree_commercial": (is_admin or is_brand_side(user))
-            and state in ("accepted", "commercial_agreed"),
+            and state in ("accepted", "commercial_agreed")
+            and not frozen,
             # A staff correction to an agreed fee is an admin adjustment, and
             # `_set_agreed_amount` refuses one without a note — so the form
             # asks for it rather than producing the 422.
             "fee_note_required": state == "commercial_agreed" and _is_staff(user),
             "can_review_content": state == "content_submitted"
-            and (is_admin or is_brand_side(user)),
+            and (is_admin or is_brand_side(user))
+            and not frozen,
             # **Only where there is a counted ask to be short of.** A brief
             # written before `deliverable_items` existed has a sentence and no
             # structure, so there is nothing to count against and the server
             # refuses it — the button is absent rather than present and 409ing.
             "can_accept_partial": state == "content_submitted"
             and (is_admin or is_brand_side(user))
-            and bool(_deliverable_items(campaign)),
+            and bool(_deliverable_items(campaign))
+            and not frozen,
             # Who reviews a draft follows execution_owner, so the same reader
             # the questions panel uses answers it: a brand on a weare-run
             # campaign is not the reviewer, and never sees the button.
             "can_review_draft": state == "draft_submitted"
-            and _question_staff_may_see(campaign, user),
+            and _question_staff_may_see(campaign, user)
+            and not frozen,
+            # **Past the agreed rounds, the send-back is refused and this is
+            # the question instead.** Offered to the reviewer — the same
+            # reader — only where there is nothing left and nothing pending.
+            "can_request_extra_revision": state in _SEND_BACK_STATES
+            and _question_staff_may_see(campaign, user)
+            and _revision_allowance(collab)["exhausted"]
+            and not _revision_allowance(collab)["extra_pending"],
+            "no_revisions_left": _revision_allowance(collab)["exhausted"],
             # Extend, pause, resume, approve now. Admin only — the reviewer
             # moving their own deadline would make it a suggestion.
             "can_manage_review_window": state == "draft_submitted" and is_admin,
@@ -39237,15 +39949,18 @@ async def get_application(
             # brand on a weare-run brief never sees it.
             "can_confirm_slot": state == "slot_booked"
             and not _slot_confirmed(collab)
-            and _question_staff_may_see(campaign, user),
+            and _question_staff_may_see(campaign, user)
+            and not frozen,
             # The delivery equivalent, decided server-side like every other
             # action here so neither console offers a button the API refuses.
             # Same reader again: on a weare-run brief the brand does not send
             # the parcel and must not be shown a control that says they do.
             "can_dispatch": state == "address_confirmed"
             and _is_delivery(campaign)
-            and _question_staff_may_see(campaign, user),
+            and _question_staff_may_see(campaign, user)
+            and not frozen,
             "can_advance": is_admin
+            and not frozen
             and state not in TERMINAL_COLLAB_STATES
             and _next_collab_state(state, campaign)
             not in (
@@ -39264,10 +39979,12 @@ async def get_application(
             # the creator's move is the thing being waited on.
             "can_book_on_behalf": is_admin
             and state == "commercial_agreed"
-            and not _is_delivery(campaign),
+            and not _is_delivery(campaign)
+            and not frozen,
             "can_confirm_address_on_behalf": is_admin
             and state == "commercial_agreed"
-            and _is_delivery(campaign),
+            and _is_delivery(campaign)
+            and not frozen,
             # **Raising is for the parties, resolving is for the mediator**,
             # and the two are never offered to the same person on the same
             # row. An admin reading a brand-run collaboration is neither side
@@ -39309,9 +40026,6 @@ async def get_application(
             and not circumvention_open,
         },
     }
-
-
-api_router.include_router(application_router)
 
 
 # --- The shoot calendar ------------------------------------------------------
@@ -39462,16 +40176,12 @@ async def shoot_calendar(
     }
 
 
-api_router.include_router(calendar_router)
-
-
 # --- Admin sample route ----------------------------------------------------
 
 
 @api_router.get("/admin/ping")
 async def admin_ping(user: dict = Depends(require_roles("admin"))):
     return {"pong": True, "admin_email": user["email"]}
-
 
 
 # --- The shareable brief -----------------------------------------------------
@@ -40396,8 +41106,6 @@ async def _platform_proof() -> dict:
     if any(counted[k] < floor for k, floor in PROOF_FLOORS.items()):
         return {}
     return {**counted, "deepest_city": await _deepest_supply_city()}
-
-
 
 
 # --- The work, as pages anybody can open -----------------------------------
@@ -42037,6 +42745,38 @@ async def public_sitemap():
     )
 
 
+# ---------------------------------------------------------------------------
+# Mounting the routers — at the end, and only here.
+#
+# **`include_router` copies a router's routes at the moment it is called**, so
+# a route declared on a router *after* that router was included is never
+# served. Each include used to sit just below its router's block, and four
+# routes declared later in the file were silently absent from the app: the
+# disputes queue (`GET /admin/disputes`), its resolution, and both
+# `verification/confirm` routes — every one of them a 404 in production while
+# the unit tests, which call handlers directly, stayed green. Mounting
+# everything once, after every route exists, makes that shape impossible, and
+# `test_every_router_route_is_served` drives the app's own route table to hold
+# it. The order below is the order they were included in, which is the order
+# their routes are matched in.
+# ---------------------------------------------------------------------------
+api_router.include_router(deletion_router)
+api_router.include_router(auth_router)
+api_router.include_router(creator_router)
+api_router.include_router(brand_router)
+api_router.include_router(admin_router)
+api_router.include_router(manager_router)
+api_router.include_router(campaigns_router)
+api_router.include_router(public_router)
+api_router.include_router(notifications_router)
+api_router.include_router(disputes_router)
+api_router.include_router(ratings_router)
+api_router.include_router(notes_router)
+api_router.include_router(questions_router)
+api_router.include_router(drafts_router)
+api_router.include_router(application_router)
+api_router.include_router(calendar_router)
+
 app.include_router(api_router)
 
 # Public uploads live at `/uploads/<name>` whichever backend holds them, which
@@ -42094,6 +42834,74 @@ app.add_middleware(
 # ---------------------------------------------------------------------------
 # Startup: indexes + admin seed
 # ---------------------------------------------------------------------------
+
+
+async def clamp_creator_payout_days(*, apply: bool = True) -> dict:
+    """Bring every stored payout window inside the public promise. One-off,
+    idempotent, and safe to run on every boot.
+
+    **Why it exists.** The window could be set anywhere from 0 to 180 days,
+    globally and per brief, while every public page says "paid within 7 days
+    of approval". The ceiling is now the promise (`_CREATOR_PAYOUT_MAX`), and
+    `_clean_payout_days` already reads anything above it as absent — so
+    without this a brief stored at 30 would silently fall back to the platform
+    number while its row still said 30. Clamping writes the truth down.
+
+    **Shortened, never removed:** a brief at 30 becomes 7, not "no override",
+    so an admin reading it later sees a deliberate per-brief window that was
+    brought inside the rule. Each change is audited under `_SYSTEM_ACTOR` with
+    the old and new value, and the list comes back so the script can print it.
+
+    **Frozen terms are not touched.** A snapshot records what somebody was
+    told at acceptance; rewriting it would make the record say something it
+    did not. The due date every surface computes reads the campaign, which is
+    now at most seven days — so the money moves on the promise either way.
+    """
+    changed = []
+    setting = await db.platform_settings.find_one({"_id": _CREATOR_PAYOUT_SETTINGS_ID})
+    setting_before = None
+    try:
+        stored = int((setting or {}).get("days")) if setting and setting.get("days") is not None else None
+    except (TypeError, ValueError):
+        stored = None
+    if stored is not None and stored > _CREATOR_PAYOUT_MAX:
+        setting_before = stored
+        if apply:
+            await db.platform_settings.update_one(
+                {"_id": _CREATOR_PAYOUT_SETTINGS_ID},
+                {"$set": {"days": _CREATOR_PAYOUT_MAX,
+                          "updated_at": datetime.now(timezone.utc)}},
+            )
+            _CREATOR_PAYOUT_CACHE["at"] = None
+            _CREATOR_PAYOUT_CACHE["value"] = None
+            await audit(_SYSTEM_ACTOR, "settings.creator_payout_clamped", "settings",
+                        _CREATOR_PAYOUT_SETTINGS_ID,
+                        before={"days": stored}, after={"days": _CREATOR_PAYOUT_MAX})
+
+    async for doc in db.campaigns.find(
+        {"creator_payout_days": {"$gt": _CREATOR_PAYOUT_MAX}},
+        {"_id": 1, "title": 1, "reference": 1, "creator_payout_days": 1},
+    ):
+        before = doc.get("creator_payout_days")
+        changed.append({"id": str(doc["_id"]), "reference": doc.get("reference"),
+                        "title": doc.get("title"), "before": before,
+                        "after": _CREATOR_PAYOUT_MAX})
+        if apply:
+            await db.campaigns.update_one(
+                {"_id": doc["_id"], "creator_payout_days": before},
+                {"$set": {"creator_payout_days": _CREATOR_PAYOUT_MAX}},
+            )
+            await audit(_SYSTEM_ACTOR, "campaign.payout_window_clamped", "campaign",
+                        doc["_id"], before={"creator_payout_days": before},
+                        after={"creator_payout_days": _CREATOR_PAYOUT_MAX})
+    if changed or setting_before is not None:
+        logger.warning(
+            "payout windows %s inside the %d-day promise: setting %s, campaigns %s",
+            "clamped" if apply else "would be clamped",
+            _CREATOR_PAYOUT_MAX, setting_before,
+            [(c["reference"] or c["id"], c["title"], c["before"]) for c in changed],
+        )
+    return {"setting_before": setting_before, "campaigns": changed}
 
 
 async def backfill_execution_owner() -> None:
@@ -42517,6 +43325,11 @@ async def _startup():
 
     # 9. Campaigns predate `execution_owner`.
     await backfill_execution_owner()
+    # The payout window may never be longer than the public promise.
+    try:
+        await clamp_creator_payout_days()
+    except Exception as exc:
+        logger.error("clamping payout windows failed: %s", exc)
 
     # 10. Campaigns predate `city`. They all ran in Bengaluru — that is where
     #     the operation is and was — so this is what they are rather than a

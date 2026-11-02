@@ -16,7 +16,10 @@ import {
     Download,
 } from "lucide-react";
 
-import { api, API_BASE } from "@/lib/api";
+import { api } from "@/lib/api";
+import { downloadCsv } from "@/lib/download";
+import { notifyError } from "@/lib/feedback";
+import { dayKey } from "@/lib/time";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
     ADMIN_EXPORTS as EXPORT_IDS,
@@ -364,7 +367,17 @@ export function IntelligencePanel() {
             .catch(() => setD(false));
     }, []);
 
-    if (d === false) return null;
+    // **Said, never blank.** Returning nothing on a failure drew an empty
+    // page under a sidebar item that looked like it had worked.
+    if (d === false) {
+        return (
+            <Section id="intel" title="Activity">
+                <p data-testid={INTEL_IDS.error} role="alert" className="text-body text-muted-foreground">
+                    The activity charts couldn't load. Reload to try again.
+                </p>
+            </Section>
+        );
+    }
     if (!d) {
         return (
             <Section id="intel" title="Activity">
@@ -436,29 +449,48 @@ export function IntelligencePanel() {
 // Exports
 // ---------------------------------------------------------------------------
 
-const EXPORTS = [
-    { key: "creators", label: "Creators", note: "with contact details" },
+// `adminOnly` mirrors `ADMIN_ONLY_EXPORTS` on the server, and a test holds the
+// two together. A tile a team member can press and that answers 403 is worse
+// than no tile: the old bare anchor saved the refusal to disk as a `.csv`.
+export const EXPORTS = [
+    { key: "creators", label: "Creators", note: "with contact details", adminOnly: true },
     { key: "brands", label: "Brands", note: "with contact details" },
     { key: "campaigns", label: "Campaigns", note: "fill rates and budgets" },
     { key: "collaborations", label: "Collaborations", note: "with performance" },
     { key: "payments", label: "Payments", note: "for accounting" },
-    { key: "audit", label: "Audit log", note: "who did what" },
+    { key: "audit", label: "Audit log", note: "who did what", adminOnly: true },
+    { key: "survey", label: "Creator survey", note: "anonymous responses", adminOnly: true },
 ];
 
-export function ExportsPanel() {
+/** The tiles this role may press. One filter, so the panel and its test agree. */
+export const exportsFor = (allAccess) => EXPORTS.filter((e) => allAccess || !e.adminOnly);
+
+export function ExportsPanel({ allAccess = false }) {
     const [from, setFrom] = useState(null);
     const [to, setTo] = useState(null);
+    const [busy, setBusy] = useState(null);
 
-    const href = useMemo(
-        () => (kind) => {
-            const params = new URLSearchParams();
-            if (from) params.set("date_from", from.toISOString());
-            if (to) params.set("date_to", endOfDay(to).toISOString());
-            const q = params.toString();
-            return `${API_BASE}/admin/exports/${kind}${q ? `?${q}` : ""}`;
-        },
-        [from, to],
-    );
+    const query = useMemo(() => {
+        const params = new URLSearchParams();
+        if (from) params.set("date_from", from.toISOString());
+        if (to) params.set("date_to", endOfDay(to).toISOString());
+        const q = params.toString();
+        return q ? `?${q}` : "";
+    }, [from, to]);
+
+    // **Through `downloadCsv`, never a bare anchor.** The anchor pointed at the
+    // API origin, so the cookie rode along only where `SameSite=None` held, and
+    // a refusal arrived as a file. This reads the refusal back and says it.
+    const download = async (kind) => {
+        setBusy(kind);
+        try {
+            await downloadCsv(`/admin/exports/${kind}${query}`, `${kind}-${dayKey(new Date())}.csv`);
+        } catch (e) {
+            notifyError(e);
+        } finally {
+            setBusy(null);
+        }
+    };
 
     return (
         <Section
@@ -485,15 +517,15 @@ export function ExportsPanel() {
             }
         >
             <div data-testid={EXPORT_IDS.section} className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                {EXPORTS.map((e) => (
-                    // Plain anchors: the browser should fetch the file itself
-                    // rather than axios pulling bytes into memory for us to
-                    // hand straight back to it.
-                    <a
+                {exportsFor(allAccess).map((e) => (
+                    <button
+                        type="button"
                         key={e.key}
-                        href={href(e.key)}
+                        onClick={() => download(e.key)}
+                        disabled={busy === e.key}
+                        aria-busy={busy === e.key}
                         data-testid={EXPORT_IDS.kind(e.key)}
-                        className="group flex min-h-[2.75rem] items-center gap-3 rounded-md border border-border bg-card px-4 py-3.5 transition-colors duration-150 hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                        className="group flex min-h-[2.75rem] items-center gap-3 rounded-md border border-border bg-card px-4 py-3.5 text-left transition-colors duration-150 hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:opacity-60"
                     >
                         <Download className="h-4 w-4 flex-none text-muted-foreground transition-colors duration-150 group-hover:text-primary-ink" />
                         <span className="min-w-0 flex-1">
@@ -502,7 +534,7 @@ export function ExportsPanel() {
                                 {e.note}
                             </span>
                         </span>
-                    </a>
+                    </button>
                 ))}
             </div>
 

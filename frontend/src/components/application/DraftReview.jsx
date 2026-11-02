@@ -57,6 +57,10 @@ export default function DraftReview({
     // The admin's four controls on the auto-approval window. Decided
     // server-side (`can_manage_review_window`), like `canReview`.
     canManageWindow = false,
+    // The agreed rounds of changes are used — decided server-side. The
+    // send-back would 409, so it is disabled here and `RevisionAllowance`
+    // above says why and offers the extra-round request instead.
+    noRevisionsLeft = false,
 }) {
     const [busy, setBusy] = useState(null);
     const [note, setNote] = useState("");
@@ -250,7 +254,7 @@ export default function DraftReview({
                             />
                             <Button
                                 data-testid={IDS.changeSubmit}
-                                disabled={busy === "changes" || !note.trim()}
+                                disabled={busy === "changes" || !note.trim() || noRevisionsLeft}
                                 className="min-h-[2.75rem]"
                                 onClick={() =>
                                     run(

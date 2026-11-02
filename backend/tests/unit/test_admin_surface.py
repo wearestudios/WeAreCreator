@@ -186,50 +186,22 @@ INDIRECT_CALLERS = {
 #
 # Grouped by what is actually wrong, because they are not one problem:
 UNBUILT = {
-    # --- Admin-editable numbers with an editor endpoint and no form. The
-    # other six settings have one (`PlatformSettings` / `SlaSettings`); these
-    # three were left out, so each is a number that needs a deploy to change
-    # while looking as though it does not.
-    ("get", "/settings/trusted-brands"): "TRUSTED_BRAND_APPROVALS has no form",
-    ("put", "/settings/trusted-brands"): "TRUSTED_BRAND_APPROVALS has no form",
-    ("get", "/settings/large-campaign"): "large_campaign_threshold has no form",
-    ("put", "/settings/large-campaign"): "large_campaign_threshold has no form",
-    ("get", "/settings/leaderboard"): "leaderboard floor/size have no form",
-    ("put", "/settings/leaderboard"): "leaderboard floor/size have no form",
-
-    # --- The six background jobs. Each runs on its own loop and each has an
-    # admin door for running it now; only `/admin/jobs/retention` is wired, in
-    # `RetentionPanel`. The others are reachable by nothing, so "run it now"
-    # means a shell on the box.
+    # --- The background jobs. Each runs on its own loop and each has an admin
+    # door for running it now; `/admin/jobs/retention` (in `RetentionPanel`)
+    # and `/admin/jobs/creator-nudges` (in `UnfinishedProfiles`) are wired. The
+    # others are reachable by nothing, so "run it now" means a shell on the box.
     ("post", "/jobs/lifecycle"): "no 'run now' control",
-    ("post", "/jobs/creator-nudges"): "no 'run now' control",
     ("post", "/jobs/instagram"): "no 'run now' control",
     ("post", "/jobs/leaderboard"): "no 'run now' control",
     ("post", "/jobs/brand-wall"): "no 'run now' control",
     ("post", "/jobs/analytics"): "no 'run now' control",
     ("post", "/jobs/draft-auto-approvals"): "no 'run now' control",
 
-    # --- Case-study management beyond the editor.
-    ("post", "/case-studies/order"): "display_order is settable and never set",
-    ("delete", "/case-studies/{case_study_id}"): "a draft cannot be deleted",
-
-    # --- Campaign actions with no button.
-    ("post", "/campaigns/{campaign_id}/duplicate"):
-        "the brand has a duplicate button; the console does not",
-    ("put", "/campaigns/{campaign_id}/delivery-cost"):
-        "delivery cost is recordable and unrecorded",
-
     # --- Reads whose data reaches the screen another way, so these are
     # redundant routes rather than missing screens. Listed because the rule is
     # about routes nothing calls, and the honest fix may be deleting them.
     ("get", "/campaigns/{campaign_id}/refund"):
         "the campaign detail payload already carries `refund`",
-    ("get", "/creators/incomplete"):
-        "no screen; `GET /admin/dormant` answers the adjacent question",
-
-    # --- The survey results. `GET /admin/exports/survey` is wired and the
-    # JSON read is not, so the answers are downloadable and not readable.
-    ("get", "/survey/creator"): "no screen; only the CSV export is wired",
 }
 
 ROUTES = admin_routes()

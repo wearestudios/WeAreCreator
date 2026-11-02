@@ -36,9 +36,23 @@ import { TimeAgo } from "./console/format";
 import { CALM, DENSITY, FOCUS, PANEL, ROW_H, TEXT } from "./console/tokens";
 import useListState from "./console/useListState";
 import useTableKeys from "./console/useTableKeys";
-import { ADVANCE_VERB, formatRupees } from "./shared";
+import { ADVANCE_VERB, formatDate, formatRupees } from "./shared";
+
 import AgeBadge from "@/components/AgeBadge";
 import SuspensionPrompts from "./SuspensionPrompts";
+
+
+/**
+ * The public site promises payment within 7 days of approval. The server
+ * flags a row once it has gone five of them unpaid (`payout_at_risk`) and
+ * says when it falls due; this only puts it in words. Nothing here works the
+ * date out — a second definition of "late" is how the queue and the health
+ * panel came to disagree before.
+ */
+const payoutPromiseNote = (row) =>
+    row.payout_at_risk
+        ? `Day ${row.payout_unpaid_days} since approval — the 7-day promise is due ${formatDate(row.payout_due_at)}`
+        : null;
 
 // Collaboration states where the next move is ours. Mirrors ADMIN_ACTION_STATES
 // on the server; anything else is waiting on the brand or the creator.
@@ -214,6 +228,8 @@ export default function ActionQueue({ onChanged, feePercent, allAccess = true })
                             secondary: [row.campaign?.title, row.brand_name]
                                 .filter(Boolean)
                                 .join(" · "),
+                            note: payoutPromiseNote(row),
+                            urgent: Boolean(row.payout_at_risk),
                             raw: row,
                         });
                         continue;
@@ -229,6 +245,8 @@ export default function ActionQueue({ onChanged, feePercent, allAccess = true })
                                 .filter(Boolean)
                                 .join(" · "),
                             state,
+                            note: payoutPromiseNote(row),
+                            urgent: Boolean(row.payout_at_risk),
                             raw: row,
                         });
                         continue;
@@ -242,6 +260,11 @@ export default function ActionQueue({ onChanged, feePercent, allAccess = true })
             }
 
             rows.sort((a, b) => {
+                // A payout five days into a seven-day promise goes first,
+                // whatever kind of row it is: it is the one item here with a
+                // public commitment about to break.
+                const urgent = Number(Boolean(b.urgent)) - Number(Boolean(a.urgent));
+                if (urgent !== 0) return urgent;
                 const band = KIND_META[a.kind].band - KIND_META[b.kind].band;
                 if (band !== 0) return band;
                 return new Date(a.since || 0) - new Date(b.since || 0);
