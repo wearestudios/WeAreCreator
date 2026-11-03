@@ -1263,9 +1263,10 @@ disagree it wins.
 `02`, nothing else. It used to be eight sections and told its story three
 times: the problem band, the promise band, the creator door and the close each
 restated what the process spine already walks through, and at 390px the page
-was 11,687px long. Cut to two it is 5,131px (4,370 at 1440, from 9,676). The
-story the removed bands told is now in the slider, one slide each; "who built
-it" is `/about`.
+was 11,687px long. Cut to two it was 5,131px (4,370 at 1440, from 9,676), and
+dropping the footer's wordmark took it to **5,019 at 390 and 3,999 at 1440**.
+The story the removed bands told is now in the slider, one slide each; "who
+built it" is `/about`.
 
 - **The slider** is `components/marketing/HeroSlider.jsx`: the deal (the
   page's only h1, "chasing" still drawn by `WipeWord`, the `DealCard` with
@@ -1307,6 +1308,40 @@ it" is `/about`.
 - **Reduced motion**: no auto-advance, no progress animation (the active
   track is full and still), an instant swap. Verified by emulation: one slide
   for 16s and zero running animations.
+- **The field behind it** is `components/marketing/HeroField.jsx`, the hero
+  band's first child, `aria-hidden` with `pointer-events: none`, under
+  content raised to `z-10`. Four layers painted by `.hero-field-*` in
+  `index.css`, every colour a `color-mix` of `--brand-navy` or `--brand-red`:
+  a 24px grid of 1px navy dots fading toward the foot, the same grid in red
+  revealed only inside a circle at `--mx`/`--my` (260px, 180px below `sm`), a
+  560px red glow moved by `transform`, and two blurred drifts (red top right,
+  navy bottom left) on 22s/26s alternating keyframes, transform only.
+  - **A mouse pulls the light; nothing else does.** `pointerType === "mouse"`
+    over the hero eases it in (k 0.12 per 1/60s); with no mouse — a phone, or
+    the pointer elsewhere — it wanders a slow Lissajous path. A finger
+    scrolling the page is not pointing at anything.
+  - **One rAF loop, only while it can be seen**: an IntersectionObserver on
+    the hero and `visibilitychange` start and stop it. **No layout read per
+    frame**: the hero's rect is cached, marked stale by a ResizeObserver and
+    a passive scroll listener, and read once by the next frame; a pointer
+    event stores `clientX/Y` and nothing else. **Each frame writes two custom
+    properties on the lit layer and one transform on the glow** — the
+    properties sit on that one element so the recalc is that element alone.
+  - **Reduced motion: no loop and no drift**, and the script writes nothing,
+    so the CSS defaults rest the light at 70% / 30%. Verified by emulation:
+    zero `requestAnimationFrame` calls over 17s with the pointer moving.
+  - **Measured at 4× CPU**: zero long tasks idle and zero under a pointer
+    swept across the hero for 5s, at 1440 and 390; the loop stops writing
+    once the hero is scrolled away. Lighthouse mobile, five interleaved runs
+    behind gzip: median LCP 3928ms against main's 4028ms, CLS 0.0000 in all
+    ten, the LCP element the h1. **Known and older than the field**: at
+    desktop widths slide B's heading paints a larger text box than the h1, so
+    a visitor who has not interacted by the first auto-advance (~8s) gets it
+    as a later LCP candidate. Load-time LCP is the h1 on main and here alike.
+  - `test_hero_slider.py` pins the mount, the one loop and its gates, the
+    tokens and the transform-only drift; `HeroField.test.jsx` drives the loop
+    (offscreen, a hidden tab, reduced motion, a mouse against a finger, one
+    rect read per scroll).
 - **The AI is a slide, not a section.** Slide D exists while any switch is on
   and is **absent, not hidden**, with none; it lists only the live features,
   each with a drawn example, and **no percentage** — the scorer's number ranks
@@ -1330,7 +1365,8 @@ it" is `/about`.
   `/for-brands`), the creator door and the close (creators reach their page
   from the navbar and the footer; `HOME.creatorDoor`, `HOME.close`,
   `ASK.forCreators` and `ASK.haveUsRunIt` are deleted), and "who built it".
-- **Budget**: home 463 (453 used) — the first time it went down. `/about` 160
+- **Budget**: home 463 (453 used: used plus ten, and the field and the
+  footer change added no words) — the first time it went down. `/about` 160
   (82 used).
 
 ### /about, from the footer only
@@ -2038,7 +2074,15 @@ the page.
 
 `MarketingFooter` is built on `components/ui/beam-wordmark-footer.jsx`, a
 generic port of a 21st.dev component (credited in its header, never on
-screen). Two rules in it are load-bearing:
+screen). **The marketing footer has no wordmark.** The giant cropped "WeAre"
+under the columns is gone — the logo in the lead already names the site — so
+what is left is the navy ground, the beam and glow, the 1px accent rule, the
+columns, the contact lines and the copyright, on an ordinary bottom padding
+(`data-word="false"`). The component's `word` is optional: absent or blank,
+there is no wordmark block and no visually hidden label, and the fit effect
+returns before it touches the DOM — no ResizeObserver, no `fonts.ready`, no
+canvas read. It cost 371px of page at 1440 and 112 at 390. Two rules in it
+are load-bearing:
 
 - **The loop moves layers and never repaints.** The original wrote the beam's
   position into CSS variables every frame, moving gradient stops inside a
@@ -2048,15 +2092,17 @@ screen). Two rules in it are load-bearing:
   blended with `mix-blend-mode: screen`: zero long tasks on screen, idle or
   under the pointer, at 4× CPU throttle. Reduced motion draws it once; the
   loop stops offscreen and in a hidden tab.
-- **The fit's measuring element has `transition-property: none`.** The
-  reduced-motion backstop in `index.css` gives everything a 0.01ms duration,
+- **The fit's measuring element has `transition-property: none`** — which
+  matters only for a caller that passes a `word`; nothing on this site does
+  now. The reduced-motion backstop in `index.css` gives everything a 0.01ms duration,
   so with the default `transition-property: all` the font size set for the
   100px measurement *transitioned*, the synchronous read returned the old
   width, and the wordmark re-fitted for ever.
 
 The palette is brand tokens and every tint is `color-mix`, because the colour
-sweeps refuse a literal anywhere under `src/`. The wordmark takes its face from
-`mkt-display`, so `"WONK" 1` stays defined once in `index.css`. The footer
+sweeps refuse a literal anywhere under `src/`. A caller that does pass a word
+should give it a face by class (`wordClassName`), so `"WONK" 1` stays defined
+once in `index.css`. The footer
 reports its own clicks (`cta_click` with `location: "footer"`) and carries
 `data-track-self` so `AnalyticsGate` does not count the same press twice.
 
@@ -6113,8 +6159,10 @@ request loaded no `ital` axis. These are the public site's own, and
   `Rise` (a heading or illustration rising in once — the old `Reveal`,
   in CSS), `CountUp`, `FillText` (one sentence inking in with scroll
   position, used once on the site) and `Marquee` (continuous; pauses on
-  hover and focus). The film, the fee flow, the payout clock and the hero
-  deck are components with motion inside them, imported directly.
+  hover and focus). The film, the fee flow, the payout clock, the hero
+  slider and the hero's field are components with motion inside them,
+  imported directly. The field's drifts are 22s/26s ambient loops on the
+  same curve — a background, not an entrance, so neither band applies.
   One curve, `--weare-ease`, and two bands: 200ms interactive, 400–600ms
   entrance. The marquee is `linear` — the one exception, because a loop that
   eases stalls at its seam. Reduced motion resolves every one to its end

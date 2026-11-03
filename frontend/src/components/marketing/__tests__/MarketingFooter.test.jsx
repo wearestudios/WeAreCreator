@@ -175,12 +175,41 @@ test("the copyright names the studio and the year", () => {
     expect(byId(IDS.copyrightLink).textContent).toBe("WeAre Studios");
 });
 
-test("the wordmark is hidden from screen readers and the name is said once", () => {
-    render();
-    const word = container.querySelector(".bwf-word-in");
-    expect(word.getAttribute("aria-hidden")).toBe("true");
-    expect(word.textContent).toBe("WeAre");
-    expect(container.querySelector(".bwf-sr").textContent).toBe("WeAre Creators");
+test("there is no wordmark: no word block, no hidden label, nothing measured", () => {
+    const observed = [];
+    const RealRO = global.ResizeObserver;
+    global.ResizeObserver = class {
+        observe(el) {
+            observed.push(el);
+        }
+        disconnect() {}
+    };
+    const fonts = document.fonts;
+    let waited = 0;
+    Object.defineProperty(document, "fonts", {
+        configurable: true,
+        value: {
+            get ready() {
+                waited += 1;
+                return Promise.resolve();
+            },
+        },
+    });
+    try {
+        render();
+        expect(container.querySelector(".bwf-word-wrap")).toBeNull();
+        expect(container.querySelector(".bwf-word-in")).toBeNull();
+        expect(container.querySelector(".bwf-sr")).toBeNull();
+        expect(byId(IDS.root).getAttribute("data-word")).toBe("false");
+        // The fit effect returns before it touches the DOM.
+        expect(observed).toEqual([]);
+        expect(waited).toBe(0);
+        // The site is still named once, by the logo in the lead.
+        expect(byId(IDS.wordmark)).not.toBeNull();
+    } finally {
+        global.ResizeObserver = RealRO;
+        Object.defineProperty(document, "fonts", { configurable: true, value: fonts });
+    }
 });
 
 test("nothing from the template survives", () => {
@@ -204,4 +233,27 @@ test("without it the beam runs a loop while on screen", () => {
     showFooter();
     flushFrames(5);
     expect(rafCalls).toBeGreaterThan(3);
+});
+
+test("the wordmark is still there for a caller that passes one, measured and labelled", () => {
+    const BeamWordmarkFooter = require("@/components/ui/beam-wordmark-footer").default;
+    const observed = [];
+    const RealRO = global.ResizeObserver;
+    global.ResizeObserver = class {
+        observe(el) {
+            observed.push(el);
+        }
+        disconnect() {}
+    };
+    try {
+        act(() => root.render(<BeamWordmarkFooter word="Mark" wordLabel="The mark" testIds={{ root: "bwf" }} />));
+        const word = container.querySelector(".bwf-word-in");
+        expect(word.getAttribute("aria-hidden")).toBe("true");
+        expect(word.textContent).toBe("Mark");
+        expect(container.querySelector(".bwf-sr").textContent).toBe("The mark");
+        expect(byId("bwf").getAttribute("data-word")).toBe("true");
+        expect(observed).toHaveLength(1);
+    } finally {
+        global.ResizeObserver = RealRO;
+    }
 });

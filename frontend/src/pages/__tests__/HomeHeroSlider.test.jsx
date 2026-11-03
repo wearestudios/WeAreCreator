@@ -258,11 +258,29 @@ describe("the carousel", () => {
     });
 });
 
+describe("the hero's field", () => {
+    test("sits behind the slider, decorative, inside the hero section", () => {
+        mockLive = {};
+        reduced = true;
+        render();
+        const hero = byId("hero-section");
+        const field = byId("hero-field");
+        expect(field.parentElement).toBe(hero);
+        expect(hero.firstElementChild).toBe(field);
+        expect(field.getAttribute("aria-hidden")).toBe("true");
+        expect(field.contains(container.querySelector("h1"))).toBe(false);
+        expect(hero.className).toMatch(/\brelative\b/);
+        expect(hero.className).toMatch(/\boverflow-hidden\b/);
+    });
+});
+
 describe("the phone's sticky ask", () => {
     const fire = (el, entry) => {
-        const io = observers.find((o) => o.targets.includes(el));
-        expect(io).toBeTruthy();
-        act(() => io.cb([{ isIntersecting: false, boundingClientRect: { top: 100 }, ...entry, target: el }]));
+        // Every observer on it: the hero has two, the sticky ask's and the
+        // field's, which runs its light only while the hero is on screen.
+        const ios = observers.filter((o) => o.targets.includes(el));
+        expect(ios.length).toBeGreaterThan(0);
+        act(() => ios.forEach((io) => io.cb([{ isIntersecting: false, boundingClientRect: { top: 100 }, ...entry, target: el }])));
     };
 
     test("shows once the hero has scrolled away, and hides once the footer is on screen", () => {

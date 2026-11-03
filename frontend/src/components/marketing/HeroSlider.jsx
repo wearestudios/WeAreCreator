@@ -29,6 +29,7 @@ import React, { Suspense, lazy, useCallback, useEffect, useReducer, useRef, useS
 import { Sparkles } from "lucide-react";
 
 import { EASE } from "@/components/marketing/motion";
+import HeroField from "@/components/marketing/HeroField";
 import { WipeWord } from "@/components/marketing/primitives";
 import { Band, Cta, SectionRule, Wrap } from "@/components/marketing/SiteParts";
 import { DealCard } from "@/components/marketing/siteMocks";
@@ -308,8 +309,11 @@ export default function HeroSlider({ n, aiCards, aiPowered }) {
     });
 
     return (
-        <Band ground="page" id="hero" track="hero" testid={IDS.section}>
-            <Wrap className="pb-16 pt-8 md:pb-24 md:pt-12">
+        <Band ground="page" id="hero" track="hero" testid={IDS.section} className="relative isolate overflow-hidden">
+            {/* Behind everything, never in the way: decorative, no pointer
+                events, and its loop only runs while the hero is on screen. */}
+            <HeroField testid={IDS.field} />
+            <Wrap className="relative z-10 pb-16 pt-8 md:pb-24 md:pt-12">
                 <div
                     ref={rootRef}
                     role="region"

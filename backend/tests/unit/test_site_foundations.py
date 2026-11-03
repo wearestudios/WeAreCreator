@@ -219,7 +219,7 @@ class TestFonts:
                       "PhotoSlot.jsx", "MarketingNavbar.jsx", "MarketingFooter.jsx",
                       "ProcessSpine.jsx", "FeatureRow.jsx",
                       # The homepage's hero slider and its visuals.
-                      "HeroSlider.jsx", "heroSlides.jsx",
+                      "HeroSlider.jsx", "heroSlides.jsx", "HeroField.jsx",
                       # Restored, and mounted again: held to the same rule.
                       "Illustration.jsx", "FeeFlow.jsx", "PayoutClock.jsx")
         ] + sorted((SRC / "components" / "marketing" / "process").glob("*.jsx"))
