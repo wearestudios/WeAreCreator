@@ -674,32 +674,36 @@ def test_home_does_not_promise_that_every_brief_pays_money():
 
 def test_home_is_the_eight_sections_in_order():
     """Replaces `test_home_keeps_only_what_routes`. Home is brands-first and
-    eight sections long: hero, the problem, a photograph, the four steps, the
+    eight sections long: hero, the problem, a photograph, how it works, the
     navy band, who built it, the creator door, the close — in that order, and
     nothing else. The proof strip, the brand wall, the case studies and the
     leaderboard are not on it; the server-backed ones stay in the tree,
     unmounted.
 
-    **The scroll film is back, and not as a ninth section**: the restoration
-    put it inside "How it works", beside the four steps, where it plays as
-    they are read. It is fetched in its own chunk when that section nears the
-    screen, so the homepage's first paint still carries no animation
-    library."""
+    **"How it works" is the process spine now**, and it replaced the old
+    section in place rather than becoming a ninth: the four illustrated steps
+    and the scroll film beside them are gone, files and copy, and the spine
+    keeps the section's number and its `#how-it-works` anchor, which
+    `/how-it-works` redirects to. It is CSS transitions and two observers, so
+    the homepage's first paint still carries no animation library."""
     src = copy_of(*PAGES["home"])
     body = src[src.index("export default function Home") :]
     # "What the AI does" sits after How it works, and only while a switch is
     # on — see test_ai_switches and HomeAiSection.test.jsx.
-    order = ["<Hero />", "<ComparisonBand", '<PhotoBand slot="home-on-location"', "<HowItWorks",
+    order = ["<Hero />", "<ComparisonBand", '<PhotoBand slot="home-on-location"', "<ProcessSpine",
              "<AiSection", "<PromiseBand", "<WhoBuiltIt", "<CreatorDoor", "<Closing"]
     positions = [body.index(tag) for tag in order]
     assert positions == sorted(positions), order
+    assert body.count("<ProcessSpine") == 1, "one how-it-works section, not two"
     for gone in ("ProofStrip", "BrandWall", "CaseStudyStrip", "CreatorLeaderboard",
-                 "TwoPaths", "HandshakeBand", "HeroSlider", "KineticHeadline"):
+                 "TwoPaths", "HandshakeBand", "HeroSlider", "KineticHeadline",
+                 "HowItWorks", "CampaignFilm"):
         assert gone not in src, gone
-    how = src[src.index("function HowItWorks") : src.index("function WhoBuiltIt")]
-    assert "<CampaignFilm" in how and "trackRef={trackRef}" in how
-    assert 'webpackChunkName: "film"' in read(*PAGES["home"])
-    assert "import CampaignFilm" not in src, "a static import puts framer-motion in the first paint"
+    mkt = FRONTEND / "src" / "components" / "marketing"
+    for gone in ("CampaignFilm.jsx", "filmUI.jsx", "filmParts.jsx"):
+        assert not (mkt / gone).exists(), gone
+    assert "film" not in content()["HOME"], "the film's copy went with it"
+    assert "framer-motion" not in read("src", "components", "marketing", "ProcessSpine.jsx")
 
 
 def test_every_section_opens_on_the_numbered_rule():
@@ -736,20 +740,26 @@ def test_home_sends_readers_on_rather_than_telling_them_everything():
         assert dest in text, dest
 
 
-def test_step_three_is_the_one_we_handle():
-    """The managed service sells itself on the step it takes off a brand's
-    hands, quietly, without a section of its own. **The hero's rail is gone**:
-    it duplicated section 4 one screen above it, so nothing links to the steps
-    by anchor any more and they carry no anchor ids or numbers."""
-    how = content()["HOME"]["how"]
-    assert [i["title"] for i in how["items"]] == ["Offer", "Agree", "Deliver", "Get paid"]
-    assert [bool(i.get("weHandle")) for i in how["items"]] == [False, False, True, False]
-    assert how["weHandle"] == "We handle this part"
-    assert "steps" not in content()["HOME"]
+def test_the_spine_is_five_steps_for_each_side():
+    """Replaces `test_step_three_is_the_one_we_handle`, which pinned the old
+    four-step section. The spine shows five steps for the brand and five for
+    the creator, switched; the hero's deck keeps its own four, and nothing
+    links to a step by anchor."""
+    spine = content()["HOME"]["processSpine"]
+    assert [t["key"] for t in spine["tabs"]] == ["brands", "creators"]
+    assert [s["title"] for s in spine["steps"]["brands"]] == [
+        "Post a brief", "Get a shortlist", "The shoot", "Approve the work", "Go live, see the numbers",
+    ]
+    assert [s["title"] for s in spine["steps"]["creators"]] == [
+        "Find a campaign", "Apply", "Shoot", "Submit your content", "Get paid",
+    ]
+    for side in spine["steps"].values():
+        for step in side:
+            assert step["card"]["tag"] == "Example", step["key"]
+    assert [s["key"] for s in content()["HOME"]["deck"]["steps"]] == ["offer", "agree", "deliver", "paid"]
+    assert "how" not in content()["HOME"] and "steps" not in content()["HOME"]
     src = read(*PAGES["home"])
     assert "#step-" not in src and "id={`step-" not in src
-    # "you only touch two": the brand's own steps are exactly two.
-    assert sum(1 for i in how["items"] if i["yours"]) == 2
 
 
 def test_the_homepage_names_no_client():
@@ -929,8 +939,15 @@ def test_the_money_band_counts_once_and_names_the_amount_once():
 # render only while `AI_FEATURES.campaignSummary` is on, and are counted
 # whether or not they render — a budget that ignored copy behind a switch
 # would be a budget the next switch walks round.
+#
+# Moved by exactly what was added, again: the process spine replaced "How
+# it works". It retired the four steps' two lines each, their AI lines and
+# the film's seven captions, and added five steps a side (title and line),
+# the before/after strip and nine feature cards, three of them behind AI
+# switches and counted anyway. Home went from 561 to 697. Every mockup on the
+# spine is under `card`, drawn product UI, and does not count.
 BUDGET = {
-    "home": 561,
+    "home": 697,
     "brands": 790,
     "creators": 378,
     "contact": 200,
@@ -1227,7 +1244,7 @@ def test_the_hero_is_exactly_its_five_elements():
     line, no step rail** — and in three type styles at most: the Fraunces
     display h1, the Inter Tight lead, and Inter Tight UI. No label face."""
     src = copy_of(*PAGES["home"])
-    hero = src[src.index("function Hero()") : src.index("function WhenNear")]
+    hero = src[src.index("function Hero()") : src.index("function WhoBuiltIt")]
     assert "<nav" not in hero and "<Label" not in hero and "HERO_EYEBROW" not in hero
     assert "builtFor" not in hero and "railLabel" not in hero
     assert "mkt-label" not in hero

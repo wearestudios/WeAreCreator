@@ -169,7 +169,7 @@ PAGES = Path(server.__file__).resolve().parents[1] / "frontend" / "src" / "pages
 # (page file, the content key printed, the switch that must guard it, the
 # analytics section id it reports as).
 # (page file, the content expression printed, the guard that must sit above
-# it, the analytics section id it reports as). Home's step lines and the FAQ
+# it, the analytics section id it reports as). Home's feature cards and the FAQ
 # item carry their own switch key, held to the right switch by the tests below.
 SWITCHED_LINES = [
     ("ForBrands.jsx", "report.aiLine", 'aiLive("campaignSummary")', "report-ai-summary"),
@@ -178,13 +178,16 @@ SWITCHED_LINES = [
     ("Home.jsx", "hero.aiLead", "aiPowered", "hero-ai-lead"),
     ("ForCreators.jsx", "briefs.aiLine", 'aiLive("nicheMatching")', "briefs-ai-matching"),
     ("ForCreators.jsx", "hero.aiLine", 'aiLive("nicheMatching")', "hero-ai-matching"),
-    ("Home.jsx", "a.line", "aiLive(a.key)", "step-${step.key}-ai-${a.key}"),
+    # The homepage's feature row, under the process spine: one card per AI
+    # feature, each behind its own switch.
+    ("../components/marketing/FeatureRow.jsx", "item.title", "!item.aiKey || aiLive(item.aiKey)", "feature-${item.key}"),
 ]
 
-# Homepage steps that carry AI lines, and the switch behind each line.
-STEP_SWITCHES = {
-    "offer": ["briefWriter", "nicheMatching"],
-    "paid": ["campaignSummary"],
+# The homepage feature row's AI cards, and the switch behind each.
+FEATURE_SWITCHES = {
+    "aiBrief": "briefWriter",
+    "aiMatch": "nicheMatching",
+    "aiSummary": "campaignSummary",
 }
 
 
@@ -213,10 +216,10 @@ def _evaluated(expr: str):
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
-def test_each_homepage_ai_line_names_its_switch():
-    got = _evaluated("HOME.how.items.filter(s => s.ai).map(s => [s.key, s.ai.map(a => a.key)])")
-    assert dict(got) == STEP_SWITCHES
-    assert all(key in CAPABILITIES for keys in STEP_SWITCHES.values() for key in keys)
+def test_each_homepage_ai_card_names_its_switch():
+    got = _evaluated("HOME.processSpine.features.items.filter(i => i.aiKey).map(i => [i.key, i.aiKey])")
+    assert dict(got) == FEATURE_SWITCHES
+    assert all(key in CAPABILITIES for key in FEATURE_SWITCHES.values())
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")

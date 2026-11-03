@@ -6,7 +6,7 @@
 // screen as cheap to mount as a picture, and the deck mounts at most two of
 // them at a time. A screenshot dates the day somebody moves a button; these
 // borrow the product's language (cards, hairlines, state chips) and are
-// simplified past literal, the rule `filmUI.jsx` already holds.
+// simplified past literal, the rule the old scroll film held.
 //
 // **Every word arrives from `content/marketing.js`** (`HOME.deck`, and the
 // deal in `HOME.card` for the Agree screen) — the rule every public page

@@ -96,9 +96,9 @@ describe.each([
         }
     });
 
-    test("Home: step 01's line", () => {
+    test("Home: the feature row's matching card", () => {
         const Home = require("@/pages/Home").default;
         page(Home);
-        expect(Boolean(byId("landing-step-offer-ai-nicheMatching"))).toBe(on);
+        expect(Boolean(byId("process-feature-aiMatch"))).toBe(on);
     });
 });

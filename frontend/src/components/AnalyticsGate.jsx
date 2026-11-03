@@ -69,6 +69,9 @@ export function classifyClick(el) {
     if (WHATSAPP_HREF.test(href)) {
         return { event: EVENTS.outboundWhatsapp, props: { target: testid || "whatsapp" } };
     }
+    // A surface that reports its own clicks (the process strip's ask) says
+    // so, or the same press would be counted twice.
+    if (target.closest("[data-track-self]")) return null;
     const marked = target.closest("[data-cta]");
     if (marked) return { event: EVENTS.ctaClick, props: { cta: marked.getAttribute("data-cta") } };
     if (/cta/i.test(testid) || href.startsWith("/signup")) {

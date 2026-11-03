@@ -207,89 +207,215 @@ export const HOME = {
             { name: "Tanvi M.", amount: "Barter", state: "Posted", tone: "info" },
         ],
     },
-    how: {
+    // "How it works": the process spine. Five steps per side of the deal,
+    // switched between brands and creators. Each step's `title` and `line`
+    // are argument and count against the budget; everything under `card` is
+    // drawn product UI — the example mockup beside the step — and does not.
+    //
+    // **Checked against the product, and reworded where the brief's sentence
+    // was not true of it** (each is listed in the PR that added this):
+    // - "Live in minutes": a brief is reviewed before it goes live, unless
+    //   the brand has earned trust — so the line says it is checked.
+    // - "You see reach, niche and past work": every brand brief is run by us,
+    //   so we shortlist, and what a brand sees is reach, niche and the
+    //   reliability band — there is no portfolio of past work.
+    // - "We ship the product": on a delivery brief the parcel's dispatch is
+    //   recorded here; who packs it is not ours to promise.
+    // - "Approve the draft": a draft gate is optional per brief, so the step
+    //   approves the work; the revision cap covers drafts and live content.
+    // - "Apply in one tap": an application carries a quoted rate and a pitch.
+    // - "Payout receipt": no receipt exists; the card shows the payout row.
+    processSpine: {
         label: "How it works",
-        title: "Four steps, and you only touch two",
-        weHandle: "We handle this part",
-        youTouch: "You",
-        // Each step shows both sides of the deal at once, as the old
-        // /how-it-works page did: `line` is the brand's, `creatorLine` what
-        // happens on the creator's side.
-        creatorSide: "The creator",
-        items: [
-            {
-                key: "offer",
-                title: "Offer",
-                line: "Post the brief: what you want made, what it pays and how you may use it.",
-                creatorLine: "Creators see what it pays, what it asks for and how it may be used before they apply.",
-                // Each rendered only while `aiLive(key)`.
-                ai: [
-                    { key: "briefWriter", line: "Describe it in two lines — we draft the brief." },
-                    { key: "nicheMatching", line: "Matched creators apply — matched on what they post, not by follower count alone." },
-                ],
-                screen: { kicker: "New brief", rows: ["Weekend brunch launch", "₹11,000 per creator", "1 reel · 3 stories"] },
-                yours: true,
-            },
-            {
-                key: "agree",
-                title: "Agree",
-                line: "We shortlist verified creators and agree each fee in writing. The terms freeze when a creator is taken on.",
-                creatorLine: "Their fee is agreed in writing before they travel, and their number stays theirs.",
-                screen: { kicker: "Shortlist", rows: ["Kiran M. · 94% match", "Fee agreed ₹12,500", "Terms frozen"] },
-                yours: false,
-            },
-            {
-                key: "deliver",
-                title: "Deliver",
-                line: "We book the slot, run the shoot day and check the post carries its disclosure.",
-                creatorLine: "They turn up at the slot, shoot, and post with the disclosure the brief asks for.",
-                screen: { kicker: "Shoot day", rows: ["Sat 11:00 · slot confirmed", "Checked in", "Draft received"] },
-                yours: false,
-                weHandle: true,
-            },
-            {
-                key: "paid",
-                title: "Get paid",
-                line: "You approve the work, and the creator is paid within 7 days of your approval.",
-                creatorLine: "Paid to their UPI or bank within 7 days of your approval — all of it.",
-                // Rendered only while `aiLive(key)`.
-                ai: [
-                    { key: "campaignSummary", line: "An AI summary then reads your results in plain English, using only your real numbers." },
-                ],
-                screen: { kicker: "Payment", rows: ["Work approved", "₹12,500 to Kiran", "Paid in full"] },
-                yours: true,
-            },
+        title: "From the brief to the results,",
+        // Set in Fraunces italic.
+        accent: "in one place",
+        lead: "Every step of a campaign happens here, for both sides of it.",
+        tabsLabel: "Show the steps for",
+        tabs: [
+            { key: "brands", label: "For brands" },
+            { key: "creators", label: "For creators" },
         ],
-    },
-    // The scroll film beside the four steps: seven beats, grouped under the
-    // four steps' own names. **Captions are argument and count against the
-    // budget; everything under `screen` is drawn product UI and does not.**
-    // The story is one the product keeps: a person checks creators, the fee
-    // is agreed in writing, the brand approves the work (a draft gate is
-    // optional per brief, so the film does not claim one), and the creator
-    // is paid all of the fee within 7 days of approval.
-    film: {
-        beats: [
-            { key: "brief", step: "offer", caption: "A brief goes up" },
-            { key: "applied", step: "offer", caption: "Verified creators apply" },
-            { key: "accepted", step: "agree", caption: "One is taken on" },
-            { key: "message", step: "agree", caption: "The fee is agreed in writing" },
-            { key: "slot", step: "deliver", caption: "A slot is booked" },
-            { key: "approved", step: "deliver", caption: "You approve the work" },
-            { key: "paid", step: "paid", caption: "Paid within 7 days, all of it" },
-        ],
-        screen: {
-            brief: { tag: "Brief posted", meta: "Food & drink", title: "Weekend brunch launch", chips: ["₹11,000 per creator", "3 needed"] },
-            applicants: [
-                { name: "Kiran M.", followers: "24K followers", rate: "₹14,000" },
-                { name: "Priya R.", followers: "11K followers", rate: "₹12,000" },
-                { name: "Tanvi M.", followers: "38K followers", rate: "₹9,500" },
+        steps: {
+            brands: [
+                {
+                    key: "brief",
+                    title: "Post a brief",
+                    line: "Tell us the venue or product, the deliverables and the budget. We check it, then it goes live.",
+                    card: {
+                        kind: "brief",
+                        tag: "Example",
+                        head: "Brief",
+                        title: "Weekend brunch tasting",
+                        rows: [
+                            { k: "Where", v: "Indiranagar café · venue visit" },
+                            { k: "Deliverables", v: "Reel + 3 stories" },
+                            { k: "Budget", v: "₹8,000–12,000 per creator" },
+                            { k: "Status", v: "Applications open", tone: "good" },
+                        ],
+                    },
+                },
+                {
+                    key: "shortlist",
+                    title: "Get a shortlist",
+                    line: "Creators apply and we shortlist. You see reach, niche and track record, never a phone or email.",
+                    card: {
+                        kind: "shortlist",
+                        tag: "Example",
+                        head: "Applicants",
+                        rows: [
+                            { handle: "@foodie.daily", niche: "Food", followers: "24K followers", chip: "Shortlisted" },
+                            { handle: "@brunchdiaries", niche: "Cafés", followers: "11K followers" },
+                            { handle: "@plates.and.places", niche: "Dining", followers: "38K followers" },
+                        ],
+                        lock: "Contact details hidden",
+                    },
+                },
+                {
+                    key: "shoot",
+                    title: "The shoot",
+                    line: "They visit, or the product is sent to them. Slots and addresses are handled for you.",
+                    card: {
+                        kind: "calendar",
+                        tag: "Example",
+                        head: "Shoot slots",
+                        days: [
+                            { d: "Thu", n: "12" },
+                            { d: "Fri", n: "13", booked: "11:00" },
+                            { d: "Sat", n: "14", booked: "16:30" },
+                            { d: "Sun", n: "15" },
+                        ],
+                        bookedLabel: "Booked",
+                        delivered: "Product delivered ✓",
+                    },
+                },
+                {
+                    key: "approve",
+                    title: "Approve the work",
+                    line: "Review the content, ask for changes within the revisions included, then approve it.",
+                    card: {
+                        kind: "approve",
+                        tag: "Example",
+                        head: "Content review",
+                        thumb: "Reel · 0:32",
+                        revisions: "Revisions · 1 of 2 used",
+                        approve: "Approve",
+                        changes: "Request changes",
+                    },
+                },
+                {
+                    key: "results",
+                    title: "Go live, see the numbers",
+                    line: "Content goes live. Track creators, views and shares in one dashboard.",
+                    card: {
+                        kind: "kpis",
+                        tag: "Example",
+                        head: "Campaign results",
+                        tiles: [
+                            { label: "Creators", value: 6 },
+                            { label: "Total views", value: 184200 },
+                            { label: "Shares", value: 2350 },
+                        ],
+                        paid: "Creator paid · within 7 days",
+                    },
+                },
             ],
-            accepted: "Taken on",
-            message: { channel: "WhatsApp", text: "You're on. Fee agreed:", amount: "₹12,500" },
-            slot: { label: "Slot booked · Sat 11:00", days: ["M", "T", "W", "T", "F", "S", "S"], booked: 5 },
-            approval: { title: "Work reviewed", line: "Approved by the brand", tag: "Approved" },
-            payout: { label: "Paid to the creator", amount: 12500, line: "All of it. Our fee is charged to the brand." },
+            creators: [
+                {
+                    key: "find",
+                    title: "Find a campaign",
+                    line: "Browse paid briefs that match your niche. Barter briefs show only if you turn them on.",
+                    card: {
+                        kind: "campaigns",
+                        tag: "Example",
+                        head: "Briefs for you",
+                        rows: [
+                            { title: "Weekend brunch tasting", niche: "Food", pay: "₹10,000" },
+                            { title: "New menu launch", niche: "Dining", pay: "Barter · dinner for two" },
+                        ],
+                    },
+                },
+                {
+                    key: "apply",
+                    title: "Apply",
+                    line: "Quote your rate and say why you fit. Your profile does the rest of the talking.",
+                    card: {
+                        kind: "applied",
+                        tag: "Example",
+                        head: "Your application",
+                        title: "Weekend brunch tasting",
+                        rows: [
+                            { k: "Your rate", v: "₹10,000" },
+                            { k: "Status", v: "Applied", tone: "good" },
+                        ],
+                    },
+                },
+                {
+                    key: "shoot",
+                    title: "Shoot",
+                    line: "Book a slot at the venue, or receive the product at home.",
+                    card: {
+                        kind: "booked",
+                        tag: "Example",
+                        head: "Your shoot",
+                        rows: [
+                            { k: "Slot", v: "Sat 14 · 16:30", tone: "good" },
+                            { k: "Address", v: "Shared with the WeAre team only" },
+                        ],
+                    },
+                },
+                {
+                    key: "submit",
+                    title: "Submit your content",
+                    line: "Get feedback and revise within the agreed number of revisions.",
+                    card: {
+                        kind: "submit",
+                        tag: "Example",
+                        head: "Your content",
+                        file: "reel-final.mp4",
+                        revisions: "Revisions · 1 of 2 used",
+                        chip: "Approved",
+                    },
+                },
+                {
+                    key: "paid",
+                    title: "Get paid",
+                    line: "The fee is agreed in writing before you travel. Paid within 7 days of approval, and you keep all of it.",
+                    card: {
+                        kind: "payout",
+                        tag: "Example",
+                        head: "Payout",
+                        rows: [
+                            { k: "Fee agreed", v: "₹10,000" },
+                            { k: "Paid to your UPI", v: "₹10,000" },
+                            { k: "Status", v: "Paid", tone: "good" },
+                        ],
+                    },
+                },
+            ],
+        },
+        // The strip under the spine: the same campaign over DMs, and here.
+        strip: {
+            before: { label: "Doing it over DMs", line: "Dozens of DMs, a spreadsheet, chasing addresses, guessing what you got." },
+            after: { label: "With WeAre Creators", line: "One brief. Shortlist, shoot, approve and track — all in one place." },
+        },
+        // The feature row. A card with an `aiKey` renders only while
+        // `aiLive(aiKey)`.
+        features: {
+            label: "What is built in",
+            prev: "Previous features",
+            next: "More features",
+            items: [
+                { key: "briefs", icon: "FileText", title: "Briefs", line: "Venue, deliverables, budget and usage, in one brief." },
+                { key: "shortlist", icon: "Users", title: "Creator shortlist", line: "Checked creators, with contact details kept private." },
+                { key: "booking", icon: "CalendarCheck", title: "Slot booking & delivery", line: "Shoot slots and product deliveries, tracked." },
+                { key: "approvals", icon: "CheckCheck", title: "Draft approvals", line: "Review before it counts, within the revisions agreed." },
+                { key: "analytics", icon: "BarChart3", title: "Campaign analytics", line: "Creators, views and shares on one dashboard." },
+                { key: "payouts", icon: "Wallet", title: "Payouts in 7 days", line: "Creators paid within 7 days of approval." },
+                { key: "aiBrief", aiKey: "briefWriter", icon: "Sparkles", title: "AI brief writer", line: "Two lines in, a full brief to edit." },
+                { key: "aiMatch", aiKey: "nicheMatching", icon: "Crosshair", title: "Niche matching", line: "Creators matched on what they actually post." },
+                { key: "aiSummary", aiKey: "campaignSummary", icon: "FileBarChart", title: "Campaign summary", line: "Your results read in plain English, from your real numbers." },
+            ],
         },
     },
     // The hero card: one screen per step, cycling. Drawn product UI, so it
@@ -297,6 +423,13 @@ export const HOME = {
     // `card` above, unchanged, as the Agree screen.
     deck: {
         label: "The four steps",
+        // The steps the hero card cycles through, in order.
+        steps: [
+            { key: "offer", title: "Offer" },
+            { key: "agree", title: "Agree" },
+            { key: "deliver", title: "Deliver" },
+            { key: "paid", title: "Get paid" },
+        ],
         screen: {
             offer: {
                 kicker: "New brief",

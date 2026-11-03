@@ -14,13 +14,6 @@ export const LANDING_PAGE = {
 	page: 'landing-page',
 	swap: 'compare-section',
 	band: 'landing-band',
-	how: 'landing-how',
-	step: (key) => `landing-step-${key}`,
-	// The AI line under a step, while that feature's switch is on.
-	stepAi: (key, feature) => `landing-step-${key}-ai-${feature}`,
-	// "You" or "The creator" under one step: both sides of the deal.
-	stepSide: (key, side) => `landing-step-${key}-${side}`,
-	stepTag: 'landing-step-tag',
 	promises: 'landing-promises',
 	// "What the AI does", while at least one AI switch is on.
 	ai: 'landing-ai',

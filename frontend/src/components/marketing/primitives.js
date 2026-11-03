@@ -15,8 +15,8 @@
 // the restoration asked for it, and it is CSS so the homepage still ships no
 // animation library.
 //
-// The three explaining pieces — `CampaignFilm`, `FeeFlow`, `PayoutClock` —
-// and the hero's step deck are components with motion inside them rather
+// The explaining pieces — `FeeFlow`, `PayoutClock`, the homepage's process
+// spine — and the hero's step deck are components with motion inside them rather
 // than primitives a page composes, and are imported directly. `Reveal` and
 // the rest of `motion.js` are what those components animate with inside;
 // `test_site_foundations.py` fails a public page that reaches for them itself.

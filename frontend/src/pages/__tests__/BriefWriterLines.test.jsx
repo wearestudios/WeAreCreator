@@ -79,10 +79,10 @@ describe.each([
         }
     });
 
-    test("Home: step 01's line", () => {
+    test("Home: the feature row's brief writer card", () => {
         page(require("@/pages/Home").default);
-        const el = byId("landing-step-offer-ai-briefWriter");
+        const el = byId("process-feature-aiBrief");
         expect(Boolean(el)).toBe(on);
-        if (on) expect(el.getAttribute("data-track-section")).toBe("step-offer-ai-briefWriter");
+        if (on) expect(el.getAttribute("data-track-section")).toBe("feature-aiBrief");
     });
 });

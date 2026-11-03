@@ -121,7 +121,7 @@ export function SectionHead({ n, label, title, lead, className = "", titleClassN
  * new tab. **Primary is navy, never red** — a red button on a light page reads
  * as destructive. `data-cta` is what `cta_click` reports.
  */
-export function Cta({ ask, variant = "primary", testid, className = "" }) {
+export function Cta({ ask, variant = "primary", testid, className = "", onClick }) {
     const look =
         variant === "primary"
             ? "bg-primary text-primary-foreground hover:bg-primary-hover"
@@ -135,20 +135,20 @@ export function Cta({ ask, variant = "primary", testid, className = "" }) {
     );
     if (ask.href) {
         return (
-            <a href={ask.href} target="_blank" rel="noopener noreferrer" data-cta={ask.cta} data-testid={testid} className={cls}>
+            <a href={ask.href} target="_blank" rel="noopener noreferrer" data-cta={ask.cta} data-testid={testid} className={cls} onClick={onClick}>
                 {inner}
             </a>
         );
     }
     if (ask.to && ask.to.startsWith("#")) {
         return (
-            <a href={ask.to} data-cta={ask.cta} data-testid={testid} className={cls}>
+            <a href={ask.to} data-cta={ask.cta} data-testid={testid} className={cls} onClick={onClick}>
                 {inner}
             </a>
         );
     }
     return (
-        <Link to={ask.to} data-cta={ask.cta} data-testid={testid} className={cls}>
+        <Link to={ask.to} data-cta={ask.cta} data-testid={testid} className={cls} onClick={onClick}>
             {inner}
         </Link>
     );

@@ -3,8 +3,9 @@
 //   1 the hero — the h1, one lead, two asks, one quiet line, and the step deck
 //   2 the problem — the spreadsheet and the DMs, against the same campaign here
 //   3 a full-bleed photograph (or, until there is one, its illustration)
-//   4 how it works — the four steps, each illustrated, both sides of the deal,
-//     with the campaign film playing beside them
+//   4 how it works — the process spine: five steps a side, brands or
+//     creators, on a navy band, then the before/after strip and the feature
+//     row (`components/marketing/ProcessSpine.jsx`)
 //   5 the navy band: three things the code enforces
 //   6 who built it: the heading, an illustration and the scroll-inked sentence
 //   7 the creator door, on the second navy band
@@ -15,21 +16,21 @@
 // invented ones inside the drawn product UI.
 //
 // **The look is the pre-revamp site's, brought back over the new content**:
-// the drawn illustrations beside the copy, the campaign film, the hero card
-// cycling the four steps, a gentle rise on headings and drawings, and bands
+// the drawn illustrations beside the copy, the hero card cycling the four
+// steps, a gentle rise on headings and drawings, and bands
 // that alternate the page ground, a warm tint and navy. The copy, the claims,
 // the structure and the type rules are the new site's and did not move.
 //
 // **The homepage ships no animation library.** Its LCP is the h1, and 36KB of
 // framer-motion in front of it would be the one regression this must not
 // cause: the deck reads reduced motion off the media query, `Rise` is CSS,
-// and the film — which does need framer — is fetched in its own chunk only
-// when "How it works" is about to come on screen.
-import React, { Suspense, lazy, useEffect, useRef, useState } from "react";
+// and the process spine's motion is CSS transitions driven by two observers.
+import React, { useEffect } from "react";
 
 import ComparisonBand from "@/components/marketing/ComparisonBand";
 import { DeckStage, HeroDeckProvider, StepRail } from "@/components/marketing/HeroDeck";
 import Illustration from "@/components/marketing/Illustration";
+import ProcessSpine from "@/components/marketing/ProcessSpine";
 import { MarketingPage } from "@/components/marketing/Sections";
 import { FillText, Rise, WipeWord } from "@/components/marketing/primitives";
 import {
@@ -46,20 +47,6 @@ import {
 import StickyCta from "@/components/marketing/StickyCta";
 import { LANDING_CLOSING, LANDING_HERO as HERO_IDS, LANDING_PAGE as IDS } from "@/constants/testIds";
 import { ASK, HOME, aiLive } from "@/content/marketing";
-import { retryImport } from "@/lib/lazyRoute";
-
-// The film is framer-motion, and the homepage's first paint carries none.
-const CampaignFilm = lazy(() =>
-    retryImport(() => import(/* webpackChunkName: "film" */ "@/components/marketing/CampaignFilm")),
-);
-
-/** Each step's drawing, placed by meaning — the pre-revamp pages' own. */
-const STEP_ART = {
-    offer: "how-briefing",
-    agree: "how-table-talk",
-    deliver: "why-shoot-day",
-    paid: "creators-payment",
-};
 
 /** The h1 with its one accented word, whole in the DOM from the first paint. */
 function HeroTitle({ title, accent }) {
@@ -94,9 +81,9 @@ function liveAiCards() {
 }
 
 function Hero() {
-    const { hero, card, deck, how } = HOME;
+    const { hero, card, deck } = HOME;
     const aiPowered = liveAiCards().length >= 2;
-    const steps = how.items.map((step) => ({
+    const steps = deck.steps.map((step) => ({
         key: step.key,
         label: step.title,
         props: { screen: deck.screen[step.key], card, rowTestid: HERO_IDS.cardRow },
@@ -139,113 +126,6 @@ function Hero() {
                         <DeckStage />
                         <StepRail className="mt-3" />
                     </HeroDeckProvider>
-                </div>
-            </Wrap>
-        </Band>
-    );
-}
-
-/**
- * Mounts its children once the block is within a screen and a half of the
- * viewport, and never unmounts them. The film's chunk is fetched then and not
- * before: a visitor who reads the hero and leaves never downloads it, and
- * neither does a page-load measurement.
- */
-function WhenNear({ children }) {
-    const ref = useRef(null);
-    const [near, setNear] = useState(false);
-    useEffect(() => {
-        const node = ref.current;
-        if (near || !node) return undefined;
-        if (typeof IntersectionObserver === "undefined") {
-            setNear(true);
-            return undefined;
-        }
-        const io = new IntersectionObserver(
-            (entries) => {
-                if (entries.some((e) => e.isIntersecting)) {
-                    setNear(true);
-                    io.disconnect();
-                }
-            },
-            { rootMargin: "150% 0px 150% 0px" },
-        );
-        io.observe(node);
-        return () => io.disconnect();
-    }, [near]);
-    return (
-        <div ref={ref} className="h-full">
-            {near ? <Suspense fallback={null}>{children}</Suspense> : null}
-        </div>
-    );
-}
-
-/**
- * How it works: the four steps, each with its drawing, a line for the brand
- * and a line for the creator — both sides of the deal visible at once, as the
- * old /how-it-works page showed — and the campaign film beside them, playing
- * as the steps are read. `/how-it-works` redirects to this section's anchor.
- */
-function HowItWorks({ n }) {
-    const { how, film } = HOME;
-    const trackRef = useRef(null);
-    const titles = Object.fromEntries(how.items.map((s) => [s.key, s.title]));
-    return (
-        <Band ground="page" id="how-it-works" track="how" testid={IDS.how} className="scroll-mt-16">
-            <Wrap className="py-20 md:py-28">
-                <SectionHead n={n} label={how.label} title={how.title} />
-                <div className="mt-14 grid gap-14 lg:grid-cols-12 lg:gap-16">
-                    <ol ref={trackRef} className="space-y-14 lg:col-span-7">
-                        {how.items.map((step) => (
-                            <li
-                                key={step.key}
-                                data-testid={IDS.step(step.key)}
-                                className="grid gap-6 sm:grid-cols-5 sm:items-start sm:gap-8"
-                            >
-                                {/* At 390px the drawing stacks above its text,
-                                    full width; beside it from `sm`. */}
-                                <Illustration name={STEP_ART[step.key]} ratio="4 / 3" className="sm:col-span-2" />
-                                <div className="sm:col-span-3">
-                                    <Rise>
-                                        <h3 className="mkt-h3 text-heading">{step.title}</h3>
-                                    </Rise>
-                                    {/* The one quiet label the spec asked for, on step 03. */}
-                                    {step.weHandle ? (
-                                        <p data-testid={IDS.stepTag} className="mt-2 text-meta text-muted-foreground">
-                                            {how.weHandle}
-                                        </p>
-                                    ) : null}
-                                    <dl className="mt-4 space-y-4">
-                                        <div data-testid={IDS.stepSide(step.key, "brand")}>
-                                            <dt className="text-meta font-medium text-foreground">{how.youTouch}</dt>
-                                            <dd className="mkt-body mt-1 text-muted-foreground">{step.line}</dd>
-                                        </div>
-                                        <div data-testid={IDS.stepSide(step.key, "creator")}>
-                                            <dt className="text-meta font-medium text-foreground">{how.creatorSide}</dt>
-                                            <dd className="mkt-body mt-1 text-muted-foreground">{step.creatorLine}</dd>
-                                        </div>
-                                    </dl>
-                                    {(step.ai || [])
-                                        .filter((a) => aiLive(a.key))
-                                        .map((a) => (
-                                            <p
-                                                key={a.key}
-                                                data-testid={IDS.stepAi(step.key, a.key)}
-                                                data-track-section={`step-${step.key}-ai-${a.key}`}
-                                                className="mkt-body mt-4 text-foreground"
-                                            >
-                                                {a.line}
-                                            </p>
-                                        ))}
-                                </div>
-                            </li>
-                        ))}
-                    </ol>
-                    <div className="lg:col-span-5">
-                        <WhenNear>
-                            <CampaignFilm film={film} steps={titles} trackRef={trackRef} />
-                        </WhenNear>
-                    </div>
                 </div>
             </Wrap>
         </Band>
@@ -340,14 +220,16 @@ export default function Home() {
     const meta = aiPowered
         ? { title: plainMeta.aiTitle, description: plainMeta.aiDescription }
         : plainMeta;
-    // Grounds, top to bottom: page, tint, photograph, page, navy, tint, navy,
-    // page — no two neighbours alike, and navy twice.
+    // Grounds, top to bottom: page, tint, photograph, navy (the process
+    // spine), tint (the AI section), navy, tint, navy, page. See the PR that
+    // made "How it works" navy: with every AI switch off the spine would sit
+    // directly on the promise band.
     return (
         <MarketingPage testid={IDS.page} title={meta.title} description={meta.description} path="/">
             <Hero />
             <ComparisonBand copy={swap} n={2} ground="bg-muted" />
             <PhotoBand slot="home-on-location" testid={IDS.band} />
-            <HowItWorks n={4} />
+            <ProcessSpine n={4} id="how-it-works" />
             {aiCards.length ? <AiSection n={5} cards={aiCards} /> : null}
             <PromiseBand
                 n={5 + shift}
