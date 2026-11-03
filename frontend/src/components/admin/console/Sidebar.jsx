@@ -302,7 +302,7 @@ function Badge({ count, form = "full" }) {
         );
     }
     return (
-        <span className="ml-auto grid h-5 min-w-[1.375rem] shrink-0 place-items-center rounded-pill bg-accent-ink px-1.5 text-label font-bold tabular-nums text-brand-white">
+        <span className="ml-auto grid h-5 min-w-[1.375rem] shrink-0 place-items-center rounded-pill bg-urgent px-1.5 text-label font-bold tabular-nums text-brand-white">
             {/* **It travels rather than snapping**, which is the only thing
                 on the sidebar that tells an admin something arrived while
                 they were reading a different section. Over 99 it is a word,

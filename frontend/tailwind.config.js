@@ -170,6 +170,8 @@ module.exports = {
                 // The app's grounds: red for the item whose clock is
                 // running, navy for the others, cream for what the AI wrote,
                 // warm grey for a ghost button or a track.
+                // The red a white word may sit on, whatever the surface.
+                urgent: "hsl(var(--urgent) / <alpha-value>)",
                 "wash-red": "hsl(var(--wash-red))",
                 "wash-navy": "hsl(var(--wash-navy))",
                 "wash-cream": "hsl(var(--wash-cream))",

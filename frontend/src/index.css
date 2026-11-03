@@ -494,6 +494,11 @@
         --brand-navy: 217.2 61.7% 9.2%; /* #091426 */
         --brand-red: 357.2 100% 57.6%; /* #FF2731 */
         --brand-white: 0 0% 100%;
+        /* The urgent button's and the count badge's fill: #C41E27 on every
+         * surface. Not `--accent-ink`, which the navy chrome redefines to the
+         * brand red — and a white word on the brand red is 3.76:1. Here it is
+         * 5.90:1, on the warm ground and inside the navy panel alike. */
+        --urgent: 356.7 73.5% 44.3%;
 
         /* Inverse chrome values. EDF1F7 on 091426 is 16.26:1, AEB8C7 on
          * 091426 is 9.20:1 and on 15294A is 7.24:1. */

@@ -211,7 +211,7 @@ class TestTheSidebar:
         item = SIDENAV[SIDENAV.index("export function SideNavItem"):SIDENAV.index("export function SideNavAccount")]
         assert "font-semibold" in item and "bg-tint/10" in item, "the white-10% pill on the current item"
         badge = SIDENAV[SIDENAV.index("export function SideNavBadge"):SIDENAV.index("export function SideNavItem")]
-        assert "bg-accent-ink" in badge and "text-brand-white" in badge
+        assert "bg-urgent" in badge and "text-brand-white" in badge
         assert "export function SideNavHeading" in SIDENAV and "export function SideNavAccount" in SIDENAV
 
     def test_the_console_is_drawn_from_the_same_parts(self):
@@ -231,11 +231,18 @@ class TestTheSidebar:
 
 
 class TestThePrimitives:
-    def test_the_red_button_is_accent_ink_with_a_white_word(self):
-        """White on the brand red is 3.76:1; on accent-ink it is 5.90:1."""
+    def test_the_red_button_is_the_urgent_fill_with_a_white_word(self):
+        """White on the brand red is 3.76:1; on #C41E27 it is 5.90:1. A
+        constant token rather than `accent-ink`, because the navy chrome
+        redefines `accent-ink` to the brand red — a red button inside the
+        navy panel would otherwise be the failing pair."""
         button = (SRC / "components" / "ui" / "button.jsx").read_text()
         urgent = re.search(r'urgent:\s*"([^"]+)"', button).group(1)
-        assert "bg-accent-ink" in urgent and "text-brand-white" in urgent
+        assert "bg-urgent" in urgent and "text-brand-white" in urgent
+        assert "--urgent: 356.7 73.5% 44.3%;" in CSS
+        inverse = CSS[CSS.index('[data-surface="inverse"] {'):]
+        inverse = inverse[:inverse.index("}")]
+        assert "--urgent" not in inverse, "the navy chrome must not redefine the urgent fill"
         assert round(ratio("#FFFFFF", "#C41E27"), 2) >= 4.5
         assert round(ratio("#FFFFFF", "#FF2731"), 2) < 4.5
 

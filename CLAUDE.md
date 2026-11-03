@@ -6107,9 +6107,11 @@ set reads through the same components:
 - `Sparkline` (draws once through `.dash-draw`, invents nothing between points);
 - `AiSummaryCard` (absent unless `aiLive("campaignSummary")` **and** a summary arrived).
 
-**The red button is accent-ink (#C41E27) with a white word, not the brand
-red.** White on #FF2731 is 3.76:1; on accent-ink it is 5.90:1. It is the
-`urgent` variant, at most one per card. `solid` is navy and `quiet` is the
+**The red button is `--urgent` (#C41E27) with a white word, not the brand
+red.** White on #FF2731 is 3.76:1; on #C41E27 it is 5.90:1. A constant
+token rather than `accent-ink`, because the navy chrome redefines
+`accent-ink` to the brand red, which made a red button or a count badge on
+navy the failing pair. It is the `urgent` variant, at most one per card. `solid` is navy and `quiet` is the
 warm ghost.
 
 ## Design system

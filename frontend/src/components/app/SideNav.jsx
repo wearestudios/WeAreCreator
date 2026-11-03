@@ -91,7 +91,7 @@ export function SideNavBadge({ count, testid }) {
     return (
         <span
             data-testid={testid}
-            className="ml-auto grid h-5 min-w-[1.375rem] shrink-0 place-items-center rounded-pill bg-accent-ink px-1.5 text-label font-bold tabular-nums text-brand-white"
+            className="ml-auto grid h-5 min-w-[1.375rem] shrink-0 place-items-center rounded-pill bg-urgent px-1.5 text-label font-bold tabular-nums text-brand-white"
         >
             {count > 99 ? "99+" : count}
         </span>

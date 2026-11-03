@@ -20,11 +20,11 @@ const buttonVariants = cva(
         ghost: "hover:bg-muted hover:text-foreground",
         link: "text-primary underline-offset-4 hover:underline",
         // The app's three. `urgent` is the single most pressing action on a
-        // card and there is at most one: the red is #C41E27 (accent-ink)
-        // rather than the brand #FF2731, because a white word on the brand
-        // red is 3.76:1 and on accent-ink it is 5.90:1. `solid` is navy, the
+        // card and there is at most one: the red is `--urgent` (#C41E27) on
+        // every surface rather than the brand #FF2731, because a white word
+        // on the brand red is 3.76:1 and on #C41E27 it is 5.90:1. `solid` is navy, the
         // ordinary action; `quiet` is the warm-grey ghost.
-        urgent: "bg-accent-ink text-brand-white hover:bg-accent-ink/90",
+        urgent: "bg-urgent text-brand-white hover:bg-urgent/90",
         solid: "bg-primary text-primary-foreground hover:bg-primary-hover",
         quiet: "bg-wash-warm text-heading hover:bg-muted",
       },
