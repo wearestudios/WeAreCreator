@@ -186,7 +186,7 @@ class TestTheLayoutRoute:
 
 
 def _nav_targets():
-    body = SHELL[SHELL.index("export function shellNavFor"):SHELL.index("const BadgeContext")]
+    body = SHELL[SHELL.index("export function shellNavFor"):SHELL.index("export { useShellBadges }")]
     return body, re.findall(r'to: "([^"]+)"', body)
 
 
@@ -222,7 +222,9 @@ class TestTheSidebar:
 
     def test_a_count_comes_from_a_page_never_from_a_fetch_of_its_own(self):
         assert "api." not in SHELL and "api." not in SIDENAV
-        assert "export function useShellBadges" in SHELL
+        context = (SRC / "components" / "app" / "shellContext.js").read_text()
+        assert "export function useShellBadges" in context
+        assert "api." not in code_of(context)
 
 
 # ---------------------------------------------------------------------------

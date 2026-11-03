@@ -15,7 +15,7 @@
 // `data-theme` is never written on a brand route. These read the same semantic
 // tokens everything else does, so they would work if that ever changed — but
 // nothing here depends on it.
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState, useRef } from "react";
 import { ArrowDownRight, ArrowUpRight, Download, Minus } from "lucide-react";
 
 import { api } from "@/lib/api";
@@ -339,13 +339,25 @@ export default function CampaignAnalytics({
     );
 }
 
-/** Everything this brand has run, for the dashboard. */
-export function BrandAnalyticsSummary() {
-    const [data, setData] = useState(null);
+/**
+ * Everything this brand has run, for the dashboard.
+ *
+ * `initial` is the all-time rollup when the page already fetched it — the
+ * dashboard does, so that this panel arrives in the same commit as everything
+ * above it instead of appearing a beat later and pushing the campaign list
+ * down. Without it the panel fetches for itself, as it always did.
+ */
+export function BrandAnalyticsSummary({ initial } = {}) {
+    const [data, setData] = useState(initial ?? null);
     const [failed, setFailed] = useState(false);
     const [days, setDays] = useState(null);
+    const preloaded = useRef(initial != null);
 
     useEffect(() => {
+        if (preloaded.current && days === null) {
+            preloaded.current = false;
+            return;
+        }
         api.get("/brand/analytics", { params: days ? { days } : undefined })
             .then(({ data }) => setData(data))
             .catch(() => setFailed(true));

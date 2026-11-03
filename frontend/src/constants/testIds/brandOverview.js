@@ -1,0 +1,25 @@
+// The top of the brand's dashboard: the live campaign's navy panel and the
+// three columns under it.
+export const BRAND_OVERVIEW = {
+	root: 'brand-overview',
+	greeting: 'brand-greeting',
+	post: 'brand-greeting-post',
+	panel: 'brand-live-panel',
+	title: 'brand-live-title',
+	booked: 'brand-live-booked',
+	tiles: 'brand-live-tiles',
+	tile: (key) => `brand-live-tile-${key}`,
+	noNumbers: 'brand-live-no-numbers',
+	emptyPanel: 'brand-live-empty',
+	emptyPost: 'brand-live-empty-post',
+	needs: 'brand-needs-you',
+	need: (key) => `brand-needs-you-${key}`,
+	needsEmpty: 'brand-needs-you-empty',
+	creators: 'brand-live-creators',
+	creatorRow: 'brand-live-creator-row',
+	creatorsEmpty: 'brand-live-creators-empty',
+	ai: 'brand-ai-summary',
+	budget: 'brand-live-budget',
+	others: 'brand-other-campaigns',
+	skeleton: 'brand-dashboard-skeleton',
+};
