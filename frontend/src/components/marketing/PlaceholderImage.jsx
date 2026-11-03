@@ -10,7 +10,9 @@
 //
 // So: a tint from the warm palette with the site's own grain over it, inside a
 // container that already occupies the exact space the photograph will. Nothing
-// is fetched. Dropping a real image in is one prop — `src` — and the layout
+// is fetched from anybody else. Dropping a real image in is one prop — `src` —
+// or, for a named slot, its entry in `PLACEHOLDER_PHOTOS`, which is how the
+// sign-in and sign-up asides and the 404 carry photographs now; the layout
 // does not move, because the ratio is on the container and never on the <img>.
 //
 // **Every slot carries a brief**, saying what belongs there, visible on the
@@ -22,7 +24,7 @@
 import React from "react";
 
 import { IMAGE_ZOOM } from "@/components/marketing/motion";
-import { PLACEHOLDER_BRIEFS, PLACEHOLDER_ILLUSTRATIONS, SHOW_BRIEFS } from "@/content/photoSlots";
+import { PLACEHOLDER_BRIEFS, PLACEHOLDER_ILLUSTRATIONS, PLACEHOLDER_PHOTOS, SHOW_BRIEFS } from "@/content/photoSlots";
 
 /**
  * The tint, derived from the slot's own name.
@@ -65,8 +67,15 @@ const RATIO = {
  * @param {string=} note   a brief carried directly, for a caller whose data
  *                         already holds one
  * @param {string}  ratio  one of RATIO's keys; the container reserves it
- * @param {string=} src    a real image, once there is one — the tint stays
- *                         behind it as the loading ground
+ * @param {string=} src    a real image passed directly — the tint stays
+ *                         behind it as the loading ground. A named `slot`
+ *                         with an entry in `PLACEHOLDER_PHOTOS` does not need
+ *                         one: its photograph, `srcSet` and `alt` come from
+ *                         there
+ * @param {string=} sizes  how wide the frame is drawn, for choosing between a
+ *                         photograph's `srcSet` widths. The two auth asides
+ *                         are half the screen from `md`; the 404's picture is
+ *                         half its section
  * @param {boolean=} zoom  ease to ~1.02x when the enclosing `group` is
  *                         hovered. The frame clips, so the picture grows
  *                         inside its box and the box does not move — which is
@@ -90,7 +99,8 @@ export function PlaceholderImage({
     note,
     ratio = "16/9",
     src,
-    alt = "",
+    alt,
+    sizes = "100vw",
     eager = false,
     fill = false,
     zoom = false,
@@ -100,12 +110,17 @@ export function PlaceholderImage({
 }) {
     const brief = note || (slot ? PLACEHOLDER_BRIEFS[slot] : null);
     const hue = tintFor(slot || note || "");
-    // **In production a named slot shows a drawing rather than an empty
-    // tint** — the sign-in and sign-up asides and the 404 — because there is
-    // no brief to show there. In development and on a preview it stays the
-    // tint with its brief, exactly as before, so the slot still says what
-    // photograph belongs in it. A real `src` always wins.
-    const shown = src || (!SHOW_BRIEFS && slot ? PLACEHOLDER_ILLUSTRATIONS[slot] || null : null);
+    // **Photograph, then drawing, then tint.** A real picture wins in every
+    // environment — a `src` passed in, or the slot's entry in
+    // `PLACEHOLDER_PHOTOS`. Without one, in production a named slot shows a
+    // drawing rather than an empty tint, because there is no brief to show
+    // there; in development and on a preview it stays the tint with its
+    // brief, exactly as before, so the slot still says what belongs in it.
+    const photo = src ? { src, srcSet: null, alt: alt || "", focal: null } : (slot && PLACEHOLDER_PHOTOS[slot]) || null;
+    const drawing = !photo && !SHOW_BRIEFS && slot ? PLACEHOLDER_ILLUSTRATIONS[slot] || null : null;
+    const shown = photo ? photo.src : drawing;
+    // A drawing is decoration; a photograph says what it shows.
+    const shownAlt = photo ? (alt ?? photo.alt) : "";
 
     return (
         <div
@@ -152,13 +167,16 @@ export function PlaceholderImage({
             {shown ? (
                 <img
                     src={shown}
-                    alt={alt}
+                    srcSet={photo && photo.srcSet ? photo.srcSet : undefined}
+                    sizes={photo && photo.srcSet ? sizes : undefined}
+                    alt={shownAlt}
                     loading={eager ? "eager" : "lazy"}
                     fetchPriority={eager ? "high" : undefined}
                     decoding="async"
                     className={`absolute inset-0 h-full w-full object-cover ${
                         zoom ? IMAGE_ZOOM : ""
                     }`}
+                    style={photo && photo.focal ? { objectPosition: photo.focal } : undefined}
                 />
             ) : null}
 

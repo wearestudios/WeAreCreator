@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import OtpForm from "@/components/OtpForm";
 import PlaceholderImage from "@/components/marketing/PlaceholderImage";
+import useWide from "@/lib/useWide";
 import {
     Select,
     SelectContent,
@@ -45,6 +46,7 @@ export default function Signup() {
     }, [params]);
 
     const [role, setRole] = useState(initialRole);
+    const wide = useWide();
     const [name, setName] = useState("");
     const [phone, setPhone] = useState("");
     // A brand registers one named person, who becomes its only login. Asked
@@ -105,6 +107,13 @@ export default function Signup() {
                     // PLACEHOLDER IMAGE: Creator setting up a shot on location, portrait crop for the auth aside.
                     slot="auth-signup"
                     fill
+                    sizes="50vw"
+                    // The first thing on screen from `md`, and not on screen
+                    // at all below it: the aside is `hidden` there, and an
+                    // eager image inside `display: none` is still fetched —
+                    // a phone would download a picture it never draws. Lazy
+                    // on a phone is the one way not to.
+                    eager={wide}
                     className="opacity-60"
                 />
                 <div className="absolute inset-0 bg-gradient-to-br from-background/40 via-background/60 to-background" />
@@ -112,20 +121,29 @@ export default function Signup() {
                     <Link to="/" className="-my-2 min-h-[2.75rem] py-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background md:my-0 md:min-h-0 md:py-0 inline-flex items-center transition-opacity duration-200 hover:opacity-80">
                         <Logo variant="horizontal" height={32} />
                     </Link>
-                    <div className="max-w-md">
-                        {/* Was "Invite-only" over "Get on the list", which
-                            describes a product we do not have: signup is open,
-                            there is no waitlist and no invite gate. What is
-                            true is the review — a creator is checked before
-                            they can apply to a brief — so that is what it
-                            says. Telling somebody they are queueing for
-                            admission at the moment they are filling in the
-                            form is also the worst possible place to say it. */}
-                        <p className="text-xs uppercase tracking-[0.2em] text-primary">Free to join</p>
-                        <p className="mt-4 font-serif text-4xl leading-tight">
-                            Sign up in a minute. Every profile is reviewed by our team
-                            before you can apply to a brief.
-                        </p>
+                    <div className="relative">
+                        {/* The text's own ground — see `Login.jsx`: the red
+                            eyebrow needs navy under it to reach 4.5:1. */}
+                        <div
+                            aria-hidden
+                            data-testid="auth-aside-scrim"
+                            className="absolute -inset-x-12 -bottom-12 -top-40 bg-[linear-gradient(to_top,hsl(var(--background))_calc(100%_-_10rem),transparent)]"
+                        />
+                        <div className="relative max-w-md">
+                            {/* Was "Invite-only" over "Get on the list", which
+                                describes a product we do not have: signup is open,
+                                there is no waitlist and no invite gate. What is
+                                true is the review — a creator is checked before
+                                they can apply to a brief — so that is what it
+                                says. Telling somebody they are queueing for
+                                admission at the moment they are filling in the
+                                form is also the worst possible place to say it. */}
+                            <p className="text-xs uppercase tracking-[0.2em] text-primary">Free to join</p>
+                            <p className="mt-4 font-serif text-4xl leading-tight">
+                                Sign up in a minute. Every profile is reviewed by our team
+                                before you can apply to a brief.
+                            </p>
+                        </div>
                     </div>
                 </div>
             </div>

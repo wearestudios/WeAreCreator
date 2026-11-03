@@ -214,7 +214,7 @@ export function PhotoBand({ slot: id, testid }) {
             className="relative min-h-[28rem] md:aspect-[2/1] md:max-h-[52rem] md:min-h-0"
         >
             <div className="absolute inset-0">
-                <PhotoSlot id={id} fill />
+                <PhotoSlot id={id} fill sizes="100vw" />
             </div>
             {slot.src ? (
                 <div className="absolute inset-x-0 bottom-0">

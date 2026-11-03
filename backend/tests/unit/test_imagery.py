@@ -615,7 +615,7 @@ def test_home_reserves_the_space_its_images_will_fill():
     # ratio is on the container — so a photograph arriving moves nothing,
     # and the frame sits inside the slider's fixed-height visual box.
     slides = component("components", "marketing", "heroSlides.jsx")
-    assert "<PhotoSlot id={slide.slot} fill bare />" in slides
+    assert '<PhotoSlot id={slide.slot} fill bare sizes="(min-width: 1024px) 540px, 100vw" />' in slides
     assert "aspect-[3/2]" in slides
     assert "CampaignCover" not in src
     photo = component("components", "marketing", "PhotoSlot.jsx")

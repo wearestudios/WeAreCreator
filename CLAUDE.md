@@ -1865,7 +1865,9 @@ holds all of it.
   full bleed with the headline on a navy band at 92% over its foot, so the
   headline keeps its contrast whatever the drawing does. The dev/preview
   brief is unchanged. The three tinted slots (sign in, sign up, the 404)
-  show a drawing in production too (`PLACEHOLDER_ILLUSTRATIONS`).
+  show a drawing in production too (`PLACEHOLDER_ILLUSTRATIONS`). *(Five of
+  the six now hold photographs; `home-on-location` is the one still on its
+  drawing — see "The slots hold photographs now" under "Image slots".)*
 - **Motion that explains, rewired rather than rewritten** — restored from
   8263b6f and #39 in a verbatim commit first, so the next commit's diff is
   exactly what was adapted:
@@ -2008,6 +2010,75 @@ space the photograph will.
   bundle. A test fails any `PlaceholderImage` given a literal note.
 - The tint's hue is derived from the note, in a 14°–40° band around ember, so
   neighbouring slots differ without any of them leaving the palette.
+
+#### The slots hold photographs now
+
+Five of the six slots carry a photograph: the two audience-page bands
+(`brands-full-room`, `creators-on-shoot` in `PHOTO_SLOTS`) and the three
+tinted slots (`auth-login`, `auth-signup`, `not-found` in
+`PLACEHOLDER_PHOTOS`). **`home-on-location` is still its drawing** — its
+photograph did not arrive with the others — and is already sized 2400×1600,
+the 3:2 frame slide C draws it in, so wiring it later is the same one entry.
+
+- **The files live in `frontend/public/img/photos/`** as
+  `<slot>-<width>.webp`, two widths each: **1200 and 2400** for landscape,
+  **900 and 1800** for the two portrait asides. **Budgets: 140 KB for the
+  small one, 350 KB for the large one**, every file, held by
+  `test_site_photos.py`. The current set is 38–151 KB, all at quality 78.
+- **`frontend/scripts/prepare-photos.mjs` is how a replacement goes in**
+  (`npm run photos` from `frontend/`): drop the original into
+  `public/img/photos/_incoming/` named after its slot, run it, copy the
+  `src`/`srcSet` lines it prints into `content/photoSlots.js` and write the
+  `alt`. It crops to the slot's exact ratio (whole multiples, so 1800×2400
+  and never 1800×2401), steps around the corner mark generated images carry
+  (a bottom-right box of `max(150px, 12% of the short side)` the crop never
+  covers, re-scored afterwards), exports both widths stepping the quality
+  down from 78 until each is inside its budget, writes no metadata (sharp
+  adds none unless asked, and nothing asks), and deletes `_incoming/` —
+  which `.gitignore` also covers, so an original is never committed. sharp
+  is a pinned devDependency; the backend CI job has no node modules, so the
+  test evaluates the script's crop maths with the import stubbed out.
+- **A source narrower than the large width is upsampled and says so.** These
+  originals were 2000px, so every large file is upsampled ~1.3×. The `2400w`
+  descriptor has to be true of the file — the test reads widths out of the
+  WebP header, not the filename — and a sharper original replaces it with no
+  other change.
+- **`srcSet` plus a `sizes` the caller states**, because only the caller knows
+  the frame: a band is `100vw`, slide C is `(min-width: 1024px) 540px, 100vw`,
+  the auth asides `50vw`, the 404 `(min-width: 768px) 50vw, 100vw`. `PhotoSlot`
+  takes `sizes`; `PlaceholderImage` reads its slot's `PLACEHOLDER_PHOTOS`
+  entry and takes `sizes` too. Measured: a phone takes the 1200 file and a
+  laptop at 2× the 2400.
+- **Photograph, then drawing, then tint**, in `PlaceholderImage`: a photograph
+  wins in every environment, the way `src` does on a `PhotoSlot`; the drawing
+  is production-only and the brief is development-only, both as before.
+- **Lazy except in the first screen.** The bands and slide C are lazy. The
+  404's picture is eager — beside the links from `md`, its top half on screen
+  at 390×844. The auth asides are `eager={wide}`: they are the first thing on
+  screen from `md` and `hidden` below it, and **an eager image inside
+  `display: none` is still fetched**, so lazy is the only way a phone does not
+  download a picture it never draws. Measured: zero photo requests on
+  `/login` and `/signup` at 390.
+- **The auth asides' text has its own ground.** The 12px red eyebrow needs
+  4.5:1 and red on the navy itself is ~4.9:1, so no amount of photograph may
+  show through behind it. Over the photographs, under the existing gradient
+  alone, it read 2.7–3.0:1 (and 2.4–2.9:1 over the drawings on main — this was
+  never AA). Raising the whole gradient far enough blacks out the middle of
+  the picture, so the gradient and the `opacity-60` stay and the text block
+  carries `auth-aside-scrim`: solid navy under the text and a 10rem fade above
+  it, **anchored to the text rather than to the aside**, because the headline
+  wraps to more lines on a narrow aside and a fixed height leaves the eyebrow
+  on the picture there. Measured 4.9:1 eyebrow and 16.3:1 headline at
+  768–1920 on both pages.
+- **The alt is one plain sentence and names nobody** — no capital after the
+  first word, none of the names the repo knows to be real (the confirmed
+  clients, the partners, the seed's businesses).
+- **The double request you will see locally is not real.** Against the
+  zero-latency static server with no cache headers, each eager photo shows
+  two requests: React 19 builds the `<img>` in a concurrent render, Chrome
+  starts the fetch, and `commitHostMount` re-assigns `src` after insertion. On
+  a 4G profile it is one request at both widths; checked before deciding the
+  eager ones were worth keeping (they land the aside ~70ms sooner than lazy).
 
 ### The navbar, and the 404
 
@@ -6186,7 +6257,8 @@ request loaded no `ital` axis. These are the public site's own, and
   entrance. The marquee is `linear` — the one exception, because a loop that
   eases stalls at its seam. Reduced motion resolves every one to its end
   state, in `index.css` and only there (the marquee becomes a static list).
-- **`PhotoSlot` reads `content/photoSlots.js`**. With a `src` it is the image;
+- **`PhotoSlot` reads `content/photoSlots.js`**. With a `src` it is the image,
+  with its `srcSet` and the caller's `sizes`;
   without one, **in production**, it is the slot's `fallbackIllustration`
   full bleed with the `fallbackHeadline` on a navy band — it must read as
   finished. The dashed

@@ -696,7 +696,7 @@ class TestMarketingMotion:
 MANIFEST = SRC / "content/photoSlots.js"
 PHOTO_SLOT = SRC / "components/marketing/PhotoSlot.jsx"
 SLOT_KEYS = {
-    "src", "alt", "focal", "width", "height", "brief",
+    "src", "srcSet", "alt", "focal", "width", "height", "brief",
     "fallbackHeadline", "fallbackAccent", "fallbackLine", "fallbackIllustration",
 }
 

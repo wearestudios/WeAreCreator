@@ -126,7 +126,9 @@ export function OnLocationVisual({ slide }) {
     return (
         <div className="flex h-full items-center">
             <div className="relative aspect-[3/2] w-full overflow-hidden rounded-lg border border-border">
-                <PhotoSlot id={slide.slot} fill bare />
+                {/* Never wider than the stage's visual column: 540px from
+                    `lg`, the full width below it. */}
+                <PhotoSlot id={slide.slot} fill bare sizes="(min-width: 1024px) 540px, 100vw" />
                 <span className="absolute right-3 top-3 inline-flex items-center gap-1.5 rounded-pill border border-border bg-card px-3 py-1 text-[0.8125rem] text-foreground sm:right-4 sm:top-4">
                     <CalendarCheck aria-hidden className="h-3.5 w-3.5 text-muted-foreground" />
                     {card.chip}
