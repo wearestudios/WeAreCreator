@@ -68,7 +68,7 @@ const ADMIN_ACTION_STATES = [
 // `ADVANCE_VERB`, shared with the collaboration page so the queue and the
 // page name one button the same way — including the barter close.
 
-const KIND_META = {
+export const KIND_META = {
     payment: { label: "Payout", Icon: Wallet, band: 0 },
     // Above the pipeline work: a creator is literally waiting on a reply, and
     // a question aged three days answers itself — they went elsewhere.
@@ -80,6 +80,183 @@ const KIND_META = {
 };
 
 const KINDS = ["payment", "question", "collaboration", "campaign", "brand", "creator"];
+
+/**
+ * Everything waiting on a person, as rows — the queue's own definition, and
+ * the one the overview's tiles and its queue card count. Exported so the two
+ * cannot disagree about what "waiting" means: the overview asks this function
+ * rather than adding up the badges, which count a slightly different set.
+ */
+export async function loadQueueRows(allAccess = true) {
+    // **The creator queues are the platform's, not a brand's.**
+    // Verifying a creator is a decision about somebody who applies
+    // everywhere, so it stays admin-only on the server — a team member
+    // is not asked for it, because one 403 in this `Promise.all` would
+    // empty a queue that is otherwise entirely theirs to work.
+    // Everything else here comes back already scoped.
+    const none = Promise.resolve({ data: [] });
+    const [brands, campaigns, creators, changed, board, questions, suspensions] =
+        await Promise.all([
+        api.get("/admin/brands/pending"),
+        api.get("/admin/campaigns/pending"),
+        allAccess ? api.get("/admin/creators/pending") : none,
+        // Verified creators who edited something material — still live
+        // to brands, still a decision waiting on us.
+        allAccess ? api.get("/admin/creators/changed") : none,
+        api.get("/admin/collaborations"),
+        // Threads whose last word is a creator's.
+        api.get("/questions/unanswered"),
+        // **Fetched here rather than by the band itself**, so it lands
+        // in the same commit as the rows underneath it. On its own
+        // fetch it appeared a beat later and pushed the whole queue
+        // down — measured at 0.055 CLS, all of it that one push. A
+        // band that renders nothing most of the time cannot reserve
+        // height, so the fix is to arrive at the same moment.
+        allAccess ? api.get("/admin/suspension-prompts") : Promise.resolve({ data: {} }),
+    ]);
+
+    const rows = [];
+
+    for (const q of questions.data) {
+        rows.push({
+            id: `question-${q.campaign_id}-${q.creator_id}`,
+            kind: "question",
+            since: q.asked_at,
+            ageing: q.ageing,
+            primary: `“${q.body?.length > 120 ? q.body.slice(0, 120) + "…" : q.body}”`,
+            secondary: [q.creator_name, q.campaign_title, q.brand_name]
+                .filter(Boolean)
+                .join(" · "),
+            note: q.execution_owner === "weare" ? "Ours to answer" : "Brand-run — nudge or answer",
+            link: `/admin/campaigns/${q.campaign_id}`,
+            raw: q,
+        });
+    }
+
+    for (const b of brands.data) {
+        // A brand we already refused is not waiting on us.
+        if (b.verification_state === "rejected") continue;
+        rows.push({
+            id: `brand-${b.user_id}`,
+            kind: "brand",
+            since: b.signed_up_at || b.created_at,
+            ageing: b.ageing,
+            primary: b.business_name || b.name || "Unnamed brand",
+            secondary: [b.category, b.email || b.phone].filter(Boolean).join(" · "),
+            note:
+                b.campaigns_awaiting_review > 0
+                    ? `${b.campaigns_awaiting_review} brief(s) queued behind this`
+                    : null,
+            raw: b,
+        });
+    }
+
+    for (const c of campaigns.data) {
+        rows.push({
+            id: `campaign-${c.id}`,
+            kind: "campaign",
+            since: c.submitted_for_review_at || c.created_at,
+            ageing: c.ageing,
+            primary: c.title,
+            secondary: [
+                c.brand_name || "Unknown brand",
+                c.budget_per_creator != null ? `₹${formatRupees(c.budget_per_creator)}` : null,
+                c.area,
+            ]
+                .filter(Boolean)
+                .join(" · "),
+            note: c.brand_verified ? null : "Brand isn't verified — approve them first",
+            blocked: !c.brand_verified,
+            raw: c,
+        });
+    }
+
+    for (const c of [...creators.data, ...changed.data]) {
+        const edited = changed.data.includes(c);
+        rows.push({
+            id: `creator-${c.user_id}`,
+            note: edited ? "Edited since approval — re-check what changed" : null,
+            kind: "creator",
+            since: c.created_at,
+            ageing: c.ageing,
+            primary: c.name || "Unnamed creator",
+            secondary: [
+                c.instagram_handle ? `@${c.instagram_handle}` : null,
+                c.city,
+                typeof c.follower_count === "number"
+                    ? `${c.follower_count.toLocaleString("en-IN")} followers`
+                    : null,
+            ]
+                .filter(Boolean)
+                .join(" · "),
+            raw: c,
+        });
+    }
+
+    const byState = board.data.by_state || {};
+    const stillWaiting = [];
+    for (const [state, list] of Object.entries(byState)) {
+        for (const row of list) {
+            const isPayout = state === "in_payment" && row.payment?.state === "pending";
+            if (isPayout) {
+                rows.push({
+                    id: `payment-${row.payment.id}`,
+                    kind: "payment",
+                    since: row.updated_at || row.created_at,
+                    ageing: row.ageing,
+                    primary: `₹${formatRupees(row.payment.creator_payout)} to ${
+                        row.creator?.name || "creator"
+                    }`,
+                    secondary: [row.campaign?.title, row.brand_name]
+                        .filter(Boolean)
+                        .join(" · "),
+                    note: payoutPromiseNote(row),
+                    urgent: Boolean(row.payout_at_risk),
+                    raw: row,
+                });
+                continue;
+            }
+            if (ADMIN_ACTION_STATES.includes(state) && row.can_advance) {
+                rows.push({
+                    id: `collab-${row.id}`,
+                    kind: "collaboration",
+                    since: row.updated_at || row.created_at,
+                    ageing: row.ageing,
+                    primary: row.creator?.name || "Creator",
+                    secondary: [row.campaign?.title, row.brand_name]
+                        .filter(Boolean)
+                        .join(" · "),
+                    state,
+                    note: payoutPromiseNote(row),
+                    urgent: Boolean(row.payout_at_risk),
+                    raw: row,
+                });
+                continue;
+            }
+            // Everything else in flight: not ours to move, but losing
+            // sight of it entirely is how a collaboration stalls.
+            if (!["closed", "declined", "cancelled"].includes(state)) {
+                stillWaiting.push({ ...row, state });
+            }
+        }
+    }
+
+    rows.sort((a, b) => {
+        // A payout five days into a seven-day promise goes first,
+        // whatever kind of row it is: it is the one item here with a
+        // public commitment about to break.
+        const urgent = Number(Boolean(b.urgent)) - Number(Boolean(a.urgent));
+        if (urgent !== 0) return urgent;
+        const band = KIND_META[a.kind].band - KIND_META[b.kind].band;
+        if (band !== 0) return band;
+        return new Date(a.since || 0) - new Date(b.since || 0);
+    });
+    stillWaiting.sort(
+        (a, b) => new Date(a.updated_at || 0) - new Date(b.updated_at || 0),
+    );
+
+    return { rows, waiting: stillWaiting, suspensions: suspensions.data || {} };
+}
 
 // The queue's own order is the point of the screen, so "priority" is the
 // default sort rather than a column somebody has to find.
@@ -105,174 +282,8 @@ export default function ActionQueue({ onChanged, feePercent, allAccess = true })
     const load = useCallback(async () => {
         setItems(null);
         try {
-            // **The creator queues are the platform's, not a brand's.**
-            // Verifying a creator is a decision about somebody who applies
-            // everywhere, so it stays admin-only on the server — a team member
-            // is not asked for it, because one 403 in this `Promise.all` would
-            // empty a queue that is otherwise entirely theirs to work.
-            // Everything else here comes back already scoped.
-            const none = Promise.resolve({ data: [] });
-            const [brands, campaigns, creators, changed, board, questions, suspensions] =
-                await Promise.all([
-                api.get("/admin/brands/pending"),
-                api.get("/admin/campaigns/pending"),
-                allAccess ? api.get("/admin/creators/pending") : none,
-                // Verified creators who edited something material — still live
-                // to brands, still a decision waiting on us.
-                allAccess ? api.get("/admin/creators/changed") : none,
-                api.get("/admin/collaborations"),
-                // Threads whose last word is a creator's.
-                api.get("/questions/unanswered"),
-                // **Fetched here rather than by the band itself**, so it lands
-                // in the same commit as the rows underneath it. On its own
-                // fetch it appeared a beat later and pushed the whole queue
-                // down — measured at 0.055 CLS, all of it that one push. A
-                // band that renders nothing most of the time cannot reserve
-                // height, so the fix is to arrive at the same moment.
-                allAccess ? api.get("/admin/suspension-prompts") : Promise.resolve({ data: {} }),
-            ]);
-            setSuspensions(suspensions.data || {});
-
-            const rows = [];
-
-            for (const q of questions.data) {
-                rows.push({
-                    id: `question-${q.campaign_id}-${q.creator_id}`,
-                    kind: "question",
-                    since: q.asked_at,
-                    ageing: q.ageing,
-                    primary: `“${q.body?.length > 120 ? q.body.slice(0, 120) + "…" : q.body}”`,
-                    secondary: [q.creator_name, q.campaign_title, q.brand_name]
-                        .filter(Boolean)
-                        .join(" · "),
-                    note: q.execution_owner === "weare" ? "Ours to answer" : "Brand-run — nudge or answer",
-                    link: `/admin/campaigns/${q.campaign_id}`,
-                    raw: q,
-                });
-            }
-
-            for (const b of brands.data) {
-                // A brand we already refused is not waiting on us.
-                if (b.verification_state === "rejected") continue;
-                rows.push({
-                    id: `brand-${b.user_id}`,
-                    kind: "brand",
-                    since: b.signed_up_at || b.created_at,
-                    ageing: b.ageing,
-                    primary: b.business_name || b.name || "Unnamed brand",
-                    secondary: [b.category, b.email || b.phone].filter(Boolean).join(" · "),
-                    note:
-                        b.campaigns_awaiting_review > 0
-                            ? `${b.campaigns_awaiting_review} brief(s) queued behind this`
-                            : null,
-                    raw: b,
-                });
-            }
-
-            for (const c of campaigns.data) {
-                rows.push({
-                    id: `campaign-${c.id}`,
-                    kind: "campaign",
-                    since: c.submitted_for_review_at || c.created_at,
-                    ageing: c.ageing,
-                    primary: c.title,
-                    secondary: [
-                        c.brand_name || "Unknown brand",
-                        c.budget_per_creator != null ? `₹${formatRupees(c.budget_per_creator)}` : null,
-                        c.area,
-                    ]
-                        .filter(Boolean)
-                        .join(" · "),
-                    note: c.brand_verified ? null : "Brand isn't verified — approve them first",
-                    blocked: !c.brand_verified,
-                    raw: c,
-                });
-            }
-
-            for (const c of [...creators.data, ...changed.data]) {
-                const edited = changed.data.includes(c);
-                rows.push({
-                    id: `creator-${c.user_id}`,
-                    note: edited ? "Edited since approval — re-check what changed" : null,
-                    kind: "creator",
-                    since: c.created_at,
-                    ageing: c.ageing,
-                    primary: c.name || "Unnamed creator",
-                    secondary: [
-                        c.instagram_handle ? `@${c.instagram_handle}` : null,
-                        c.city,
-                        typeof c.follower_count === "number"
-                            ? `${c.follower_count.toLocaleString("en-IN")} followers`
-                            : null,
-                    ]
-                        .filter(Boolean)
-                        .join(" · "),
-                    raw: c,
-                });
-            }
-
-            const byState = board.data.by_state || {};
-            const stillWaiting = [];
-            for (const [state, list] of Object.entries(byState)) {
-                for (const row of list) {
-                    const isPayout = state === "in_payment" && row.payment?.state === "pending";
-                    if (isPayout) {
-                        rows.push({
-                            id: `payment-${row.payment.id}`,
-                            kind: "payment",
-                            since: row.updated_at || row.created_at,
-                            ageing: row.ageing,
-                            primary: `₹${formatRupees(row.payment.creator_payout)} to ${
-                                row.creator?.name || "creator"
-                            }`,
-                            secondary: [row.campaign?.title, row.brand_name]
-                                .filter(Boolean)
-                                .join(" · "),
-                            note: payoutPromiseNote(row),
-                            urgent: Boolean(row.payout_at_risk),
-                            raw: row,
-                        });
-                        continue;
-                    }
-                    if (ADMIN_ACTION_STATES.includes(state) && row.can_advance) {
-                        rows.push({
-                            id: `collab-${row.id}`,
-                            kind: "collaboration",
-                            since: row.updated_at || row.created_at,
-                            ageing: row.ageing,
-                            primary: row.creator?.name || "Creator",
-                            secondary: [row.campaign?.title, row.brand_name]
-                                .filter(Boolean)
-                                .join(" · "),
-                            state,
-                            note: payoutPromiseNote(row),
-                            urgent: Boolean(row.payout_at_risk),
-                            raw: row,
-                        });
-                        continue;
-                    }
-                    // Everything else in flight: not ours to move, but losing
-                    // sight of it entirely is how a collaboration stalls.
-                    if (!["closed", "declined", "cancelled"].includes(state)) {
-                        stillWaiting.push({ ...row, state });
-                    }
-                }
-            }
-
-            rows.sort((a, b) => {
-                // A payout five days into a seven-day promise goes first,
-                // whatever kind of row it is: it is the one item here with a
-                // public commitment about to break.
-                const urgent = Number(Boolean(b.urgent)) - Number(Boolean(a.urgent));
-                if (urgent !== 0) return urgent;
-                const band = KIND_META[a.kind].band - KIND_META[b.kind].band;
-                if (band !== 0) return band;
-                return new Date(a.since || 0) - new Date(b.since || 0);
-            });
-            stillWaiting.sort(
-                (a, b) => new Date(a.updated_at || 0) - new Date(b.updated_at || 0),
-            );
-
+            const { rows, waiting: stillWaiting, suspensions } = await loadQueueRows(allAccess);
+            setSuspensions(suspensions);
             setItems(rows);
             setWaiting(stillWaiting);
         } catch (e) {

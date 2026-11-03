@@ -80,11 +80,11 @@ export function PeekPanel({
                     // over a working list, and a see-through one makes the
                     // rows behind it legible-but-not-quite, which is worse
                     // than either.
-                    className="fixed inset-y-0 right-0 z-50 flex w-full flex-col border-l border-border bg-card sm:max-w-md"
+                    className="fixed inset-y-0 right-0 z-50 flex w-full flex-col bg-card shadow-card sm:my-3 sm:mr-3 sm:max-w-md sm:rounded-lg"
                 >
                     <div className={`flex items-start justify-between gap-3 border-b border-border ${DENSITY.panel}`}>
                         <div className="min-w-0">
-                            <Dialog.Title className={`${TEXT.heading} truncate`}>
+                            <Dialog.Title className="truncate text-body-lg font-extrabold text-heading">
                                 {title}
                             </Dialog.Title>
                             {subtitle ? (

@@ -9,22 +9,25 @@
 // why a closed campaign read grey on one screen and red on the next.
 import React from "react";
 
-import { TEXT, labelFor, toneFor } from "@/components/admin/console/tokens";
+import { STATUS_TONE, labelFor, toneFor } from "@/components/admin/console/tokens";
 
 /**
  * @param {string}  state    a wire value — "pending_review", "in_progress"…
  * @param {string} [label]   an override, where the wire value is not the word
- * @param {boolean}[chip]    draw the pill background as well as the dot
+ * @param {boolean}[chip]    draw the pill — the app's tint and word
+ * @param {string} [tone]    a `STATUS_TONE` key, for a row whose state is not a
+ *                           wire value (the overview's "Day 5 unpaid")
  */
-export function StatusTag({ state, label, chip = false, testid, className = "" }) {
-    const tone = toneFor(state);
+export function StatusTag({ state, label, chip = false, tone: toneKey, testid, className = "" }) {
+    const tone = (toneKey && STATUS_TONE[toneKey]) || toneFor(state);
     const text = label ?? labelFor(state);
 
     if (chip) {
         return (
             <span
                 data-testid={testid}
-                className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 ${TEXT.meta} ${tone.chip} ${className}`}
+                data-tone={toneKey || undefined}
+                className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-pill px-2.5 py-1 text-label font-bold leading-none ${tone.chip} ${className}`}
             >
                 <span aria-hidden className={`h-1.5 w-1.5 rounded-full ${tone.dot}`} />
                 {text}
@@ -40,7 +43,7 @@ export function StatusTag({ state, label, chip = false, testid, className = "" }
             className={`inline-flex items-center gap-2 whitespace-nowrap ${className}`}
         >
             <span aria-hidden className={`h-1.5 w-1.5 shrink-0 rounded-full ${tone.dot}`} />
-            <span className={tone.text}>{text}</span>
+            <span className={`font-semibold ${tone.text}`}>{text}</span>
         </span>
     );
 }

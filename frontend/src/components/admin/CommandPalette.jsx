@@ -132,13 +132,13 @@ export function CommandPalette() {
                 type="button"
                 onClick={() => setOpen(true)}
                 data-testid={IDS.trigger}
-                className="inline-flex min-h-[2.75rem] w-full items-center gap-2.5 rounded-md border border-border bg-card px-3.5 text-meta text-muted-foreground transition-colors duration-150 hover:border-tint/25 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background md:min-h-0 md:h-10 md:w-72"
+                className="inline-flex min-h-[2.75rem] w-full items-center gap-2.5 rounded-button bg-wash-warm px-3.5 text-meta font-semibold text-muted-foreground transition-colors duration-150 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background md:min-h-0 md:h-10 md:w-72"
             >
                 <Search className="h-4 w-4 flex-none" />
                 <span className="min-w-0 flex-1 truncate text-left">
                     Search everything
                 </span>
-                <kbd className="hidden flex-none rounded border border-border px-1.5 py-0.5 font-sans text-label text-muted-foreground md:inline">
+                <kbd className="hidden flex-none rounded-[6px] bg-card px-1.5 py-0.5 font-sans text-label text-foreground shadow-card md:inline">
                     ⌘K
                 </kbd>
             </button>

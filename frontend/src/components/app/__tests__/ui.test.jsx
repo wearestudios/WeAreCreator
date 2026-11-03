@@ -61,14 +61,23 @@ describe("Sparkline", () => {
     });
 
     test("draws the line once, from the numbers given and nothing else", () => {
-        render(<Sparkline points={[10, null, 30, 20]} label="Views" />);
+        render(<Sparkline points={[10, 15, 30, 20]} label="Views" />);
         const paths = container.querySelectorAll("path");
         expect(paths).toHaveLength(2);
         const line = paths[1];
         expect(line.getAttribute("class")).toContain("dash-draw");
-        // Three real points → one move and two line segments; the null is
-        // dropped rather than drawn as a zero.
-        expect(line.getAttribute("d").match(/[ML]/g)).toEqual(["M", "L", "L"]);
+        expect(line.getAttribute("d").match(/[ML]/g)).toEqual(["M", "L", "L", "L"]);
+    });
+
+    test("a missing period breaks the line rather than being bridged or drawn as zero", () => {
+        render(<Sparkline points={[10, 12, null, 30, 20]} label="Fill rate" />);
+        const line = container.querySelectorAll("path")[1].getAttribute("d");
+        // Two runs, each starting with its own move: 10→12, then 30→20.
+        expect(line.match(/[ML]/g)).toEqual(["M", "L", "M", "L"]);
+        // The second run starts at the fourth slot, not the third: the gap
+        // keeps its width.
+        const xs = [...line.matchAll(/[ML](\S+) /g)].map((m) => Number(m[1]));
+        expect(xs[2]).toBeGreaterThan(xs[1] * 2);
     });
 });
 

@@ -239,6 +239,25 @@ export const ADMIN_OVERVIEW = {
 	rowRejected: (id) => `admin-overview-rejected-${id}`,
 };
 
+// The top of the overview: what needs a person today (board 27). Every count
+// is the action queue's own rows.
+export const ADMIN_TODAY = {
+	section: 'admin-today',
+	heading: 'admin-today-heading',
+	tiles: 'admin-today-tiles',
+	tile: (kind) => `admin-today-tile-${kind}`,
+	queue: 'admin-today-queue',
+	table: 'admin-today-table',
+	row: (id) => `admin-today-row-${id}`,
+	rowState: (id) => `admin-today-row-state-${id}`,
+	rowAction: (id) => `admin-today-row-action-${id}`,
+	seeAll: 'admin-today-see-all',
+	lately: 'admin-today-lately',
+	figure: (key) => `admin-today-figure-${key}`,
+	fill: 'admin-today-fill',
+	ai: 'admin-today-ai',
+};
+
 export const ADMIN_CAMPAIGN_DETAIL = {
 	panel: 'admin-campaign-detail',
 	skeleton: 'admin-campaign-detail-skeleton',
