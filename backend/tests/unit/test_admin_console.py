@@ -474,7 +474,12 @@ def test_the_icon_rail_is_not_the_phone_navigation():
     """56px of a 390px screen spent on nine unlabelled glyphs, on a device
     with no hover to explain them."""
     code = code_of(CONSOLE / "Sidebar.jsx")
-    assert "hidden" in code and "md:flex" in code, "the rail must be desktop-only"
+    # The column is the app's shared navy frame now; the desktop-only rule
+    # lives in it, and the console's sidebar must be drawn in it.
+    assert "<SideNavFrame" in code, "the console's sidebar is not the app's frame"
+    frame = code_of(FRONTEND / "src" / "components" / "app" / "SideNav.jsx")
+    frame = frame[frame.index("export function SideNavFrame"):frame.index("export function SideNavLogo")]
+    assert "hidden" in frame and "md:flex" in frame, "the rail must be desktop-only"
     assert "export function AdminNavSheet" in code
     shell = code_of(FRONTEND / "src" / "pages" / "AdminConsole.jsx")
     assert "AdminNavSheet" in shell, "the sheet is not mounted"

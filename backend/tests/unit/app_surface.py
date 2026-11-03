@@ -131,5 +131,16 @@ _APP_ROOTS, _PUBLIC_ROOTS, APP_ROUTE_COMPONENTS = _route_components()
 _APP = _walk(_APP_ROOTS)
 _PUBLIC = _walk(_PUBLIC_ROOTS)
 
-APP_ONLY = sorted(f for f in _APP - _PUBLIC if "__tests__" not in f.parts and ".test." not in f.name)
+# `components/app/` is the app's own folder: its primitives count as the app's
+# before a screen uses them, the way a component in `components/marketing/`
+# counts as public. `shellContext.js` is the one file a public page may reach.
+APP_DIR = SRC / "components" / "app"
+APP_DIR_FILES = {f for f in APP_DIR.rglob("*.js*") if "__tests__" not in f.parts and ".test." not in f.name}
+PUBLIC_MAY_IMPORT = {APP_DIR / "shellContext.js"}
+
+APP_ONLY = sorted(
+    f for f in (_APP - _PUBLIC) | (APP_DIR_FILES - PUBLIC_MAY_IMPORT)
+    if "__tests__" not in f.parts and ".test." not in f.name
+)
+APP_DIR_REACHED_FROM_PUBLIC = sorted((APP_DIR_FILES & _PUBLIC) - PUBLIC_MAY_IMPORT)
 SHARED = sorted(f for f in _APP & _PUBLIC if "__tests__" not in f.parts and ".test." not in f.name)

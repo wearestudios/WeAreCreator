@@ -22,6 +22,7 @@ import {
     TrendingUp,
     BadgeCheck,
     Building2,
+    CalendarDays,
     ChevronsLeft,
     ClipboardList,
     ChevronsRight,
@@ -43,10 +44,18 @@ import {
     X,
 } from "lucide-react";
 
-import { CALM, DENSITY, FOCUS, TEXT } from "@/components/admin/console/tokens";
+import { CALM, FOCUS, TEXT } from "@/components/admin/console/tokens";
 import { readSavedFilters } from "@/components/admin/console/useListState";
 import { ADMIN_SHELL as SHELL_IDS, ADMIN_SIDEBAR as IDS } from "@/constants/testIds";
 import AnimatedNumber from "@/components/motion/AnimatedNumber";
+import {
+    SIDEBAR_W,
+    SideNavAccount,
+    SideNavFrame,
+    SideNavHeading,
+    SideNavItem,
+    SideNavLogo,
+} from "@/components/app/SideNav";
 import { INT } from "@/lib/motion";
 import { isAllAccess } from "@/lib/consoleScope";
 
@@ -237,37 +246,67 @@ export const sectionsFor = (role) =>
     isAllAccess(role) ? ADMIN_SECTIONS : ADMIN_SECTIONS.filter((s) => !s.adminOnly);
 
 /**
+ * Which heading a section sits under. Overview and the action queue sit above
+ * every heading — they are where a working day starts. The headings are small
+ * and sentence case, the way the app labels everything now.
+ */
+export const SECTION_GROUP = {
+    "creator-reviews": "Reviews",
+    "campaign-reviews": "Reviews",
+    "brand-reviews": "Reviews",
+    disputes: "Reviews",
+    circumvention: "Reviews",
+    enquiries: "Reviews",
+    creators: "Work",
+    campaigns: "Work",
+    brands: "Work",
+    performance: "Work",
+    analytics: "Work",
+    health: "Work",
+    audit: "Records",
+    team: "Records",
+    deletions: "Records",
+    "case-studies": "Records",
+    dormant: "Records",
+    unfinished: "Records",
+    survey: "Records",
+    retention: "Records",
+    settings: "Records",
+};
+
+/** The heading before `section`, when it opens a new group. */
+const headingBefore = (section, i, all) => {
+    const group = SECTION_GROUP[section.key];
+    if (!group) return null;
+    return i === 0 || SECTION_GROUP[all[i - 1].key] !== group ? group : null;
+};
+
+/**
  * How many are waiting.
  *
  * **A dot is what a number becomes when there is no room to read it** — a
  * two-digit count in a 56px rail is a smudge, but "something is waiting here"
  * is the only thing on that rail that would make anybody open it. Anywhere
- * with room says the number.
+ * with room says the number, on the app's red count badge.
  *
  * @param {"rail"|"full"} form  `rail` is the collapsed sidebar: a dot.
  */
-function Badge({ count, active, form = "full" }) {
+function Badge({ count, form = "full" }) {
     if (!count) return null;
     if (form === "rail") {
         return (
             <span
                 aria-label={`${count} waiting`}
-                className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-primary"
+                className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-accent"
             />
         );
     }
     return (
-        <span
-            className={`ml-auto grid h-5 min-w-[1.25rem] shrink-0 place-items-center rounded px-1 ${TEXT.meta} tabular-nums ${
-                active ? "bg-primary text-primary-foreground" : "bg-tint/10 text-foreground"
-            }`}
-        >
+        <span className="ml-auto grid h-5 min-w-[1.375rem] shrink-0 place-items-center rounded-pill bg-urgent px-1.5 text-label font-bold tabular-nums text-brand-white">
             {/* **It travels rather than snapping**, which is the only thing
                 on the sidebar that tells an admin something arrived while
-                they were reading a different section. A count replacing
-                itself is a change nobody sees, because nothing moved. Over
-                99 it is not a number any more — "99+" is a word, and tweening
-                to a word is nonsense — so that case prints. */}
+                they were reading a different section. Over 99 it is a word,
+                and tweening to a word is nonsense, so that case prints. */}
             {count > 99 ? "99+" : <AnimatedNumber value={count} format={INT} />}
         </span>
     );
@@ -278,7 +317,8 @@ function Badge({ count, active, form = "full" }) {
  *
  * The rail and the sheet are the same list with the same badges and the same
  * saved sets — written once, because a phone finding a different set of
- * sections from a laptop is the bug this shape exists to prevent.
+ * sections from a laptop is the bug this shape exists to prevent. The look is
+ * the app's navy item: Manrope 600, the white-10% pill on the current one.
  */
 function SectionLink({ section, counts, saved, collapsed, onNavigate, labelClass }) {
     const navigate = useNavigate();
@@ -294,26 +334,22 @@ function SectionLink({ section, counts, saved, collapsed, onNavigate, labelClass
                 data-testid={IDS.item(key)}
                 title={label}
                 className={({ isActive }) =>
-                    `mx-1 flex h-9 items-center gap-2.5 rounded ${DENSITY.row} ${TEXT.body} ${CALM} ${FOCUS} ` +
+                    `relative flex min-h-[2.5rem] items-center gap-3 rounded-button px-3 text-[14.5px] font-semibold ${CALM} ${FOCUS} ` +
+                    (collapsed ? "justify-center " : "") +
                     (isActive
-                        ? "bg-primary/10 text-primary-ink"
+                        ? "bg-tint/10 text-foreground"
                         : "text-muted-foreground hover:bg-tint/5 hover:text-foreground")
                 }
             >
-                {({ isActive }) => (
-                    <>
-                        <Icon className="h-4 w-4 shrink-0" />
-                        {!collapsed && <span className={labelClass}>{label}</span>}
-                        {count > 0 && (
-                            <span data-testid={IDS.badge(key)} className="ml-auto flex items-center">
-                                <Badge
-                                    count={count}
-                                    active={isActive}
-                                    form={collapsed ? "rail" : "full"}
-                                />
-                            </span>
-                        )}
-                    </>
+                <Icon aria-hidden="true" className="h-[18px] w-[18px] shrink-0" />
+                {!collapsed && <span className={labelClass}>{label}</span>}
+                {count > 0 && (
+                    <span
+                        data-testid={IDS.badge(key)}
+                        className={collapsed ? "absolute right-1.5 top-1.5 flex" : "ml-auto flex items-center"}
+                    >
+                        <Badge count={count} form={collapsed ? "rail" : "full"} />
+                    </span>
                 )}
             </NavLink>
 
@@ -328,7 +364,7 @@ function SectionLink({ section, counts, saved, collapsed, onNavigate, labelClass
                             navigate(`/admin/${to}`, { state: { savedFilter: set.state } });
                             onNavigate?.();
                         }}
-                        className={`mx-1 h-8 w-[calc(100%-0.5rem)] items-center gap-2 rounded pl-9 pr-2 text-left ${labelClass ? "flex" : "hidden"} ${TEXT.meta} ${CALM} text-muted-foreground hover:bg-tint/5 hover:text-foreground ${FOCUS}`}
+                        className={`h-8 w-full items-center gap-2 rounded-button pl-10 pr-2 text-left ${labelClass ? "flex" : "hidden"} ${TEXT.meta} ${CALM} text-muted-foreground hover:bg-tint/5 hover:text-foreground ${FOCUS}`}
                     >
                         <span className="truncate">{set.name}</span>
                     </button>
@@ -338,7 +374,7 @@ function SectionLink({ section, counts, saved, collapsed, onNavigate, labelClass
 }
 
 /**
- * The sections on a phone: a sheet, opened from the console's own header.
+ * The sections on a phone: a sheet, opened from the console's top bar.
  *
  * **Not the icon rail.** 56px of a 390px screen is 14% of the width spent on
  * nine unlabelled glyphs, and a touch screen has no hover to explain them —
@@ -362,33 +398,42 @@ export function AdminNavSheet({ open, onOpenChange, counts, role }) {
                 <Dialog.Content
                     data-testid={SHELL_IDS.mobileNav}
                     aria-describedby={undefined}
-                    // Inverse chrome, like the rail it stands in for.
+                    // Inverse chrome, like the column it stands in for.
                     data-surface="inverse"
-                    className="fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-border bg-card text-foreground md:hidden"
+                    className="fixed inset-y-0 left-0 z-50 flex w-[84%] max-w-xs flex-col bg-card px-3 pb-4 pt-4 text-foreground md:hidden"
                 >
-                    <div className="flex items-center justify-between border-b border-border px-3 py-2.5">
-                        <Dialog.Title className={`text-label text-muted-foreground`}>
-                            Sections
-                        </Dialog.Title>
+                    <div className="mb-2 flex items-center justify-between">
+                        <Dialog.Title className="px-2.5 text-body font-extrabold">Sections</Dialog.Title>
                         <Dialog.Close
                             aria-label="Close"
-                            className={`grid h-8 w-8 place-items-center rounded ${CALM} text-muted-foreground hover:bg-tint/5 hover:text-foreground ${FOCUS}`}
+                            className={`grid h-11 w-11 place-items-center rounded-button ${CALM} text-muted-foreground hover:bg-tint/5 hover:text-foreground ${FOCUS}`}
                         >
-                            <X className="h-4 w-4" />
+                            <X className="h-5 w-5" />
                         </Dialog.Close>
                     </div>
-                    <div className="flex-1 overflow-y-auto py-2">
-                        {sectionsFor(role).map((section) => (
-                            <SectionLink
-                                key={section.key}
-                                section={section}
-                                counts={counts}
-                                saved={saved}
-                                collapsed={false}
-                                labelClass="truncate"
-                                onNavigate={() => onOpenChange(false)}
-                            />
+                    <div className="flex-1 space-y-0.5 overflow-y-auto">
+                        {sectionsFor(role).map((section, i, all) => (
+                            <React.Fragment key={section.key}>
+                                {headingBefore(section, i, all) && (
+                                    <SideNavHeading>{headingBefore(section, i, all)}</SideNavHeading>
+                                )}
+                                <SectionLink
+                                    section={section}
+                                    counts={counts}
+                                    saved={saved}
+                                    collapsed={false}
+                                    labelClass="truncate"
+                                    onNavigate={() => onOpenChange(false)}
+                                />
+                            </React.Fragment>
                         ))}
+                        <SideNavItem
+                            to="/calendar"
+                            Icon={CalendarDays}
+                            label="Calendar"
+                            testid={IDS.item("calendar")}
+                            onNavigate={() => onOpenChange(false)}
+                        />
                     </div>
                 </Dialog.Content>
             </Dialog.Portal>
@@ -396,7 +441,12 @@ export function AdminNavSheet({ open, onOpenChange, counts, role }) {
     );
 }
 
-export function AdminSidebar({ counts, role }) {
+/**
+ * The console's column: the logo, the sections under their headings, the
+ * calendar (which is a page of its own outside `/admin`), the collapse, and
+ * the account — the same navy parts every app surface navigates from.
+ */
+export function AdminSidebar({ counts, role, account }) {
     const [collapsed, setCollapsed] = useState(() => {
         try {
             return window.localStorage.getItem(COLLAPSE_KEY) === "1";
@@ -431,34 +481,38 @@ export function AdminSidebar({ counts, role }) {
     }, []);
 
     return (
-        <nav
-            data-testid={IDS.root}
+        // **`hidden md:flex`** (in the frame). Below that the sections are a
+        // sheet, not a rail: see `AdminNavSheet`.
+        <SideNavFrame
+            testid={IDS.root}
+            label="Admin sections"
+            width={collapsed ? "w-[72px]" : SIDEBAR_W}
             data-collapsed={collapsed ? "true" : "false"}
-            aria-label="Admin sections"
-            // **Inverse chrome: navy inverts rather than retiring.** The
-            // attribute redefines the semantic tokens for everything inside,
-            // so the links below still say `bg-card text-muted-foreground`
-            // and get navy and light ink. Opaque, not `bg-card/40`: a
-            // translucent navy over the light ground is a grey nobody chose.
-            data-surface="inverse"
-            // **`hidden md:flex`.** Below that the sections are a sheet, not a
-            // rail: see `AdminNavSheet`. A 56px column of unlabelled icons is
-            // navigation you have to already know.
-            className={`sticky top-16 hidden h-[calc(100vh-4rem)] shrink-0 flex-col border-r border-border bg-card text-foreground md:flex ${CALM} ${
-                collapsed ? "w-14" : "w-56"
-            }`}
         >
-            <div className="flex-1 overflow-y-auto py-2">
-                {sectionsFor(role).map((section) => (
-                    <SectionLink
-                        key={section.key}
-                        section={section}
-                        counts={counts}
-                        saved={saved}
-                        collapsed={collapsed}
-                        labelClass="truncate"
-                    />
+            <SideNavLogo to="/admin" compact={collapsed} />
+            <div className="-mx-1 flex-1 space-y-0.5 overflow-y-auto px-1">
+                {sectionsFor(role).map((section, i, all) => (
+                    <React.Fragment key={section.key}>
+                        {headingBefore(section, i, all) && (
+                            <SideNavHeading hidden={collapsed}>{headingBefore(section, i, all)}</SideNavHeading>
+                        )}
+                        <SectionLink
+                            section={section}
+                            counts={counts}
+                            saved={saved}
+                            collapsed={collapsed}
+                            labelClass="truncate"
+                        />
+                    </React.Fragment>
                 ))}
+                <SideNavHeading hidden={collapsed}>Elsewhere</SideNavHeading>
+                <SideNavItem
+                    to="/calendar"
+                    Icon={CalendarDays}
+                    label="Calendar"
+                    compact={collapsed}
+                    testid={IDS.item("calendar")}
+                />
             </div>
 
             <button
@@ -467,18 +521,20 @@ export function AdminSidebar({ counts, role }) {
                 data-testid={IDS.collapse}
                 aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
                 aria-expanded={!collapsed}
-                className={`m-1 flex h-9 items-center gap-2.5 rounded ${DENSITY.row} ${TEXT.meta} ${CALM} text-muted-foreground hover:bg-tint/5 hover:text-foreground ${FOCUS}`}
+                className={`mt-2 flex min-h-[2.5rem] items-center gap-3 rounded-button px-3 text-meta font-semibold ${CALM} text-muted-foreground hover:bg-tint/5 hover:text-foreground ${FOCUS} ${collapsed ? "justify-center" : ""}`}
             >
                 {collapsed ? (
                     <ChevronsRight className="h-4 w-4" />
                 ) : (
                     <>
                         <ChevronsLeft className="h-4 w-4" />
-                        <span className="hidden md:inline">Collapse</span>
+                        <span>Collapse</span>
                     </>
                 )}
             </button>
-        </nav>
+
+            {account ? <SideNavAccount {...account} compact={collapsed} /> : null}
+        </SideNavFrame>
     );
 }
 

@@ -21,12 +21,16 @@
 // because the person on the other end is told what it said — including when it
 // is reached with the R key. Approvals are still optimistic.
 import React, { useCallback, useEffect, useState } from "react";
-import { Outlet, useLocation, useOutletContext } from "react-router-dom";
+import { Outlet, useLocation, useNavigate, useOutletContext } from "react-router-dom";
 
 import Settle from "@/components/motion/Settle";
 import { Keyboard, Menu } from "lucide-react";
 
-import { Navbar } from "@/components/Navbar";
+import { NotificationBell } from "@/components/NotificationBell";
+import AdminAccountMenu from "@/components/admin/AdminAccountMenu";
+import Logo from "@/components/brand/Logo";
+import { SHELL_ROLE_LABEL, ShellContext } from "@/components/app/SideNav";
+import useWide from "@/lib/useWide";
 import { useAuth } from "@/context/AuthContext";
 import { consoleLabel, isAllAccess } from "@/lib/consoleScope";
 import { rememberTheme } from "@/lib/surfaceTheme";
@@ -72,7 +76,18 @@ export function useAdminConsole() {
 }
 
 export default function AdminConsole() {
-    const { user } = useAuth();
+    const { user, logout } = useAuth();
+    const navigate = useNavigate();
+    // The account's theme choice, held here now that the console's account
+    // menu lives at the foot of its own sidebar rather than in a top bar.
+    const [consoleTheme, setConsoleTheme] = useState(user?.console_theme ?? null);
+    useEffect(() => setConsoleTheme(user?.console_theme ?? null), [user?.console_theme]);
+    // One bell on screen — each asks the server for the notifications.
+    const wide = useWide();
+    const handleLogout = useCallback(async () => {
+        navigate("/", { replace: true });
+        await logout();
+    }, [navigate, logout]);
     const role = user?.role;
     const allAccess = isAllAccess(role);
     const [counts, setCounts] = useState(null);
@@ -156,17 +171,42 @@ export default function AdminConsole() {
         // own. Only `DensityScope`, inside the routes allowed to be compact,
         // puts the attribute on the page.
         <DensityProvider user={user}>
+        {/* **A shell of its own**, so a screen under it that renders the
+            shared `Navbar` gets nothing: the console navigates from its
+            sidebar, built from the same navy parts as the rest of the app. */}
+        <ShellContext.Provider value={true}>
         {/* No `grain-page`: the console is a working surface, not a printed one. */}
         <div data-testid={SHELL_IDS.page} className="min-h-screen bg-background">
-            <Navbar />
-
             <div className="flex">
-                <AdminSidebar counts={counts} role={role} />
+                <AdminSidebar
+                    counts={counts}
+                    role={role}
+                    account={{
+                        name: user?.name,
+                        role: SHELL_ROLE_LABEL[role] || role,
+                        controls: (
+                            <>
+                                {wide && <NotificationBell />}
+                                <AdminAccountMenu
+                                    user={user}
+                                    theme={consoleTheme}
+                                    onThemeChange={setConsoleTheme}
+                                    onLogout={handleLogout}
+                                    placement="up"
+                                />
+                            </>
+                        ),
+                    }}
+                />
 
                 {/* The canvas. `min-w-0` so a wide table scrolls inside it
                     rather than pushing the sidebar off the screen. */}
-                <div className="min-w-0 flex-1">
-                    <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-2">
+                {/* `overflow-x-clip` so a sticky bar's bleed (its negative
+                    margin, there for the blur) stops at the column rather than
+                    painting over the navy sidebar. Clip, not hidden: hidden
+                    would make this a scroll container and unstick the bar. */}
+                <div className="min-w-0 flex-1 overflow-x-clip">
+                    <div className="sticky top-0 z-30 flex items-center justify-between gap-3 border-b border-border bg-background/90 px-4 py-2 backdrop-blur-xl md:static md:bg-transparent md:backdrop-blur-none">
                         <div className="flex min-w-0 items-center gap-2">
                             {/* Below `md` this is the only way to the other
                                 sections — the rail is hidden there, because
@@ -177,10 +217,15 @@ export default function AdminConsole() {
                                 onClick={() => setShowNav(true)}
                                 data-testid={SHELL_IDS.mobileNavOpen}
                                 aria-label="Sections"
-                                className={`grid h-8 w-8 place-items-center rounded ${CALM} text-muted-foreground hover:bg-muted hover:text-foreground md:hidden ${FOCUS}`}
+                                className={`grid h-11 w-11 place-items-center rounded-button ${CALM} text-muted-foreground hover:bg-muted hover:text-foreground md:hidden ${FOCUS}`}
                             >
                                 <Menu className="h-4 w-4" />
                             </button>
+                            {/* On a phone this bar is the top of the screen,
+                                so it carries the mark the sidebar does. */}
+                            <span className="md:hidden">
+                                <Logo variant="mark" height={26} />
+                            </span>
                             {/* The bar says which console this is. A team
                                 member's is the admin console with a scope
                                 around it, and a header reading "Admin" over a
@@ -195,6 +240,7 @@ export default function AdminConsole() {
                             {!allAccess && <BrandFilter />}
                         </div>
                         <div className="flex items-center gap-2">
+                            {!wide && <NotificationBell />}
                             {/* Comfortable | Compact. Renders only for an
                                 admin, and only on a section that can be
                                 compact. */}
@@ -269,6 +315,7 @@ export default function AdminConsole() {
             />
             <ShortcutsOverlay open={showKeys} onOpenChange={setShowKeys} />
         </div>
+        </ShellContext.Provider>
         </DensityProvider>
     );
 }

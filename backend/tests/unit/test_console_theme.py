@@ -409,8 +409,16 @@ class TestItFollowsThePerson:
         # And it is in the account menu rather than floating in the layout: a
         # toggle over a dense working surface is a control somebody hits
         # reaching for a table.
+        #
+        # The account lives at the foot of the navy sidebar now, on every app
+        # surface, so the menu is passed in as the sidebar's account block —
+        # and the console renders it there and nowhere else.
         assert "AdminAccountMenu" in (FRONTEND / "components/Navbar.jsx").read_text()
-        assert "AdminAccountMenu" not in (FRONTEND / "pages/AdminConsole.jsx").read_text()
+        assert "<AdminAccountMenu" in (FRONTEND / "components/app/AppShell.jsx").read_text()
+        console = (FRONTEND / "pages/AdminConsole.jsx").read_text()
+        block = console[console.index("account={{"):]
+        block = block[:block.index("}}")]
+        assert console.count("<AdminAccountMenu") == 1 and "<AdminAccountMenu" in block
 
 
 # ---------------------------------------------------------------------------

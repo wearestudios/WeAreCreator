@@ -42,7 +42,12 @@ const OPTIONS = [
     { value: "dark", label: "Dark", Icon: Moon },
 ];
 
-export default function AdminAccountMenu({ user, theme, onThemeChange, onLogout }) {
+/**
+ * `placement="up"` opens the menu above the trigger — the sidebar's account
+ * block sits at the foot of the screen, where a menu dropping down would open
+ * off it.
+ */
+export default function AdminAccountMenu({ user, theme, onThemeChange, onLogout, placement = "down" }) {
     const [open, setOpen] = useState(false);
     const [saving, setSaving] = useState(false);
     const wrapRef = useRef(null);
@@ -116,7 +121,9 @@ export default function AdminAccountMenu({ user, theme, onThemeChange, onLogout 
                 <div
                     role="menu"
                     data-testid="admin-account-menu"
-                    className="absolute right-0 z-50 mt-2 w-56 overflow-hidden rounded-lg border border-border bg-popover shadow-lg shadow-scrim/30"
+                    className={`absolute z-50 w-56 overflow-hidden rounded-lg border border-border bg-popover shadow-lg shadow-scrim/30 ${
+                        placement === "up" ? "bottom-full left-0 mb-2" : "right-0 mt-2"
+                    }`}
                 >
                     <div className="border-b border-border px-3 py-2.5">
                         <p className="truncate text-meta text-foreground">

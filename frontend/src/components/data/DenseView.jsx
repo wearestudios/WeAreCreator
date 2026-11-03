@@ -29,21 +29,23 @@ import { DENSE } from "@/constants/testIds";
  * The one place the sticky offsets and z-indexes are written down.
  *
  * The navbar is `sticky top-0 z-40 h-16`. Everything that sticks below it has
- * to clear 4rem and sit under z-40, or it slides over the navigation. Getting
+ * to clear `--nav-h` (4rem, or 0 inside the app from `md`, where the
+ * navigation is a sidebar) and sit under z-40, or it slides over the
+ * navigation. Getting
  * this wrong is invisible until you scroll, which is why it is a constant
  * rather than a number typed at each call site.
  */
 export const STICKY = {
     // Below the navbar, above the list.
-    header: "sticky top-16 z-30",
+    header: "sticky top-[var(--nav-h)] z-30",
     // The same, but only once there is room for it. A filter bar whose four
     // controls stack into a column is 400px tall on a phone — pinning that
     // under the navbar leaves a third of an 844px screen for the list it is
     // meant to help you read. Below `md` the bar scrolls away like any other
     // content, and the chips summarise what is set when you scroll back.
-    headerFromMd: "md:sticky md:top-16 md:z-30",
+    headerFromMd: "md:sticky md:top-[var(--nav-h)] md:z-30",
     // Below a sticky header that is already occupying the space under the nav.
-    barUnderHeader: "sticky top-16 z-20",
+    barUnderHeader: "sticky top-[var(--nav-h)] z-20",
     // A table head inside its own scroll container: it sticks to the container,
     // not the viewport, so the offset is zero.
     tableHead: "sticky top-0 z-10",
