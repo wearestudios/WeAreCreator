@@ -882,6 +882,88 @@
     to   { transform: scaleX(1); }
 }
 
+/* -----------------------------------------------------------------------
+ * The hero's field (`components/marketing/HeroField.jsx`): four painted
+ * layers behind the slider. A navy dot grid, the same grid in red revealed
+ * only inside a circle at `--mx`/`--my`, a soft red glow moved by transform,
+ * and two blurred drifts on keyframes. Every colour is a `color-mix` of a
+ * brand token. The script writes two custom properties on `.hero-field-lit`
+ * and one transform on `.hero-field-glow` per frame, and nothing else; with
+ * no script at all (reduced motion) the light rests at 70% / 30%.
+ * ------------------------------------------------------------------------- */
+.hero-field {
+    --lit: 260px;
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    overflow: hidden;
+    pointer-events: none;
+}
+@media (max-width: 639px) {
+    .hero-field { --lit: 180px; }
+}
+.hero-field-dots,
+.hero-field-lit {
+    position: absolute;
+    inset: 0;
+    background-size: 24px 24px;
+    background-position: 12px 12px;
+}
+.hero-field-dots {
+    background-image: radial-gradient(circle at center, color-mix(in srgb, hsl(var(--brand-navy)) 16%, transparent) 1px, transparent 1.5px);
+    -webkit-mask-image: linear-gradient(to bottom, hsl(var(--brand-navy)) 35%, transparent 100%);
+    mask-image: linear-gradient(to bottom, hsl(var(--brand-navy)) 35%, transparent 100%);
+}
+.hero-field-lit {
+    --mx: 70%;
+    --my: 30%;
+    background-image: radial-gradient(circle at center, color-mix(in srgb, hsl(var(--brand-red)) 60%, transparent) 1px, transparent 1.5px);
+    -webkit-mask-image: radial-gradient(var(--lit) circle at var(--mx) var(--my), hsl(var(--brand-navy)), transparent 70%);
+    mask-image: radial-gradient(var(--lit) circle at var(--mx) var(--my), hsl(var(--brand-navy)), transparent 70%);
+}
+.hero-field-glow {
+    position: absolute;
+    left: 70%;
+    top: 30%;
+    width: 560px;
+    height: 560px;
+    margin: -280px 0 0 -280px;
+    background: radial-gradient(circle closest-side, color-mix(in srgb, hsl(var(--brand-red)) 9%, transparent), transparent);
+    will-change: transform;
+}
+.hero-field-drift {
+    position: absolute;
+    width: 46vmax;
+    height: 46vmax;
+    border-radius: 9999px;
+    filter: blur(80px);
+    will-change: transform;
+}
+.hero-field-drift-a {
+    right: -14vmax;
+    top: -18vmax;
+    background: color-mix(in srgb, hsl(var(--brand-red)) 10%, transparent);
+    animation: heroFieldDriftA 22s var(--weare-ease) infinite alternate;
+}
+.hero-field-drift-b {
+    left: -16vmax;
+    bottom: -20vmax;
+    background: color-mix(in srgb, hsl(var(--brand-navy)) 8%, transparent);
+    animation: heroFieldDriftB 26s var(--weare-ease) infinite alternate;
+}
+@keyframes heroFieldDriftA {
+    from { transform: translate3d(0, 0, 0); }
+    to   { transform: translate3d(-6vmax, 4vmax, 0); }
+}
+@keyframes heroFieldDriftB {
+    from { transform: translate3d(0, 0, 0); }
+    to   { transform: translate3d(5vmax, -4vmax, 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+    .hero-field-drift { animation: none; will-change: auto; }
+    .hero-field-glow { will-change: auto; }
+}
+
 /* The rail sliding left by one thumbnail. **Transform, not layout** — the
    first version re-keyed three buttons by phrase, so on each advance React
    moved the DOM nodes and the browser recorded a real layout shift: 0.0007

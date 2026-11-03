@@ -2,8 +2,8 @@
 // its licence. The source file carried no licence text of its own; the credit
 // is kept here, in the source, and never rendered in the UI.
 //
-// A dark closing section crossed by a slow diagonal shaft of light, with a
-// giant, bottom-cropped wordmark the light runs through.
+// A dark closing section crossed by a slow diagonal shaft of light, with an
+// optional giant, bottom-cropped wordmark the light runs through.
 //
 // Changes from the original, all deliberate:
 //   - JavaScript, no types; generic props, no template text, names or credits.
@@ -28,6 +28,11 @@
 //     `color-mix` over the palette, so a palette can be design tokens.
 //   - The wordmark is decorative (aria-hidden); a visually hidden label
 //     carries the name once.
+//   - **The wordmark is optional.** With no `word` (or a blank one) there is
+//     no wordmark block, no hidden label, and no fit: the measuring effect
+//     returns before it touches the DOM, so no ResizeObserver, no
+//     `fonts.ready` and no canvas read. The columns get an ordinary bottom
+//     padding instead of sitting on cropped letters.
 import * as React from "react";
 
 // #region beam — pure: colour, fitting and beam maths. Exported for the tests.
@@ -135,6 +140,8 @@ const CSS =
     ".bwf-grain{position:absolute;inset:0;opacity:.14;mix-blend-mode:overlay;background-image:url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>\")}" +
     // Layout: a wide first column, then one per link column.
     ".bwf-inner{position:relative;z-index:2;box-sizing:border-box;max-width:var(--bwf-max);margin:0 auto;padding:clamp(48px,8.5cqw,104px) clamp(20px,6cqw,88px) 0;display:grid;grid-template-columns:minmax(0,1.5fr) repeat(var(--bwf-cols),minmax(0,1fr));column-gap:clamp(24px,4cqw,48px);row-gap:44px}" +
+    // No wordmark below the columns: an ordinary bottom padding instead.
+    ".bwf[data-word='false'] .bwf-inner{padding-bottom:clamp(48px,7cqw,88px)}" +
     ".bwf-label{font-size:13px;line-height:1.2;letter-spacing:.01em;color:var(--bwf-acc);padding-bottom:13px;position:relative;display:block}" +
     ".bwf-label::after{content:'';position:absolute;left:0;right:0;bottom:0;height:1px;background:linear-gradient(90deg," + acc(55, false) + "," + acc(28, false) + ");transform-origin:0 50%;transform:scaleX(var(--bwf-line,1));transition:transform 1.1s " + EASE + " var(--bwf-d,0ms)}" +
     ".bwf[data-in='false'] .bwf-label::after{--bwf-line:0}" +
@@ -267,7 +274,8 @@ function useReducedMotion() {
 }
 
 /**
- * @param word          what the giant wordmark spells
+ * @param word          what the giant wordmark spells; absent or blank, no
+ *                      wordmark is drawn and nothing is measured
  * @param wordLabel     the name a screen reader hears once (defaults to `word`)
  * @param wordFont      { family, weight, variationSettings, letterSpacing }
  * @param wordClassName a class that sets the wordmark's face instead
@@ -331,8 +339,10 @@ export default function BeamWordmarkFooter({
     // Pointer state lives in a ref; the loop reads it, React never re-renders.
     const ptr = React.useRef({ u: 0.5, x: 0, y: 0, inside: false });
 
-    // Fit the wordmark to the column width.
+    // Fit the wordmark to the column width. No word, no fit: nothing below
+    // runs, so there is no observer and no font wait for a footer without one.
     React.useLayoutEffect(() => {
+        if (!text) return undefined;
         const root = rootRef.current;
         const inner = innerRef.current;
         if (!root || !inner) return undefined;
@@ -491,6 +501,7 @@ export default function BeamWordmarkFooter({
             className={("bwf " + className).trim()}
             style={vars}
             data-in={seen || reduced ? "true" : "false"}
+            data-word={text ? "true" : "false"}
             data-testid={id("root")}
             onPointerMove={onPointer}
             onPointerEnter={onPointer}
@@ -580,35 +591,37 @@ export default function BeamWordmarkFooter({
                 ))}
             </div>
 
-            <div className="bwf-word-wrap">
-                <p className="bwf-sr">{wordLabel || text}</p>
-                <div
-                    className="bwf-word"
-                    style={{ height: size ? wordHeight(size, base, cut) : "calc(" + (0.8 + cut) * 26 + "cqw)" }}
-                >
-                    <div className="bwf-word-box">
-                        <div
-                            ref={innerRef}
-                            className={("bwf-word-in " + wordClassName).trim()}
-                            aria-hidden="true"
-                            data-testid={id("word")}
-                        >
-                            {letters.map((ch, i) => (
-                                <span key={i} className="bwf-lw" style={{ "--bwf-d": 260 + i * 75 + "ms" }}>
-                                    <span
-                                        className="bwf-l"
-                                        onClick={hop}
-                                        onAnimationEnd={(e) => e.currentTarget.classList.remove("is-hop")}
-                                    >
-                                        {ch === " " ? " " : ch}
+            {text ? (
+                <div className="bwf-word-wrap">
+                    <p className="bwf-sr">{wordLabel || text}</p>
+                    <div
+                        className="bwf-word"
+                        style={{ height: size ? wordHeight(size, base, cut) : "calc(" + (0.8 + cut) * 26 + "cqw)" }}
+                    >
+                        <div className="bwf-word-box">
+                            <div
+                                ref={innerRef}
+                                className={("bwf-word-in " + wordClassName).trim()}
+                                aria-hidden="true"
+                                data-testid={id("word")}
+                            >
+                                {letters.map((ch, i) => (
+                                    <span key={i} className="bwf-lw" style={{ "--bwf-d": 260 + i * 75 + "ms" }}>
+                                        <span
+                                            className="bwf-l"
+                                            onClick={hop}
+                                            onAnimationEnd={(e) => e.currentTarget.classList.remove("is-hop")}
+                                        >
+                                            {ch === " " ? " " : ch}
+                                        </span>
                                     </span>
-                                </span>
-                            ))}
+                                ))}
+                            </div>
                         </div>
                     </div>
+                    <div className="bwf-foot" aria-hidden="true" />
                 </div>
-                <div className="bwf-foot" aria-hidden="true" />
-            </div>
+            ) : null}
         </footer>
     );
 }

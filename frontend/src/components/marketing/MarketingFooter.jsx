@@ -1,5 +1,11 @@
 // The footer, for the marketing site only — the navy closing band with the
-// beam wordmark (`components/ui/beam-wordmark-footer.jsx`).
+// beam (`components/ui/beam-wordmark-footer.jsx`).
+//
+// **No wordmark.** The giant cropped "WeAre" under the columns is gone: the
+// logo in the lead already names the site, and a second, page-wide name under
+// it was the footer saying it twice. The component's wordmark is optional and
+// this passes none, so nothing is measured or fitted here at all — the beam,
+// the glow and the accent rule are what is left, on the navy ground.
 //
 // **A variant, not an edit.** `components/Footer.jsx` stays exactly as it is
 // for Legal, Campaigns and CampaignDetail; nothing here reaches into it.
@@ -24,21 +30,14 @@ import { EVENTS, track } from "@/lib/track";
 // The brand tokens, never literals: the navy ground (`--brand-navy`), ink and
 // muted are white at 90% and 60%, the brand red accent (`--brand-red`). Measured
 // on the ground: ink 15.6:1, muted 7.0:1, the accent 4.9:1 — every word
-// somebody has to read passes AA. The wordmark is navy a step lighter than the
-// ground, so it reads as embossed rather than shouted; the beam lights it.
+// somebody has to read passes AA.
 const PALETTE = {
     ground: "hsl(var(--brand-navy))",
     ink: "hsl(var(--brand-white) / 0.9)",
     muted: "hsl(var(--brand-white) / 0.6)",
     accent: "hsl(var(--brand-red))",
-    wordFrom: "color-mix(in srgb, hsl(var(--brand-navy)) 84%, hsl(var(--brand-white)))",
-    wordTo: "color-mix(in srgb, hsl(var(--brand-navy)) 95%, hsl(var(--brand-white)))",
 };
 
-// The wordmark is set exactly like the site's display headings: `mkt-display`
-// carries the face, weight, optical size, tracking and axis settings from
-// index.css, the one place they are defined. The beam footer only overrides
-// the size (to fit the width) and the line height.
 const COLUMNS = FOOTER_COLUMNS.map((col) => ({
     title: col.heading,
     // `external` marks a destination the router must not handle: `/work` is
@@ -76,9 +75,6 @@ export function MarketingFooter() {
     return (
         <BeamWordmarkFooter
             className="font-sans"
-            word="WeAre"
-            wordLabel="WeAre Creators"
-            wordClassName="mkt-display"
             columns={COLUMNS}
             // The copyright names WeAre Studios, which overrides an older note
             // that argued for the old owner name: the entity in a copyright line is

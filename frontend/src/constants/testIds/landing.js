@@ -16,6 +16,7 @@ export const LANDING_PAGE = {
 
 export const LANDING_HERO = {
 	section: 'hero-section',
+	field: 'hero-field',
 	// The slider's region, which carries aria-roledescription="carousel".
 	carousel: 'hero-carousel',
 	badge: 'hero-ai-badge',

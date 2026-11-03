@@ -383,3 +383,90 @@ def test_the_ai_slide_shows_no_percentage():
     visual = _code(SCREENS)
     visual = visual[visual.index("const EXAMPLES") : visual.index("export const VISUALS")]
     assert "%" not in re.sub(r"\[[^\]]*%[^\]]*\]", "", visual)
+
+
+# ---------------------------------------------------------------------------
+# The field behind the hero, and the footer without its wordmark
+# ---------------------------------------------------------------------------
+
+FIELD = (SRC / "components" / "marketing" / "HeroField.jsx").read_text()
+CSS = (SRC / "index.css").read_text()
+FOOTER = (SRC / "components" / "marketing" / "MarketingFooter.jsx").read_text()
+BEAM = (SRC / "components" / "ui" / "beam-wordmark-footer.jsx").read_text()
+
+
+def _field_css() -> str:
+    start = CSS.index("The hero's field (`components/marketing/HeroField.jsx`)")
+    return CSS[start : CSS.index("The rail sliding left by one thumbnail")]
+
+
+def test_the_field_is_mounted_behind_the_slider_and_out_of_the_way():
+    """Inside the hero band, first, under content raised above it; decorative
+    and click-through. The slider keeps its one timer and no frame loop of its
+    own — the field's loop lives in the field's file."""
+    code = _code(DECK)
+    assert "<HeroField testid={IDS.field} />" in code
+    assert code.index("<HeroField") < code.index("<Wrap")
+    assert 'className="relative isolate overflow-hidden"' in code
+    assert 'className="relative z-10 ' in code
+    assert "requestAnimationFrame" not in code
+    field = _code(FIELD)
+    assert 'aria-hidden="true"' in field
+    css = _field_css()
+    rule = css[css.index(".hero-field {") : css.index("}", css.index(".hero-field {"))]
+    assert "pointer-events: none" in rule and "position: absolute" in rule
+
+
+def test_the_field_loop_is_one_loop_gated_on_view_and_visibility():
+    """One `requestAnimationFrame` scheduler, started and stopped by an
+    IntersectionObserver and `visibilitychange`; reduced motion stops it and
+    writes nothing; only a mouse pulls the light; the rect is read in one
+    function, off a stale flag set by a ResizeObserver and a passive scroll,
+    never in a pointer handler."""
+    code = _code(FIELD)
+    assert code.count("requestAnimationFrame(tick)") == 2
+    assert "setInterval" not in code and "setTimeout" not in code
+    assert "new IntersectionObserver" in code and '"visibilitychange"' in code
+    assert "new ResizeObserver(onScroll)" in code
+    assert 'window.addEventListener("scroll", onScroll, { passive: true })' in code
+    assert code.count("getBoundingClientRect") == 1
+    assert "if (stale) read();" in code
+    on_pointer = code[code.index("const onPointer") : code.index("const onScroll")]
+    assert 'e.pointerType !== "mouse"' in on_pointer and "getBoundingClientRect" not in on_pointer
+    sync = code[code.index("const sync") : code.index("const onPointer")]
+    assert sync.index("if (reduced)") < sync.index("requestAnimationFrame")
+    # Each frame: two custom properties on one layer, one transform on another.
+    tick = code[code.index("const tick") : code.index("const stop")]
+    assert tick.count("lit.style.setProperty(") == 2 and tick.count("glow.style.transform") == 1
+    assert "FOLLOW_K = 0.12" in code
+
+
+def test_the_field_paints_in_tokens_and_drifts_by_transform():
+    css = _field_css()
+    assert not re.search(r"#[0-9a-fA-F]{3,8}\b|\brgba?\(|\bblack\b|\bwhite\b", css)
+    colours = re.findall(r"color-mix\(in srgb, hsl\(var\(--([\w-]+)\)\)", css)
+    assert set(colours) == {"brand-navy", "brand-red"}, colours
+    assert "background-size: 24px 24px" in css
+    assert "--lit: 260px" in css and "--lit: 180px" in css
+    assert "width: 560px" in css
+    assert "heroFieldDriftA 22s" in css and "heroFieldDriftB 26s" in css
+    assert css.count("infinite alternate") == 2
+    for frames in re.findall(r"@keyframes heroFieldDrift\w \{(.*?)\n\}", css, flags=re.S):
+        props = set(re.findall(r"\{\s*([\w-]+):", frames))
+        assert props == {"transform"}, props
+    reduced = css[css.index("@media (prefers-reduced-motion: reduce)") :]
+    assert ".hero-field-drift { animation: none;" in reduced
+    # At rest with no script: 70% across, 30% down, for the lit dots and the glow.
+    assert "--mx: 70%;" in css and "--my: 30%;" in css
+    assert "left: 70%;" in css and "top: 30%;" in css
+
+
+def test_the_marketing_footer_has_no_wordmark_and_measures_nothing():
+    footer = _code(FOOTER)
+    assert "word=" not in footer and "wordLabel" not in footer and "wordClassName" not in footer
+    beam = _code(BEAM)
+    fit = beam[beam.index("React.useLayoutEffect(") :]
+    assert fit.index("if (!text) return undefined;") < fit.index("new ResizeObserver")
+    assert fit.index("if (!text) return undefined;") < fit.index("document.fonts")
+    assert '{text ? (\n                <div className="bwf-word-wrap">' in BEAM
+    assert ".bwf[data-word='false'] .bwf-inner{padding-bottom:" in BEAM
