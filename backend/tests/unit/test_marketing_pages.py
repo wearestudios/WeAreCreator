@@ -742,7 +742,7 @@ def test_home_is_the_two_sections_in_order():
     assert re.findall(r"<([A-Z]\w+)", body[body.index("<MarketingPage") :]) == [
         "MarketingPage", "HeroSlider", "ProcessSpine", "StickyCta",
     ], "two sections and the phone's sticky ask, nothing else"
-    assert '<ProcessSpine n={2} id="how-it-works" />' in body
+    assert '<ProcessSpine id="how-it-works" />' in body
     for gone in ("ComparisonBand", "PhotoBand", "PromiseBand", "WhoBuiltIt", "CreatorDoor", "Closing",
                  "AiSection", "BeforeAfterStrip", "ProofStrip", "BrandWall", "CaseStudyStrip",
                  "CreatorLeaderboard", "TwoPaths", "HandshakeBand", "KineticHeadline", "CampaignFilm",
@@ -759,30 +759,44 @@ def test_home_is_the_two_sections_in_order():
     assert "framer-motion" not in read("src", "components", "marketing", "ProcessSpine.jsx")
 
 
-def test_every_section_opens_on_the_numbered_rule():
-    """**"(02)", a hairline, the section's name, then the heading.** Every
-    numbered section goes through `SectionHead`/`SectionRule`, and the numbers
-    run in order down each page — a reader scanning the rules is reading a
-    contents list, so a skipped or repeated number is a broken one."""
+def test_every_section_opens_on_a_labelled_rule_with_no_number():
+    """**The section's name, a hairline filling the rest, then the heading —
+    and no number.** Sections were numbered "(01)", "(02)" down every page;
+    that rule was reversed, because the numbers were furniture that made every
+    page carry arithmetic (a section added or switched off renumbered all
+    below it) and told a reader nothing they could act on. Numbering survives
+    only where it encodes a real sequence: the process spine's steps."""
     parts = copy_of("src", "components", "marketing", "SiteParts.jsx")
     rule = parts[parts.index("export function SectionRule") : parts.index("export function SectionHead")]
-    assert "{sectionNumber(n)}" in rule and 'h-px flex-1 bg-border' in rule and "{label}" in rule
-    expected = {"home": [1, 2], "brands": [1, 2, 3, 5, 6, 7, 8], "creators": [1, 2, 3, 5, 6, 7],
-                "about": [1, 2, 3]}
-    for name, numbers in expected.items():
+    assert "export function SectionRule({ label, className" in rule
+    # The label first, then the hairline, and nothing after it.
+    assert rule.index("{label}") < rule.index("h-px flex-1 bg-border")
+    assert rule.count("<span") == 2
+    assert "sectionNumber" not in parts
+    for helper in ("SectionHead", "PromiseBand", "Closing"):
+        sig = re.search(rf"export function {helper}\(\{{([^}}]*)\}}", parts).group(1)
+        assert not re.search(r"\bn\b", sig), helper
+    for name in ("home", "brands", "creators", "about"):
         src = copy_of(*PAGES[name])
-        got = [int(n) for n in re.findall(r"\bn=\{(\d+)\}", src)]
-        assert got == numbers, (name, got)
-    # Home's numbers do not move with the AI switches any more: the AI is a
-    # slide, not a section, so there is nothing to shift.
-    assert "shift" not in copy_of(*PAGES["home"])
+        assert not re.search(r"\bn=\{", src), name
+        assert "shift" not in src, name
+    for f in ("HeroSlider.jsx", "ProcessSpine.jsx"):
+        assert not re.search(r"\bn=\{", copy_of("src", "components", "marketing", f)), f
+    assert "sectionNumber" not in read(*CONTENT)
+    # The test ids are keyed on the label now, not on a number.
+    assert "sectionRule: (label) =>" in read("src", "constants", "testIds", "site.js")
+
+
+def test_the_slider_opens_on_the_badge_with_no_rule():
+    """The hero is the page's opening, not a section of it: no rule and no
+    "At a glance". The badge's reserved-height slot stays, so the stage does
+    not jump with the AI switches, and it takes no top margin — it sits where
+    the rule was."""
     hero = copy_of("src", "components", "marketing", "HeroSlider.jsx")
-    assert "<SectionRule n={n} label={copy.label} />" in hero
-    out = subprocess.run(
-        ["node", "--input-type=module", "-e", read(*CONTENT) + "\nconsole.log(sectionNumber(2));"],
-        capture_output=True, text=True, timeout=60,
-    )
-    assert out.stdout.strip() == "(02)"
+    assert "SectionRule" not in hero
+    assert "At a glance" not in read(*CONTENT)
+    assert "label" not in content()["HOME"]["slides"]
+    assert '<div className="min-h-[2.125rem]">' in hero
 
 
 def test_home_sends_readers_on_rather_than_telling_them_everything():
@@ -1012,13 +1026,14 @@ def test_the_money_band_counts_once_and_names_the_amount_once():
 # promises, "who built it", the creator door, the close, the before/after
 # strip and the three AI feature cards went, and the slides added two
 # headlines and two lines (the AI slide's are the old section's lead and a new
-# title). Home measures 453; the budget is that plus ten, so the next slide
+# title). Home measured 453 then and 450 once the slider's "At a glance"
+# rule went with the section numbers; the budget is that plus ten, so the next slide
 # has to argue with a number. /about is new at 160 and uses 82: "who built
 # it" moved there whole, with two short sections from claims the site
 # already makes. Slide C's headline and line are the photo slot's own, in
 # `photoSlots.js`, and are held by the slot tests rather than this count.
 BUDGET = {
-    "home": 463,
+    "home": 460,
     "about": 160,
     "brands": 790,
     "creators": 378,
@@ -1320,17 +1335,19 @@ def test_the_h1_has_one_stable_accessible_name():
 
 def test_the_hero_is_a_badge_a_stage_and_one_row():
     """Was `test_the_hero_is_exactly_its_five_elements`. The hero is the
-    section rule, the AI badge (two switches), the stage — each slide's
+    AI badge (two switches), the stage — each slide's
     headline, one lead and its visual — and one row under it: the two asks
     and the quiet line on the left, the tabs on the right. **No eyebrow, no
     Built-for line**, and the type is the Fraunces display headline, the Inter
-    Tight lead and Inter Tight UI — the label face only in the section rule."""
+    Tight lead and Inter Tight UI. **No section rule** — the slider opens on
+    the badge."""
     hero = copy_of(*HERO)
     body = hero[hero.index("export default function HeroSlider") :]
     assert "<nav" not in hero and "<Label" not in hero and "HERO_EYEBROW" not in hero
     assert "builtFor" not in hero and "railLabel" not in hero
     assert "mkt-label" not in hero
-    for el in ("<SectionRule", "<AiBadge", "ASK.postBrief", "ASK.talkWhatsapp", "{hero.note}", 'role="tablist"'):
+    assert "<SectionRule" not in body
+    for el in ("<AiBadge", "ASK.postBrief", "ASK.talkWhatsapp", "{hero.note}", 'role="tablist"'):
         assert body.count(el) == 1, el
     styles = set(re.findall(r"\bmkt-[a-z0-9]+", hero))
     assert styles <= {"mkt-display", "mkt-lead"}, styles

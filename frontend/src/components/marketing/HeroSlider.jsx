@@ -31,7 +31,7 @@ import { Sparkles } from "lucide-react";
 import { EASE } from "@/components/marketing/motion";
 import HeroField from "@/components/marketing/HeroField";
 import { WipeWord } from "@/components/marketing/primitives";
-import { Band, Cta, SectionRule, Wrap } from "@/components/marketing/SiteParts";
+import { Band, Cta, Wrap } from "@/components/marketing/SiteParts";
 import { DealCard } from "@/components/marketing/siteMocks";
 import { LANDING_HERO as IDS } from "@/constants/testIds";
 import { ASK, HOME } from "@/content/marketing";
@@ -222,11 +222,11 @@ function AiBadge({ text }) {
 }
 
 /**
- * @param {{ n: number, aiCards: Array, aiPowered: boolean }} props
+ * @param {{ aiCards: Array, aiPowered: boolean }} props
  *   `aiCards` are the AI features that are on, read through `aiLive` by the
  *   page; `aiPowered` is two or more of them.
  */
-export default function HeroSlider({ n, aiCards, aiPowered }) {
+export default function HeroSlider({ aiCards, aiPowered }) {
     const { slides: copy, hero } = HOME;
     const list = slidesFor(aiCards);
     const count = list.length;
@@ -321,8 +321,11 @@ export default function HeroSlider({ n, aiCards, aiPowered }) {
                     aria-label={copy.carousel}
                     data-testid={IDS.carousel}
                 >
-                    <SectionRule n={n} label={copy.label} />
-                    <div className="mt-8 min-h-[2.125rem] md:mt-10">
+                    {/* The slider opens on the badge — no section rule: the
+                        hero is the page's opening, not a section of it. The
+                        wrapper keeps its height with no badge, so the stage
+                        does not jump with the AI switches. */}
+                    <div className="min-h-[2.125rem]">
                         {aiPowered ? <AiBadge text={copy.aiBadge} /> : null}
                     </div>
 

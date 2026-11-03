@@ -85,7 +85,7 @@ export default function ForBrands() {
                 <Wrap className="py-20 md:py-28">
                     <div className="grid gap-10 lg:grid-cols-12 lg:items-end lg:gap-16">
                         <div className="lg:col-span-7">
-                            <SectionHead n={1} label={shortlist.label} title={shortlist.title} lead={shortlist.lead} />
+                            <SectionHead label={shortlist.label} title={shortlist.title} lead={shortlist.lead} />
                             <Known value={FACTS.verifiedCreatorCount} name="verifiedCreatorCount">
                                 {(n) => <p className="mt-6 text-body text-foreground">{shortlist.countLine(n)}</p>}
                             </Known>
@@ -113,7 +113,7 @@ export default function ForBrands() {
 
             <Band ground="page" track="pricing" testid={IDS.pricing}>
                 <Wrap className="py-20 md:py-28">
-                    <SectionHead n={2} label={pricing.label} title={pricing.title} />
+                    <SectionHead label={pricing.label} title={pricing.title} />
                     <CardRow
                         items={pricing.cards}
                         testid={IDS.pricingCard}
@@ -153,7 +153,7 @@ export default function ForBrands() {
             <Band ground="tint" track="report" testid={IDS.report}>
                 <Wrap className="grid gap-12 py-20 md:py-28 lg:grid-cols-12">
                     <div className="flex flex-col lg:col-span-5">
-                        <SectionHead n={3} label={report.label} title={report.title} lead={report.lead} />
+                        <SectionHead label={report.label} title={report.title} lead={report.lead} />
                         <Illustration name="how-report-desk" className="order-first mb-10 lg:order-none lg:mb-0 lg:mt-10" />
                     </div>
                     <div className="lg:col-span-7 lg:pt-16">
@@ -177,7 +177,6 @@ export default function ForBrands() {
             <PhotoBand slot="brands-full-room" testid={IDS.band} />
 
             <PromiseBand
-                n={5}
                 label={promises.label}
                 title={promises.title}
                 items={promises.items}
@@ -187,7 +186,7 @@ export default function ForBrands() {
 
             <Band ground="page" track="compare">
                 <Wrap className="py-20 md:py-28">
-                    <SectionHead n={6} label={compare.label} title={compare.title} />
+                    <SectionHead label={compare.label} title={compare.title} />
                     <CompareTable
                         columns={compare.columns}
                         rows={compare.rows}
@@ -200,12 +199,12 @@ export default function ForBrands() {
 
             <Band ground="tint" track="faq">
                 <Wrap className="py-20 md:py-28">
-                    <SectionHead n={7} label={faq.label} title={faq.title} />
+                    <SectionHead label={faq.label} title={faq.title} />
                     <Faq items={visibleFaq(faq.items)} testid={IDS.faq} itemTestid={IDS.faqItem} />
                 </Wrap>
             </Band>
 
-            <Closing id="close" n={8} label={close.label} title={close.title} line={close.line} testid={IDS.close} ground="navy">
+            <Closing id="close" label={close.label} title={close.title} line={close.line} testid={IDS.close} ground="navy">
                 <Cta ask={ASK.postBrief} testid={IDS.ctaBottom} />
                 <Cta ask={ASK.talkWhatsapp} variant="outline" testid={IDS.ctaTalkBottom} />
             </Closing>

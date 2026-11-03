@@ -1,6 +1,6 @@
 // Home, rendered: two sections (the hero slider, then the spine), the AI slide
 // with 0, 1, 2 and 3 switches on, the badge and "AI-powered" only from two,
-// one h1 and it is slide A's, the rules 01–02, the carousel's ARIA, what a tab
+// one h1 and it is slide A's, one unnumbered rule, the carousel's ARIA, what a tab
 // click, an arrow key and the timer do, reduced motion, and the phone's sticky
 // ask hiding once the footer is on screen.
 import React from "react";
@@ -123,11 +123,13 @@ describe.each(CASES)("switches on: %j", (on, count) => {
         expect(byId("hero-slide-0").getAttribute("data-slide")).toBe("deal");
     });
 
-    test("the section rules run 01, 02", () => {
-        const numbers = all('[data-testid^="section-rule-"]').map((el) =>
-            Number(el.getAttribute("data-testid").replace("section-rule-", "")),
-        );
-        expect(numbers).toEqual([1, 2]);
+    test("one section rule, How it works', unnumbered; the slider has none", () => {
+        const rules = all('[data-testid^="section-rule-"]');
+        expect(rules.map((el) => el.getAttribute("data-testid"))).toEqual(["section-rule-how-it-works"]);
+        expect(rules[0].textContent).toBe(HOME.processSpine.label);
+        expect(byId("hero-section").querySelector('[data-testid^="section-rule-"]')).toBeNull();
+        expect(byId("hero-section").textContent).not.toContain("At a glance");
+        expect(HOME.slides.label).toBeUndefined();
     });
 
     test("the AI slide is absent with every switch off, and lists only live features", async () => {

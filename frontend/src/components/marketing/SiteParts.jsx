@@ -6,9 +6,9 @@
 // transition — the five primitives in `primitives.js` are the whole motion
 // vocabulary, and none of them lives in here.
 //
-// **Every section opens on the numbered rule**: the section's number in the
-// label face on the left, its name on the right, a hairline between, and then
-// the heading. A reader scanning the page reads the rules as a contents list.
+// **Every section opens on a labelled rule**: its name in the label face, a
+// hairline filling the rest of the line, then the heading. No number — see
+// `SectionRule`.
 //
 // **The grounds alternate**, as the pre-revamp site's did ("band the site
 // light and dark", 0dc35ce): the page ground, a warm tint and navy, so no two
@@ -31,7 +31,6 @@ import Illustration from "@/components/marketing/Illustration";
 import PhotoSlot from "@/components/marketing/PhotoSlot";
 import { Rise } from "@/components/marketing/primitives";
 import { photoSlot } from "@/content/photoSlots";
-import { sectionNumber } from "@/content/marketing";
 import { SITE_PARTS as IDS } from "@/constants/testIds";
 
 /** The one transition a public control may have. */
@@ -91,23 +90,31 @@ export function Label({ children, className = "", testid }) {
     );
 }
 
-/** "(02) ──────── How it works" */
-export function SectionRule({ n, label, className = "" }) {
+/**
+ * "How it works ────────" — the label, then a hairline filling the rest.
+ *
+ * **No number.** Sections used to be numbered "(01)", "(02)" down every page,
+ * which made the site read as one argument in order — and made every page
+ * carry arithmetic (a section added or switched off renumbered everything
+ * below it) for furniture that told a reader nothing they could act on.
+ * Numbering stays only where it encodes a real sequence: the process spine's
+ * steps. This remains the one place the label face appears on a public page.
+ */
+export function SectionRule({ label, className = "" }) {
     return (
-        <div data-testid={IDS.sectionRule(n)} className={`flex items-center gap-4 ${className}`}>
-            <span className="mkt-label shrink-0 text-muted-foreground">{sectionNumber(n)}</span>
-            <span aria-hidden className="h-px flex-1 bg-border" />
+        <div data-testid={IDS.sectionRule(label)} className={`flex items-center gap-4 ${className}`}>
             <span className="mkt-label shrink-0 text-muted-foreground">{label}</span>
+            <span aria-hidden className="h-px flex-1 bg-border" />
         </div>
     );
 }
 
 /** The rule, an `h2` and an optional lead — the head of every section. The
  * heading rises in once; the rule and the lead do not move. */
-export function SectionHead({ n, label, title, lead, className = "", titleClassName = "" }) {
+export function SectionHead({ label, title, lead, className = "", titleClassName = "" }) {
     return (
         <div className={className}>
-            <SectionRule n={n} label={label} />
+            <SectionRule label={label} />
             <Rise>
                 <h2 className={`mkt-h2 mt-8 max-w-5xl text-heading md:mt-10 ${titleClassName}`}>{title}</h2>
             </Rise>
@@ -159,7 +166,7 @@ export function Cta({ ask, variant = "primary", testid, className = "", onClick 
  * `art` puts an illustration beside the heading — the guarantees band on
  * /for-brands carries the door check-in drawing, as the old page did.
  */
-export function PromiseBand({ n, label, title, items, testid, itemTestid, art }) {
+export function PromiseBand({ label, title, items, testid, itemTestid, art }) {
     return (
         // The hairline marks the edge where this band meets a navy photo panel,
         // which otherwise runs straight into it.
@@ -167,11 +174,11 @@ export function PromiseBand({ n, label, title, items, testid, itemTestid, art })
             <Wrap className="py-20 md:py-28">
                 {art ? (
                     <div className="grid gap-10 lg:grid-cols-12 lg:items-end lg:gap-16">
-                        <SectionHead n={n} label={label} title={title} className="lg:col-span-7" />
+                        <SectionHead label={label} title={title} className="lg:col-span-7" />
                         <Illustration name={art} className="order-first lg:order-none lg:col-span-5" />
                     </div>
                 ) : (
-                    <SectionHead n={n} label={label} title={title} />
+                    <SectionHead label={label} title={title} />
                 )}
                 <ul className="mt-14 grid gap-10 md:grid-cols-3 md:gap-12">
                     {items.map((item, i) => (
@@ -347,11 +354,11 @@ export function Faq({ items, testid, itemTestid }) {
 }
 
 /** The closing band: the rule, one big line, one small one, and the asks. */
-export function Closing({ n, label, title, line, children, testid, id, ground = "page" }) {
+export function Closing({ label, title, line, children, testid, id, ground = "page" }) {
     return (
         <Band ground={ground} id={id} track="close" testid={testid}>
             <Wrap className="py-20 md:py-32">
-                {n ? <SectionRule n={n} label={label} className="mb-10" /> : null}
+                {label ? <SectionRule label={label} className="mb-10" /> : null}
                 <Rise>
                     <h2 className="mkt-display max-w-5xl text-heading">{title}</h2>
                 </Rise>

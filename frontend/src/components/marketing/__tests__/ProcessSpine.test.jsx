@@ -67,7 +67,7 @@ function render() {
     act(() =>
         root.render(
             <MemoryRouter>
-                <ProcessSpine n={4} />
+                <ProcessSpine />
             </MemoryRouter>,
         ),
     );

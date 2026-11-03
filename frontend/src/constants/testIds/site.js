@@ -54,7 +54,8 @@ export const CREATORS_PAGE = {
 };
 
 export const SITE_PARTS = {
-	sectionRule: (n) => `section-rule-${n}`,
+	// Keyed on the label, slugged: "How it works" → section-rule-how-it-works.
+	sectionRule: (label) => `section-rule-${String(label).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}`,
 	stickyCta: 'sticky-cta',
 	stickyCtaButton: 'sticky-cta-button',
 };

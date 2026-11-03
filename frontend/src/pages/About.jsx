@@ -8,12 +8,12 @@
 //
 // Three sections and one ask:
 //
-//   01 who built it — the heading, the scroll-inked sentence and the drawing
-//      it had on home (`why-production`)
-//   02 the studio — what WeAre Studios does for brands, its name linking out
-//      when `STUDIO_URL` is set and plain text otherwise
-//   03 the tool — that this platform is the one the studio built to run its
-//      own campaigns, and the one WhatsApp ask
+//   - who built it — the heading, the scroll-inked sentence and the drawing
+//     it had on home (`why-production`)
+//   - the studio — what WeAre Studios does for brands, its name linking out
+//     when `STUDIO_URL` is set and plain text otherwise
+//   - the tool — that this platform is the one the studio built to run its
+//     own campaigns, and the one WhatsApp ask
 //
 // **Every word is in `ABOUT` in `content/marketing.js`**, held to its own
 // word budget, and every claim is one the site already makes. **No person is
@@ -51,7 +51,7 @@ export default function About() {
         <MarketingPage testid={IDS.about} title={meta.title} description={meta.description} path="/about">
             <Band ground="page" track="about-who-built-it" testid={IDS.aboutClients}>
                 <Wrap className="pb-20 pt-10 md:pb-28 md:pt-14">
-                    <SectionRule n={1} label={clients.label} />
+                    <SectionRule label={clients.label} />
                     <Rise>
                         <h1 className="mkt-h1 mt-8 max-w-4xl text-heading md:mt-10">{clients.title}</h1>
                     </Rise>
@@ -66,7 +66,7 @@ export default function About() {
 
             <Band ground="tint" track="about-studio" testid={IDS.aboutStudio}>
                 <Wrap className="py-20 md:py-28">
-                    <SectionHead n={2} label={studio.label} title={studio.title} />
+                    <SectionHead label={studio.label} title={studio.title} />
                     <p className="mkt-lead mt-6 max-w-2xl text-muted-foreground">
                         <StudioName /> {studio.line}
                     </p>
@@ -75,7 +75,7 @@ export default function About() {
 
             <Band ground="page" track="about-tool" testid={IDS.aboutTool}>
                 <Wrap className="py-20 md:py-28">
-                    <SectionHead n={3} label={tool.label} title={tool.title} />
+                    <SectionHead label={tool.label} title={tool.title} />
                     <p className="mkt-lead mt-6 max-w-2xl text-muted-foreground">{tool.line}</p>
                     <Cta ask={ASK.talkWhatsapp} testid={IDS.aboutAsk} className="mt-10" />
                 </Wrap>

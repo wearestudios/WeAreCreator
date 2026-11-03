@@ -1,6 +1,6 @@
 // The homepage's "How it works": a scroll-driven process spine.
 //
-// A navy band. The head on the left — the numbered rule, the heading with
+// A navy band. The head on the left — the labelled rule, the heading with
 // its italic phrase, one line — then a switch between the brand's five steps
 // and the creator's, a 1px spine down the middle with a numbered node per
 // step, and the steps alternating sides: odd steps have the mockup on the
@@ -195,7 +195,7 @@ const Step = memo(function Step({ step, i, active, entered, reduced, playKpis, s
     );
 });
 
-export default function ProcessSpine({ n, id = "how-it-works" }) {
+export default function ProcessSpine({ id = "how-it-works" }) {
     const copy = HOME.processSpine;
     const reduced = useReducedMotion();
     const [tab, setTab] = useState(() =>
@@ -388,7 +388,7 @@ export default function ProcessSpine({ n, id = "how-it-works" }) {
         <Band ground="navy" id={id} track="how" testid={IDS.section} className="scroll-mt-16 overflow-x-clip">
             <div ref={sectionRef} className="py-20 md:py-[120px]">
                 <Wrap>
-                    <SectionRule n={n} label={copy.label} />
+                    <SectionRule label={copy.label} />
                     <Rise>
                         <h2 className="mkt-h2 mt-8 max-w-4xl text-brand-white/90 md:mt-10">
                             {copy.title}{" "}

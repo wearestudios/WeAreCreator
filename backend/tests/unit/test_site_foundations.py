@@ -186,12 +186,13 @@ class TestFonts:
         assert "JetBrains" not in TAILWIND.read_text()
 
     def test_the_label_face_is_the_section_rule_and_nothing_else(self):
-        """**JetBrains Mono and tracked capitals appear only in the numbered
-        section rules** on the public pages. The hero carried five more uses —
+        """**JetBrains Mono and tracked capitals appear only in the section
+        rules** on the public pages. The hero carried five more uses —
         the eyebrow, the note, the Built-for line, the rail numbers, the card's
         day labels — and read as noise; everything that is not a rule is
         sentence case in Inter Tight now. `SectionRule` is the one component
-        that may say `mkt-label`, twice (the number and the name), and no
+        that may say `mkt-label`, once (the name — the number went when the
+        rules stopped being numbered), and no
         public page or marketing component may letter-space capitals by hand.
 
         **Two more, by the brief that built the process spine**: its step
@@ -206,13 +207,13 @@ class TestFonts:
             n = len(re.findall(r"\bmkt-label\b", _code(p.read_text())))
             if n:
                 uses[p.name] = n
-        assert uses == {"SiteParts.jsx": 2, "ProcessSpine.jsx": 1}, uses
+        assert uses == {"SiteParts.jsx": 1, "ProcessSpine.jsx": 1}, uses
         spine = _code((SRC / "components" / "marketing" / "ProcessSpine.jsx").read_text())
         node = spine[spine.index("mkt-label") - 200 : spine.index("mkt-label") + 200]
         assert "IDS.node(n)" in node, "the spine's one label is the step number"
         parts = _code((SRC / "components" / "marketing" / "SiteParts.jsx").read_text())
         rule = parts[parts.index("export function SectionRule") : parts.index("export function SectionHead")]
-        assert rule.count("mkt-label") == 2
+        assert rule.count("mkt-label") == 1
         mounted = [SRC / "pages" / f for f in ("Home.jsx", "ForBrands.jsx", "ForCreators.jsx", "About.jsx")] + [
             SRC / "components" / "marketing" / f
             for f in ("SiteParts.jsx", "siteMocks.jsx", "StickyCta.jsx",
