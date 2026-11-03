@@ -98,6 +98,11 @@ export const FOOTER_COLUMNS = [
     {
         heading: "Company",
         links: [
+            // **The only link to `/about`, on purpose.** It is the studio's
+            // story rather than the product's argument, so it is not in the
+            // navbar (`MARKETING_LINKS`): somebody weighing up the product is
+            // not sent away from it to read about us.
+            { label: "About", to: "/about" },
             { label: "Terms", to: "/terms" },
             { label: "Privacy", to: "/privacy" },
         ],
@@ -123,7 +128,7 @@ export const MARKETING_LINKS = [
 ];
 
 /** The marketing pages, for the sitemap and for tests that walk them all. */
-export const MARKETING_PATHS = ["/", "/for-brands", "/for-creators"];
+export const MARKETING_PATHS = ["/", "/for-brands", "/for-creators", "/about"];
 
 /**
  * Paths that used to be pages, and where each one lives now.

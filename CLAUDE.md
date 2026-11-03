@@ -1245,14 +1245,108 @@ campaigns predate the field) and `PUBLIC_CAMPAIGN_QUERY` is the one filter,
 
 ## The marketing site
 
-Three pages, `/contact` and a designed 404, **all React routes**. Home (`/`)
-is brands-first with one band for creators; `/for-brands` and
-`/for-creators` each argue to one reader; `/contact` is the form plus the two
-partners' numbers. Registered in `App.js` and linked with `<Link>` — see "Why
-they are not server-rendered" below, which is a reversal worth reading before
-reinstating anything. Much of what follows describes the six-page site the
-rebuild replaced and is kept as the record of why; "The rebuild" is the
-current state, and where the two disagree it wins.
+Three pages, `/contact`, `/about` and a designed 404, **all React routes**.
+Home (`/`) is brands-first and two sections long — see "The two-section home",
+which is the current state of that page and wins wherever an older section
+here disagrees; `/for-brands` and `/for-creators` each argue to one reader;
+`/contact` is the form plus the two partners' numbers; `/about` is "who built
+it", reached from the footer only. Registered in `App.js` and linked with
+`<Link>` — see "Why they are not server-rendered" below, which is a reversal
+worth reading before reinstating anything. Much of what follows describes the
+six-page site the rebuild replaced and is kept as the record of why; "The
+rebuild" is the current state of the audience pages, and where the two
+disagree it wins.
+
+### The two-section home
+
+**Home is the hero slider, then how it works, then the footer** — `01` and
+`02`, nothing else. It used to be eight sections and told its story three
+times: the problem band, the promise band, the creator door and the close each
+restated what the process spine already walks through, and at 390px the page
+was 11,687px long. Cut to two it is 5,131px (4,370 at 1440, from 9,676). The
+story the removed bands told is now in the slider, one slide each; "who built
+it" is `/about`.
+
+- **The slider** is `components/marketing/HeroSlider.jsx`: the deal (the
+  page's only h1, "chasing" still drawn by `WipeWord`, the `DealCard` with
+  the agreed fee as its one large figure), the problem (the spreadsheet and
+  the DMs against the same campaign here), the shoot (the `home-on-location`
+  photo slot, `bare`, in a 3:2 frame with the booking drawn over it) and,
+  while any AI switch is on, what the AI does. **The asks and "Free to post.
+  No retainer." sit outside the stage and never change per slide.** Copy is
+  `HOME.slides` (the manifest, the tabs, the badge, slide C's overlays) plus
+  the slides' own blocks — `hero`, `card`, `swap`, `ai`; slide C's headline is
+  its photo slot's.
+- **One engine, generalised rather than written twice.** `lib/heroDeck.js` is
+  the old hero deck's reducer with one addition, `stopped`: a tab click or an
+  arrow key ends the auto-advance for good, while hover and focus only pause
+  it. 7000ms hold, one `setTimeout` chain, at most two slides painted, a 400ms
+  crossfade with a 12px rise (`heroSlideIn`/`heroSlideOut`, the site's one
+  curve). `test_hero_slider.py` drives it in node. The four-step card it used
+  to drive — `HeroDeck`, `heroScreens`, `StepRail`, `HOME.deck` — is deleted.
+- **How the stage holds still.** Every slide's words sit in one grid cell
+  through a subgrid, `invisible` when inactive, so the words' row is the
+  tallest slide's at every width and the visual never moves — on a phone the
+  headline box is the tallest slide's, as the brief asked. Visuals sit in
+  fixed-height frames (21rem phone, 24rem from `sm`, 26rem between `lg` and
+  `xl`). **Tailwind's `row-span-*` resets the start line**, so the slide
+  carries `lg:col-start-1 lg:row-start-1` after its spans or the slides stack
+  into four rows at `lg`.
+- **Slide A is in the page; B–D are the `hero-slides` chunk, asked for when
+  the browser is idle.** Requested from a bare effect it started before the
+  LCP was recorded and cost the h1 157ms in Lighthouse's median; from
+  `requestIdleCallback` (falling back to `load`) the median is 3887ms against
+  main's 4045ms, CLS 0.0000 in all ten runs, interleaved, mobile, behind gzip.
+- **A compact variant below `sm`, not the desktop card scaled**: rows,
+  bubbles, the sparkle chips and padding drop, and nothing is under 12px.
+  Done with `max-sm:` classes, so there is one tree and nothing to measure.
+- **ARIA**: the region is `aria-roledescription="carousel"`, each slide a
+  `tabpanel` with `aria-roledescription="slide"` and "n of N", the tabs a
+  `tablist` with a roving `tabIndex`. Inactive slides are `aria-hidden` and
+  `inert`. Each tab's 2px track fills in the brand red over the hold.
+- **Reduced motion**: no auto-advance, no progress animation (the active
+  track is full and still), an instant swap. Verified by emulation: one slide
+  for 16s and zero running animations.
+- **The AI is a slide, not a section.** Slide D exists while any switch is on
+  and is **absent, not hidden**, with none; it lists only the live features,
+  each with a drawn example, and **no percentage** — the scorer's number ranks
+  a shortlist and is not a figure a brand is shown. The badge ("AI-powered
+  creator marketplace", on every slide) and the tab's "AI-powered" follow the
+  two-switch rule; with one switch the tab reads "What the AI does". The
+  spine's feature row lost its three AI cards and is the six product features.
+- **The spine sits on the footer, and both are navy.** That is the one pair of
+  same-ground neighbours on home, deliberately: the beam footer's 1px accent
+  rule is the divider. `test_site_restoration.py` now counts the footer as a
+  ground and allows exactly one same-ground pair per page — on the audience
+  pages it is their navy close and the footer, which is how they already
+  stood.
+- **The sticky phone ask hides once the footer is on screen** (an observer on
+  `[data-testid="site-footer"]`), as well as at a close where a page has one,
+  so the audience pages behave as before.
+- **Removed from home, and why each is not elsewhere**: `ComparisonBand` and
+  the before/after strip (slide B tells it — both deleted), the home photo band
+  (slide C), the "What the AI does" section (slide D), the promise band (its
+  three claims are made by the slides and the spine; `PromiseBand` stays on
+  `/for-brands`), the creator door and the close (creators reach their page
+  from the navbar and the footer; `HOME.creatorDoor`, `HOME.close`,
+  `ASK.forCreators` and `ASK.haveUsRunIt` are deleted), and "who built it".
+- **Budget**: home 463 (453 used) — the first time it went down. `/about` 160
+  (82 used).
+
+### /about, from the footer only
+
+`pages/About.jsx`, `ABOUT` in the content module: "who built it" moved whole
+(the heading, the FillText sentence — still the city sweep's second verbatim
+exemption, now on this page — and the `why-production` drawing), then what
+the studio does for brands and that this platform is the tool it built for its
+own campaigns, then one ask, `ASK.talkWhatsapp`. Every claim is one the site
+already makes; **no person and no client is named**, and a test reads the
+partners' names out of `CONTACT_PEOPLE` to hold that. "WeAre Studios" links to
+`STUDIO_URL` when it is set and is plain text otherwise. It is in
+`FOOTER_COLUMNS` (under Company, mirrored in `server.py`), `MARKETING_PATHS`
+on both sides (so the sitemap lists it), `TRACKED_PATHS` and the light-set
+paths — and **not** in `MARKETING_LINKS`: somebody weighing up the product is
+not sent away from it to read about us.
 
 ### The rebuild: three pages, one copy module
 
@@ -1279,13 +1373,13 @@ evaluated in node rather than regexing JSX.
   `test_site_foundations.py` allows `mkt-label` in `SectionRule` alone and
   sweeps the mounted marketing files for hand-tracked capitals; a browser
   count finds every mono text run inside a rule (2 per rule: number, name).
-- **Home is eight sections**: hero, the swap ("A campaign is not a
-  spreadsheet and sixty DMs"), a full-bleed photograph, the four steps, the
-  navy band of what holds, who built it, the creator door, the close.
-  `/for-brands` is shortlist, pricing, report, photo, promises, comparison,
+- **Home is two sections** — see "The two-section home". (It was eight:
+  hero, the swap, a photograph, the steps, what holds, who built it, the
+  creator door, the close.) `/for-brands` is shortlist, pricing, report, photo, promises, comparison,
   FAQ, close; `/for-creators` is briefs, the money band, protections, photo,
   payouts, record, close.
-- **The hero is five things and three type styles.** The h1 with one
+- **The hero was five things and three type styles** — it is the slider
+  now, see "The two-section home"; what follows is the record. The h1 with one
   `WipeWord` on "chasing", one lead, the two asks, one quiet line, and the
   card — Fraunces display, Inter Tight lead, Inter Tight UI. **No eyebrow,
   no Built-for line**: they were removed in a subtraction pass. The card is
@@ -1305,8 +1399,8 @@ evaluated in node rather than regexing JSX.
   (`showIf`) is dropped with it. In development `<Known>` draws a marker so
   the gap is visible. The fee is never typed into a page.
 - **No real business is named on the homepage.** The client marquee and the
-  three client cards were removed; "who built it" is its rule, its heading
-  and the one FillText sentence. `Marquee` and `FACTS.confirmedClients` are
+  three client cards were removed; "who built it" — its rule, its heading
+  and the one FillText sentence — is on `/about` now. `Marquee` and `FACTS.confirmedClients` are
   left in place, unused, for later. Every name in the drawn product UI
   (Kiran, Priya, Rahul, Tanvi) is invented, no WeAre Studios team member is
   named anywhere, and a test sweeps all three pages for the client names.
@@ -1315,8 +1409,9 @@ evaluated in node rather than regexing JSX.
   this only for Bengaluru?".
 - **The phone gets a sticky bottom ask** (`StickyCta`): "Post a brief" on
   home and `/for-brands`, "Join free" on `/for-creators`. It appears once the
-  hero is above the viewport and goes away when the close is on screen or
-  passed, because both already carry the ask at full size. Below `md` only,
+  hero is above the viewport and goes away when the close or the footer is
+  on screen or passed — home has no close, so the footer is what hides it
+  there. Below `md` only,
   a 48px target, no animation — it is not one of the six primitives.
 - **The mobile menu is a real dialog**: focus is trapped while it is open,
   Escape closes it, and so does any change of path or hash.
@@ -1451,11 +1546,14 @@ we charge, and what comes back".
 - **An audience page asks once, in the same words, twice.** Hero and close, both
   spread from one `ASK` constant so "the same words" is structural. Two
   differently-worded CTAs is a choice of doors.
-- **A both-sides page routes instead of asking.** Home and `/how-it-works` are
-  read by both, so they end with `TwoPaths` — the one place competing buttons
+- **A both-sides page routes instead of asking.** *(Superseded for home: it
+  is brands-first and has no close at all; creators reach their page from the
+  navbar and the footer.)* Home and `/how-it-works` were
+  read by both, so they ended with `TwoPaths` — the one place competing buttons
   are right, because picking for the visitor is the mistake. `TwoPaths` must
   not appear on an audience page; a test enforces both halves.
 - **Home was at most two screens, and the film is the deliberate exception.**
+  *(Record; home is two sections now — see "The two-section home".)*
   Hero, the counted proof strip, the scroll film, one problem-and-promise
   section, the close. Everything except the film still answers the old rule —
   it was 1,780px of content before the film was added — and the film's own
@@ -1700,8 +1798,8 @@ holds all of it.
   `components/marketing/Illustration.jsx` draws one with an empty `alt`
   (decorative: the text beside it already says what it shows), the box
   reserved on the frame, lazy unless it is a hero, and a `Rise` entrance.
-  Home: the four steps (briefing, table talk, shoot day, payment) and "who
-  built it" (production). /for-brands: the hero (city at dusk), the
+  Home had the four steps (retired with the spine) and "who built it"
+  (production, on `/about` now); home has no drawing of its own any more. /for-brands: the hero (city at dusk), the
   shortlist (roster tablet), the guarantees band (door check-in), the
   report (report desk). /for-creators: the hero (profile phone), "Briefs
   that fit" (café shoot), "Getting paid properly" (fees close-up). At 390px
@@ -1729,7 +1827,8 @@ holds all of it.
     version's comparison with "35–60%" elsewhere was unsourced and is gone.
   - `PayoutClock` on /for-creators draws approval to paid, a tick a day, over
     `CREATOR_PAYOUT_DAYS`. Its "90 days elsewhere" was unsourced and is gone.
-  - **The hero card cycles the four steps** — #39's `HeroDeck` and
+  - *(Retired since: the hero is the slider — see "The two-section home".)*
+    **The hero card cycles the four steps** — #39's `HeroDeck` and
     `heroScreens`: one timer, 7000ms dwell (`HOLD_MS`), at most two screens
     painted, pause on hover and focus. The h1 and its drawn word are
     untouched. The screens' words are `HOME.deck` and the deal is `HOME.card`.
@@ -1747,8 +1846,9 @@ holds all of it.
   bytes, which exaggerated a 4.8KB gzip difference into 130ms.
 - **Bands.** `Band` in `SiteParts.jsx` is the one way a section picks its
   ground: the page ground, the warm tint (`--muted`) or navy (the dark token
-  set via `data-surface`). No two neighbours share one, and navy is at most
-  twice a page. Every `Band` carries `track`, so `section_view` names it.
+  set via `data-surface`). No two neighbours share one — except the last
+  section and the navy footer, one pair per page, counted by the test — and
+  navy is at most twice a page. Every `Band` carries `track`, so `section_view` names it.
 - **Both sides of every step**: each step on home shows a line for the brand
   (`line`) and one for the creator (`creatorLine`), and `/how-it-works`
   redirects to `/#how-it-works`, which `Home` scrolls to on arrival.
@@ -1760,9 +1860,10 @@ holds all of it.
 
 ### The process spine
 
-Home's section 04, "How it works", is `components/marketing/ProcessSpine.jsx`:
+Home's section 02, "How it works", is `components/marketing/ProcessSpine.jsx`:
 a navy band with a 1px spine, five numbered steps a side switched between
-brands and creators, the before/after strip and the feature row. Every word
+brands and creators, and the feature row of six product features (the
+before/after strip and the three AI cards went to the hero slider). Every word
 is `HOME.processSpine`; each mockup is a `process/StepCard*.jsx` drawn from
 the step's `card`, which counts as drawn product UI, not budget.
 
@@ -1779,9 +1880,10 @@ the step's `card`, which counts as drawn product UI, not budget.
 - Every claim on it is held by `test_the_spine_claims_only_what_the_product_does`
   — the payout window, the revision cap, contact hiding, barter opt-in, and
   "we shortlist" because every brand brief is ours to run.
-- **Navy three times on home** was that brief's choice; the AI section sits
-  between the spine and the promise band, and a test fails if every AI switch
-  goes off and the two navy bands would touch.
+- **Navy once on home, and it sits on the navy footer.** The AI section and
+  the promise band are gone, so no switch can make two navy sections touch;
+  the spine-to-footer pair is the deliberate exception, divided by the beam
+  footer's accent rule.
 
 ### Measured, not assumed
 
@@ -1895,6 +1997,10 @@ no longer a second renderer; it is what **builds the sitemap**, alongside
 either. `FooterLink` picks `<a>` over `<Link>` on `link.external`, which today
 marks only the mailto — the audience pages were marked too while the backend
 rendered them.
+
+`/about` is linked here and nowhere else in the chrome — under Company,
+mirrored in `server.py` — because it is the studio's story rather than the
+product's argument.
 
 Four columns now rather than three: "Why WeAre Creators" and "How it works"
 used to be the audience pages under borrowed names, because those were the only two pages
@@ -4557,16 +4663,18 @@ walks every string in the content module that contains the word and names the
 switch behind it — an `ai*` field, the home `ai` section, a step's `ai` list,
 or a FAQ item's `aiKey`. A new "AI" sentence with no switch fails CI.
 
-- **"AI-powered" is a two-switch claim.** Home's lead, title and description
-  swap to their `ai*` wording only while at least two switches are on; one
+- **"AI-powered" is a two-switch claim.** Home's lead, title, description,
+  hero badge and AI tab use their `ai*` wording only while at least two
+  switches are on; one
   feature is not a product powered by it. The h1 never changes, and no h1
   anywhere may say "AI".
-- **"What the AI does"** sits after How it works while at least one switch is
-  on, one card per live switch, each with its drawing (`why-planning` found
-  its place here). Everything after it renumbers by `shift`, so the section
-  rules stay a contents list; `HomeAiSection.test.jsx` renders 0–3 switches
-  and reads the numbers back.
-- **The AI never prices, approves or pays**, and the section's lead says so in
+- **"What the AI does" is the hero slider's last slide**, present while at
+  least one switch is on and absent otherwise, one row per live switch with a
+  drawn example and no percentage. It used to be a section after How it works
+  with a `shift` renumbering everything below it; both are gone, and
+  `why-planning` is unused again. `HomeHeroSlider.test.jsx` renders 0–3
+  switches.
+- **The AI never prices, approves or pays**, and the slide's lead says so in
   as many words: "People agree every fee, approve every post and pay every
   creator." A pattern test refuses the opposite claim.
 - /for-creators adds "Briefs are matched to what you post — cuisine, language

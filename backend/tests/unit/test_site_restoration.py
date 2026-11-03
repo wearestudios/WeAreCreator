@@ -41,6 +41,7 @@ PAGES = {
     "home": SRC / "pages" / "Home.jsx",
     "brands": SRC / "pages" / "ForBrands.jsx",
     "creators": SRC / "pages" / "ForCreators.jsx",
+    "about": SRC / "pages" / "About.jsx",
 }
 
 
@@ -82,8 +83,11 @@ def _illustrations():
 # The placements the restoration asked for, section by section.
 PLACED = {
     # The four step drawings left with the old "How it works": the process
-    # spine draws each step as product UI instead.
-    "home": {"why-production"},
+    # spine draws each step as product UI instead. "Who built it" and its
+    # drawing moved to /about; home's one picture is the photo slot inside the
+    # hero slider's "On location" slide.
+    "home": set(),
+    "about": {"why-production"},
     "brands": {"brands-city-dusk", "why-roster-tablet", "brands-door-checkin", "how-report-desk"},
     "creators": {"creators-profile-phone", "creators-cafe-shoot", "why-fees-closeup"},
 }
@@ -105,12 +109,15 @@ def test_each_page_places_its_illustrations(page):
     assert named == PLACED[page], (page, named ^ PLACED[page])
 
 
-def test_the_hero_deck_keeps_its_four_steps():
-    """The hero's card still cycles Offer → Agree → Deliver → Get paid; the
-    list moved from the retired "How it works" copy into the deck's own."""
-    keys = [i["key"] for i in _content()["HOME"]["deck"]["steps"]]
-    assert keys == ["offer", "agree", "deliver", "paid"]
-    assert set(keys) == set(_content()["HOME"]["deck"]["screen"])
+def test_the_hero_slider_tells_the_story_in_order():
+    """Was `test_the_hero_deck_keeps_its_four_steps`. The hero card that
+    cycled Offer → Agree → Deliver → Get paid is gone with its screens; the
+    whole hero slides now — the deal, the problem, the shoot, and the AI
+    while any switch is on — and the spine below tells the steps."""
+    slides = _content()["HOME"]["slides"]
+    assert [i["key"] for i in slides["items"]] == ["deal", "problem", "onLocation"]
+    assert [i["tab"] for i in slides["items"]] == ["The deal", "The problem", "On location"]
+    assert "deck" not in _content()["HOME"]
     assert "STEP_ART" not in _code(PAGES["home"])
 
 
@@ -128,7 +135,9 @@ def test_an_illustration_is_decorative_reserved_and_lazy_below_the_fold():
     eager = []
     for page, path in PAGES.items():
         eager += [(page, n) for n in re.findall(r'<Illustration name="([\w-]+)" eager', _code(path))]
-    assert sorted(eager) == [("brands", "brands-city-dusk"), ("creators", "creators-profile-phone")]
+    assert sorted(eager) == [
+        ("about", "why-production"), ("brands", "brands-city-dusk"), ("creators", "creators-profile-phone"),
+    ]
     assert "loading" not in _code(SRC / "content" / "illustrations.js")
 
 
@@ -198,19 +207,19 @@ def _static_imports(path: Path, seen=None):
 def test_the_homepage_first_paint_carries_no_animation_library():
     """The homepage's LCP is its h1. framer-motion is 36KB gzip; on the page
     whose first paint is a heading, putting it in front would be the one
-    regression this restoration must not cause. The deck reads the media query
-    itself, `Rise` is CSS, and the process spine that replaced the film is
-    CSS transitions driven by two observers — it is in the page's chunk and
-    brings no animation library with it."""
+    regression this restoration must not cause. The slider reads the media
+    query itself and crossfades in CSS, `Rise` is CSS, and the process spine
+    is CSS transitions driven by two observers — both in the page's chunk,
+    neither bringing an animation library with it."""
     loaded = _static_imports(PAGES["home"])
     assert "framer-motion" not in loaded
     assert MKT / "ProcessSpine.jsx" in loaded
     assert not (MKT / "CampaignFilm.jsx").exists()
-    # The deck's four screens are their own chunk too, into a frame already
-    # the right size: they are not needed to paint the h1. Measured: with
-    # them in the page's chunk the median LCP sat 18ms behind main's.
-    assert MKT / "heroScreens.jsx" not in loaded
-    assert 'webpackChunkName: "hero-screens"' in (MKT / "HeroDeck.jsx").read_text()
+    # Slides B–D are their own chunk, into frames already the right size:
+    # they are not needed to paint the h1. Slide A's card is in the page.
+    assert MKT / "HeroSlider.jsx" in loaded and MKT / "siteMocks.jsx" in loaded
+    assert MKT / "heroSlides.jsx" not in loaded
+    assert 'webpackChunkName: "hero-slides"' in (MKT / "HeroSlider.jsx").read_text()
     # The other two pages already load it for CountUp; the explaining pieces
     # there may use it.
     assert "framer-motion" in _static_imports(PAGES["brands"])
@@ -304,7 +313,7 @@ def _grounds(page):
     helpers = code[: code.index("export default function")]
     out = []
     tokens = re.finditer(
-        r"<(Hero|WhoBuiltIt|CreatorDoor|MoneyBand) |<Band ground=\"(\w+)\"|<PhotoBand |<ProcessSpine |<AiSection |"
+        r"<(Hero|WhoBuiltIt|CreatorDoor|MoneyBand) |<Band ground=\"(\w+)\"|<PhotoBand |<ProcessSpine |<AiSection |<HeroSlider |"
         r"<PromiseBand|<ComparisonBand[^>]*ground=\"([\w-]+)\"|<Closing\b([^>]*)>",
         body,
     )
@@ -316,6 +325,8 @@ def _grounds(page):
             out.append(t.group(2))
         elif t.group(0).startswith("<PhotoBand"):
             out.append("photo")
+        elif t.group(0).startswith("<HeroSlider"):
+            out.append(re.search(r'<Band ground="(\w+)"', (MKT / "HeroSlider.jsx").read_text()).group(1))
         elif t.group(0).startswith("<ProcessSpine"):
             out.append(re.search(r'<Band ground="(\w+)"', (MKT / "ProcessSpine.jsx").read_text()).group(1))
         elif t.group(0).startswith("<AiSection"):
@@ -327,29 +338,58 @@ def _grounds(page):
         else:
             m = re.search(r'ground="(\w+)"', t.group(4) or "")
             out.append(m.group(1) if m else "page")
+    # Every marketing page ends on the footer, which is navy
+    # (`PALETTE.ground` in MarketingFooter.jsx).
+    assert "MarketingPage" in code
+    out.append("footer")
     return out
 
 
+def _footer_is_navy():
+    footer = (MKT / "MarketingFooter.jsx").read_text()
+    return 'ground: "hsl(var(--brand-navy))"' in footer
+
+
+# The one pair of neighbours allowed to share a ground, per page. On home it
+# is the process spine and the footer: both navy, deliberately, with the beam
+# footer's 1px accent rule as the divider — the page ends on its argument and
+# the footer reads as its foot rather than a new band. **On the audience pages
+# it is the navy close and the footer**, which is how they already stood
+# before home was cut to two sections; recorded here rather than left implicit,
+# so a third pair anywhere fails.
+SAME_GROUND = {
+    "home": {(1, 2)},
+    "brands": {(8, 9)},
+    "creators": {(7, 8)},
+    "about": set(),
+}
+
+
 @pytest.mark.parametrize("page,expected", [
-    # How it works is the navy process spine, which the brief that built it
-    # asked for by colour; the AI section (tint) sits between it and the
-    # promise band. Navy three times on home is that brief's decision.
-    ("home", ["page", "tint", "photo", "navy", "tint", "navy", "tint", "navy", "page"]),
-    ("brands", ["page", "tint", "page", "tint", "photo", "navy", "page", "tint", "navy"]),
-    ("creators", ["page", "tint", "navy", "page", "photo", "tint", "page", "navy"]),
+    # Two sections: the hero slider on the page ground, then the navy spine,
+    # then the navy footer.
+    ("home", ["page", "navy", "footer"]),
+    ("brands", ["page", "tint", "page", "tint", "photo", "navy", "page", "tint", "navy", "footer"]),
+    ("creators", ["page", "tint", "navy", "page", "photo", "tint", "page", "navy", "footer"]),
+    ("about", ["page", "tint", "page", "footer"]),
 ])
 def test_the_grounds_alternate_and_navy_is_at_most_twice(page, expected):
     grounds = _grounds(page)
     assert grounds == expected, grounds
-    for a, b in zip(grounds, grounds[1:]):
-        assert a != b, (page, grounds)
-    assert grounds.count("navy") <= (3 if page == "home" else 2)
+    assert _footer_is_navy()
+    painted = ["navy" if g == "footer" else g for g in grounds]
+    same = {(i, i + 1) for i, (a, b) in enumerate(zip(painted, painted[1:])) if a == b}
+    assert same == SAME_GROUND[page], (page, grounds, same)
+    assert grounds[:-1].count("navy") <= 2
     if page == "home":
-        # The tint between the spine and the promise band is the AI section,
-        # which renders while any switch is on. Every switch off would put
-        # two navy bands side by side: hold the dependency where it lives.
-        switches = re.search(r"export const AI_FEATURES = \{(.*?)\};", (SRC / "content" / "marketing.js").read_text(), re.S)
-        assert ": true" in switches.group(1), "the spine and the promise band would touch"
+        # The spine is the section before the footer, and nothing else is
+        # navy: the AI is a slide inside the hero now, not a tint between
+        # the spine and a promise band, so no switch can make two navy
+        # sections touch.
+        code = _code(PAGES["home"])
+        body = code[code.index("export default function") :]
+        assert body.index("<ProcessSpine") > body.index("<HeroSlider")
+        assert "PromiseBand" not in code and "AiSection" not in code
 
 
 def test_the_bands_are_the_existing_tokens():
@@ -382,7 +422,7 @@ def test_every_section_reports_a_view_by_name(page):
     assert "data-track-section={track}" in parts
     assert "data-track-section={`photo-${id}`}" in parts
     assert 'track="promises"' in parts and 'track="close"' in parts
-    assert 'data-track-section="problem"' in _code(MKT / "ComparisonBand.jsx")
+    assert '<Band ground="page" id="hero" track="hero"' in _code(MKT / "HeroSlider.jsx")
     spine = _code(MKT / "ProcessSpine.jsx")
     assert "<section" not in spine and 'track="how"' in spine
 
@@ -423,10 +463,14 @@ def test_reduced_motion_resolves_every_restored_piece():
     css = (SRC / "index.css").read_text()
     reduced = "\n".join(re.findall(r"@media \(prefers-reduced-motion: reduce\) \{(.*?)\n\}", css, flags=re.S))
     assert ".mkt-rise" in reduced
-    assert '[style*="heroWipe"]' in reduced and '[style*="heroProgress"]' in reduced
-    deck = _code(MKT / "HeroDeck.jsx")
-    assert "if (!autoAdvances({ reduced, paused })) return undefined;" in deck
-    assert "(prefers-reduced-motion: reduce)" in deck
+    assert '[style*="heroSlide"]' in reduced and '[style*="heroProgress"]' in reduced
+    hero = _code(MKT / "HeroSlider.jsx")
+    assert "if (!autoAdvances({ reduced, paused, stopped: state.stopped })) return undefined;" in hero
+    assert "(prefers-reduced-motion: reduce)" in hero
+    # No crossfade and no progress animation: the reducer never sets
+    # `leaving`, and the fill is drawn only while the clock runs.
+    assert "const incoming = active && state.leaving !== null && !reduced;" in hero
+    assert "const running = on && !reduced && !state.stopped;" in hero
     spine = _code(MKT / "ProcessSpine.jsx")
     assert 'const state = reduced ? "full"' in spine
     assert 'fill.style.transform = "scaleY(1)"' in spine

@@ -1,5 +1,5 @@
 // The homepage's "How it works": the process spine, its switch, the
-// before/after strip and the feature row.
+// feature row.
 
 export const PROCESS = {
 	section: 'process-section',
@@ -13,8 +13,6 @@ export const PROCESS = {
 	spine: 'process-spine',
 	spineFill: 'process-spine-fill',
 	kpi: (i) => `process-kpi-${i}`,
-	beforeAfter: 'process-before-after',
-	stripCta: 'process-strip-cta',
 	featureRow: 'process-feature-row',
 	feature: (key) => `process-feature-${key}`,
 	featurePrev: 'process-feature-prev',

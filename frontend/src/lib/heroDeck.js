@@ -1,59 +1,70 @@
-// The hero deck's state, as pure functions.
+// The hero slider's state, as pure functions.
 //
-// **The deck rotates the stage of the job, never the sector.** It used to
-// rotate the sector — eight slides reading Retail, Hospitality, Travel, drawn
-// from `CATEGORY_OPTIONS` — and the sector is the one thing a visitor already
-// knows about themselves, so watching it change taught them nothing. Four
-// fixed steps now, Offer → Agree → Deliver → Get paid, which is what they came
-// to find out. Adding a sector touches nothing here, which is the point: this
-// file imports no category list and never will.
+// **One engine, generalised rather than written twice.** This drove the old
+// hero card's four step screens (Offer, Agree, Deliver, Get paid); it now
+// drives the homepage's hero slider — the deal, the problem, the shoot and,
+// while any AI switch is on, the AI — which is the whole hero rather than a
+// card beside it. The rules carried over unchanged, and one was added:
 //
-// Pure and dependency-free so the rules that matter can be *run* rather than
-// read — `test_hero_deck.py` loads this file into node and drives it:
-//
-//   - **At most two slides are mounted, ever.** `painted` is the outgoing slide
-//     and the incoming one during a wipe, and the active one alone otherwise.
-//     The DOM product screens are heavier than the images they replaced, so
-//     the two-layer budget the old slider earned is held, not relaxed.
+//   - **At most two slides are painted, ever.** `painted` is the outgoing slide
+//     and the incoming one during a crossfade, and the active one alone
+//     otherwise. The drawn visuals are DOM, heavier than the pictures they
+//     replaced, so the two-layer budget the old slider earned is held.
 //   - **One timer.** The provider runs a single `setTimeout` chain off
 //     `autoAdvances`; nothing else in the hero may own a clock. The 7000ms /
 //     4000ms split between a slider and a headline is the sync defect this
-//     whole arrangement exists to have removed.
-//   - **Reduced motion never auto-advances.** Step 01, and the rail does the
-//     switching — with no wipe, so there is never a second layer either.
+//     arrangement exists to have removed.
+//   - **Reduced motion never auto-advances.** Slide one, and the tabs do the
+//     switching — with no crossfade, so there is never a second layer either.
+//   - **A person choosing a slide stops the clock for good** (`stopped`). A
+//     tab click or an arrow key is somebody reading on purpose; moving the
+//     page out from under them seven seconds later is the slider arguing with
+//     its reader. Hover and focus only *pause* it; a choice ends it.
+//
+// Pure and dependency-free so the rules that matter can be *run* rather than
+// read — `test_hero_slider.py` loads this file into node and drives it.
 
-/** The one hold: how long each step's screen is on before the next. 7000ms,
- *  the old `HeroSlider`'s dwell — long enough to read a screen, short enough
- *  that a visitor who stays sees the whole job go round. */
+/** The one hold: how long each slide is on before the next. 7000ms, the old
+ *  slider's dwell — long enough to read a slide, short enough that a visitor
+ *  who stays sees the whole story go round. */
 export const HOLD_MS = 7000;
 
-/** How long the wipe between two screens takes. */
-export const WIPE_MS = 700;
+/** How long the crossfade between two slides takes: the entrance band's
+ *  400ms, on the site's one curve. */
+export const SWAP_MS = 400;
 
-/** The deck's resting state: step 01, nothing leaving. */
-export const INITIAL = { active: 0, leaving: null };
+/** The resting state: slide one, nothing leaving, the clock running. */
+export const INITIAL = { active: 0, leaving: null, stopped: false };
 
 /**
  * The next state.
  *
- *   { type: "go", to, reduced }      the rail, or the timer
- *   { type: "advance", count, reduced }
- *   { type: "settle" }               the wipe finished
+ *   { type: "go", to, reduced, chosen }   a tab or an arrow key (`chosen`),
+ *                                         or the timer
+ *   { type: "advance", count, reduced }   the timer
+ *   { type: "settle" }                    the crossfade finished
  *
- * Going to the slide already showing is a no-op, not a wipe of a slide over
- * itself. Under reduced motion a change replaces the slide outright, so
- * `leaving` is never set and there is never a second layer to paint.
+ * Going to the slide already showing is a no-op, not a crossfade of a slide
+ * over itself — though choosing it still stops the clock, because the reader
+ * said where they want to be. Under reduced motion a change replaces the
+ * slide outright, so `leaving` is never set and there is never a second layer
+ * to paint.
  */
 export function deckReducer(state, action) {
     switch (action.type) {
         case "go": {
-            if (action.to === state.active) return state;
+            const stopped = Boolean(state.stopped || action.chosen);
+            if (action.to === state.active) {
+                return stopped === Boolean(state.stopped) ? state : { ...state, stopped };
+            }
             return {
                 active: action.to,
                 leaving: action.reduced ? null : state.active,
+                stopped,
             };
         }
         case "advance":
+            if (state.stopped) return state;
             return deckReducer(state, {
                 type: "go",
                 to: (state.active + 1) % action.count,
@@ -67,8 +78,8 @@ export function deckReducer(state, action) {
 }
 
 /**
- * Which slides are in the DOM: the outgoing one under the incoming one while
- * a wipe runs, and only the active one otherwise. **Never more than two.**
+ * Which slides are painted: the outgoing one under the incoming one while a
+ * crossfade runs, and only the active one otherwise. **Never more than two.**
  */
 export function painted(state) {
     if (state.leaving === null || state.leaving === state.active) return [state.active];
@@ -76,9 +87,15 @@ export function painted(state) {
 }
 
 /** Whether the timer may run at all. */
-export function autoAdvances({ reduced, paused }) {
-    return !reduced && !paused;
+export function autoAdvances({ reduced, paused, stopped = false }) {
+    return !reduced && !paused && !stopped;
 }
 
-/** `01`–`04`. The rail's numbers are read, so they are zero-padded. */
-export const pad = (n) => String(n).padStart(2, "0");
+/** The slide an arrow key lands on, wrapping at both ends. */
+export function stepFrom(index, key, count) {
+    if (key === "ArrowRight" || key === "ArrowDown") return (index + 1) % count;
+    if (key === "ArrowLeft" || key === "ArrowUp") return (index - 1 + count) % count;
+    if (key === "Home") return 0;
+    if (key === "End") return count - 1;
+    return null;
+}

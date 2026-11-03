@@ -50,9 +50,13 @@ function Headline({ text, accent }) {
 
 /**
  * @param {{ id: string, eager?: boolean, fill?: boolean, className?: string,
- *           headingLevel?: "h2" | "h3" }} props
+ *           headingLevel?: "h2" | "h3", bare?: boolean }} props
+ *
+ * `bare` draws the picture alone, without the headline band: for a frame
+ * whose headline is already on the page beside it — the homepage slider's
+ * "On location" slide, where the slot's headline is the slide's own `h2`.
  */
-export default function PhotoSlot({ id, eager = false, fill = false, className = "", headingLevel = "h2" }) {
+export default function PhotoSlot({ id, eager = false, fill = false, className = "", headingLevel = "h2", bare = false }) {
     const slot = photoSlot(id);
     const box = fill ? {} : { aspectRatio: `${slot.width} / ${slot.height}` };
     const frame = `relative w-full overflow-hidden ${fill ? "h-full" : ""} ${className}`;
@@ -116,16 +120,18 @@ export default function PhotoSlot({ id, eager = false, fill = false, className =
                     style={{ objectPosition: slot.focal }}
                 />
             ) : null}
-            <div className="relative w-full bg-background/[0.92]">
-                <div className="max-w-4xl p-6 sm:p-10 md:px-16 md:py-12">
-                    <Heading className="mkt-h1 text-foreground">
-                        <Headline text={slot.fallbackHeadline} accent={slot.fallbackAccent} />
-                    </Heading>
-                    {slot.fallbackLine ? (
-                        <p className="mkt-lead mt-5 max-w-2xl text-muted-foreground">{slot.fallbackLine}</p>
-                    ) : null}
+            {bare ? null : (
+                <div className="relative w-full bg-background/[0.92]">
+                    <div className="max-w-4xl p-6 sm:p-10 md:px-16 md:py-12">
+                        <Heading className="mkt-h1 text-foreground">
+                            <Headline text={slot.fallbackHeadline} accent={slot.fallbackAccent} />
+                        </Heading>
+                        {slot.fallbackLine ? (
+                            <p className="mkt-lead mt-5 max-w-2xl text-muted-foreground">{slot.fallbackLine}</p>
+                        ) : null}
+                    </div>
                 </div>
-            </div>
+            )}
         </div>
     );
 }

@@ -175,20 +175,16 @@ SWITCHED_LINES = [
     ("ForBrands.jsx", "report.aiLine", 'aiLive("campaignSummary")', "report-ai-summary"),
     ("ForBrands.jsx", "shortlist.aiLine", 'aiLive("nicheMatching")', "shortlist-ai-matching"),
     ("ForBrands.jsx", "hero.aiLead", 'aiLive("briefWriter")', "hero-ai-lead"),
-    ("Home.jsx", "hero.aiLead", "aiPowered", "hero-ai-lead"),
+    # The homepage hero slider: the deal's lead and the badge above the stage,
+    # both under the two-switch rule.
+    ("../components/marketing/HeroSlider.jsx", "hero.aiLead", "aiPowered", "hero-ai-lead"),
+    ("../components/marketing/HeroSlider.jsx", "copy.aiBadge", "aiPowered", "hero-ai-badge"),
     ("ForCreators.jsx", "briefs.aiLine", 'aiLive("nicheMatching")', "briefs-ai-matching"),
     ("ForCreators.jsx", "hero.aiLine", 'aiLive("nicheMatching")', "hero-ai-matching"),
-    # The homepage's feature row, under the process spine: one card per AI
-    # feature, each behind its own switch.
-    ("../components/marketing/FeatureRow.jsx", "item.title", "!item.aiKey || aiLive(item.aiKey)", "feature-${item.key}"),
+    # The AI slide's rows: one per feature, the page passing only the live
+    # ones (`HOME.ai.cards.filter((card) => aiLive(card.key))` in Home.jsx).
+    ("../components/marketing/heroSlides.jsx", "c.title", "cards.map((c) =>", "hero-ai-${c.key}"),
 ]
-
-# The homepage feature row's AI cards, and the switch behind each.
-FEATURE_SWITCHES = {
-    "aiBrief": "briefWriter",
-    "aiMatch": "nicheMatching",
-    "aiSummary": "campaignSummary",
-}
 
 
 @pytest.mark.parametrize("page,expr,guard,track", SWITCHED_LINES)
@@ -216,10 +212,30 @@ def _evaluated(expr: str):
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
-def test_each_homepage_ai_card_names_its_switch():
-    got = _evaluated("HOME.processSpine.features.items.filter(i => i.aiKey).map(i => [i.key, i.aiKey])")
-    assert dict(got) == FEATURE_SWITCHES
-    assert all(key in CAPABILITIES for key in FEATURE_SWITCHES.values())
+def test_each_ai_slide_row_names_its_switch_and_the_feature_row_has_none():
+    """The three AI feature cards that used to sit in the spine's feature row
+    are the hero slider's AI slide now — one row per feature, keyed by its
+    switch — and the feature row is the six product features alone."""
+    got = _evaluated("HOME.ai.cards.map(c => c.key)")
+    assert got == ["briefWriter", "nicheMatching", "campaignSummary"]
+    assert all(key in CAPABILITIES for key in got)
+    assert _evaluated("HOME.processSpine.features.items.filter(i => i.aiKey).length") == 0
+    home = (PAGES / "Home.jsx").read_text()
+    assert "HOME.ai.cards.filter((card) => aiLive(card.key))" in home
+    row = (FRONTEND / "components" / "marketing" / "FeatureRow.jsx").read_text()
+    assert "aiLive" not in row and "aiKey" not in row
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_the_ai_slide_is_absent_with_every_switch_off_and_its_tab_follows_two_switches():
+    """Any switch puts the AI slide in the slider; none leaves it out of the
+    DOM entirely — not hidden. Its tab says "AI-powered" only while two
+    switches back it, the rule the badge and the page title follow."""
+    hero = (FRONTEND / "components" / "marketing" / "HeroSlider.jsx").read_text()
+    assert "if (aiCards.length) {" in hero
+    assert 'list.push({ key: "ai", tab: aiCards.length >= 2 ? HOME.ai.aiTab : HOME.ai.tab });' in hero
+    assert _evaluated("HOME.ai.aiTab") == "AI-powered"
+    assert "AI-powered" not in _evaluated("HOME.ai.tab")
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
@@ -246,9 +262,10 @@ def test_every_switched_string_in_the_content_has_a_guarded_render():
     """Every `aiLine`/`aiLead` in the content is printed by an entry above."""
     text = MARKETING.read_text()
     keys = set(re.findall(r"^\s*(ai[A-Z]\w*):", text, re.M)) - {"aiKey"}
-    assert keys <= {"aiLine", "aiLead", "aiTitle", "aiDescription"}, keys
+    assert keys <= {"aiLine", "aiLead", "aiTitle", "aiDescription", "aiBadge", "aiTab"}, keys
     printed = {expr.split(".")[-1] for _, expr, *_ in SWITCHED_LINES}
-    assert keys - {"aiTitle", "aiDescription"} <= printed
+    # `aiTab` is chosen in `slidesFor`, held by the test above.
+    assert keys - {"aiTitle", "aiDescription", "aiTab"} <= printed
     # The home page's title and description are swapped together, under the
     # same two-switch rule as its lead.
     home = (PAGES / "Home.jsx").read_text()

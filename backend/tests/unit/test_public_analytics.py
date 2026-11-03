@@ -99,6 +99,7 @@ def test_the_tracked_list_is_the_public_marketing_pages_only():
         "/how-it-works",
         "/why-weare",
         "/contact",
+        "/about",
         "/terms",
         "/privacy",
     }

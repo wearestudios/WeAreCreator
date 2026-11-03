@@ -196,31 +196,32 @@ class TestFonts:
 
         **Two more, by the brief that built the process spine**: its step
         numbers (the label face's tabular figures, once in `ProcessSpine`) and
-        the before/after strip's two labels (`BeforeAfterStrip`). Both are
-        labels in exactly the sense the rule means — a number and a name — and
-        they go through the same class rather than tracking capitals by hand."""
-        marketing = [SRC / "pages" / f for f in ("Home.jsx", "ForBrands.jsx", "ForCreators.jsx")]
+        the before/after strip's two labels. The strip went when home was cut
+        to two sections — the hero slider's "The problem" slide tells it — so
+        the step number is the one left."""
+        marketing = [SRC / "pages" / f for f in ("Home.jsx", "ForBrands.jsx", "ForCreators.jsx", "About.jsx")]
         marketing += sorted((SRC / "components" / "marketing").glob("*.js*"))
         uses = {}
         for p in marketing:
             n = len(re.findall(r"\bmkt-label\b", _code(p.read_text())))
             if n:
                 uses[p.name] = n
-        assert uses == {"SiteParts.jsx": 2, "ProcessSpine.jsx": 1, "BeforeAfterStrip.jsx": 2}, uses
+        assert uses == {"SiteParts.jsx": 2, "ProcessSpine.jsx": 1}, uses
         spine = _code((SRC / "components" / "marketing" / "ProcessSpine.jsx").read_text())
         node = spine[spine.index("mkt-label") - 200 : spine.index("mkt-label") + 200]
         assert "IDS.node(n)" in node, "the spine's one label is the step number"
         parts = _code((SRC / "components" / "marketing" / "SiteParts.jsx").read_text())
         rule = parts[parts.index("export function SectionRule") : parts.index("export function SectionHead")]
         assert rule.count("mkt-label") == 2
-        mounted = [SRC / "pages" / f for f in ("Home.jsx", "ForBrands.jsx", "ForCreators.jsx")] + [
+        mounted = [SRC / "pages" / f for f in ("Home.jsx", "ForBrands.jsx", "ForCreators.jsx", "About.jsx")] + [
             SRC / "components" / "marketing" / f
-            for f in ("SiteParts.jsx", "siteMocks.jsx", "ComparisonBand.jsx", "StickyCta.jsx",
+            for f in ("SiteParts.jsx", "siteMocks.jsx", "StickyCta.jsx",
                       "PhotoSlot.jsx", "MarketingNavbar.jsx", "MarketingFooter.jsx",
-                      "ProcessSpine.jsx", "BeforeAfterStrip.jsx", "FeatureRow.jsx",
+                      "ProcessSpine.jsx", "FeatureRow.jsx",
+                      # The homepage's hero slider and its visuals.
+                      "HeroSlider.jsx", "heroSlides.jsx",
                       # Restored, and mounted again: held to the same rule.
-                      "Illustration.jsx", "HeroDeck.jsx", "heroScreens.jsx",
-                      "FeeFlow.jsx", "PayoutClock.jsx")
+                      "Illustration.jsx", "FeeFlow.jsx", "PayoutClock.jsx")
         ] + sorted((SRC / "components" / "marketing" / "process").glob("*.jsx"))
         for p in mounted:
             code = _code(p.read_text())
@@ -369,7 +370,7 @@ PUBLIC_PAGES = {
     "pages/Landing.jsx", "pages/ForBrands.jsx", "pages/ForCreators.jsx",
     "pages/HowItWorks.jsx", "pages/WhyWeAre.jsx", "pages/Contact.jsx",
     "pages/NotFound.jsx", "pages/Legal.jsx",
-    "pages/Home.jsx", "pages/Brands.jsx", "pages/Creators.jsx",
+    "pages/Home.jsx", "pages/Brands.jsx", "pages/Creators.jsx", "pages/About.jsx",
 }
 MKT_CLASS = re.compile(r"(?<![\w-])mkt-(?:display|h1|h2|h3|lead|body|label)(?![\w-])")
 

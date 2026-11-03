@@ -5,7 +5,13 @@
 // and the creator's, a 1px spine down the middle with a numbered node per
 // step, and the steps alternating sides: odd steps have the mockup on the
 // left and the words on the right, even steps the other way round. Under the
-// spine, the before/after strip and the row of what is built in.
+// spine, the row of what is built in. (The before/after strip that sat
+// between them went when the hero slider's "The problem" slide took over
+// telling it.)
+//
+// **On the homepage this is the last section, and it sits directly on the
+// navy footer.** Same ground, deliberately: the beam footer's 1px accent rule
+// is the divider.
 //
 // **Every word is in `HOME.processSpine` in `content/marketing.js`**; the
 // mockups are drawn by `process/StepCard*.jsx` from each step's `card`.
@@ -30,13 +36,12 @@
 // steps with the section on screen.
 import React, { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
-import BeforeAfterStrip from "@/components/marketing/BeforeAfterStrip";
 import FeatureRow from "@/components/marketing/FeatureRow";
 import { Band, SectionRule, Wrap } from "@/components/marketing/SiteParts";
 import { Rise } from "@/components/marketing/primitives";
 import { STEP_CARDS } from "@/components/marketing/process";
 import { PROCESS as IDS } from "@/constants/testIds";
-import { ASK, HOME } from "@/content/marketing";
+import { HOME } from "@/content/marketing";
 import { EVENTS, track } from "@/lib/track";
 
 const TABS = ["brands", "creators"];
@@ -451,8 +456,7 @@ export default function ProcessSpine({ n, id = "how-it-works" }) {
                         </div>
                     </div>
 
-                    <BeforeAfterStrip strip={copy.strip} ask={ASK.postBrief} className="mt-20 md:mt-28" />
-                    <FeatureRow features={copy.features} reduced={reduced} className="mt-16 md:mt-20" />
+                    <FeatureRow features={copy.features} reduced={reduced} className="mt-20 md:mt-28" />
                 </Wrap>
             </div>
         </Band>

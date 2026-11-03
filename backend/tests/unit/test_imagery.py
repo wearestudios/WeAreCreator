@@ -609,12 +609,14 @@ def test_home_reserves_the_space_its_images_will_fill():
     `PlaceholderImage` is the reservation: a ratio on the container, never on
     the <img>, so dropping real photography in moves nothing."""
     src = component("pages", "Home.jsx")
-    # **Home's reservation moved to `PhotoSlot`.** The rebuilt page names a
-    # slot (`<PhotoBand slot="home-on-location">`) and the slot
-    # reserves its box from the manifest's width and height — on the
-    # container, the same rule `PlaceholderImage` holds for the pages that
-    # still use it.
-    assert 'slot="home-on-location"' in src
+    # **Home's reservation moved to `PhotoSlot`, and then into the slider.**
+    # The page's one picture is the `home-on-location` slot in the hero
+    # slider's "On location" slide, drawn `fill` inside a 3:2 frame whose
+    # ratio is on the container — so a photograph arriving moves nothing,
+    # and the frame sits inside the slider's fixed-height visual box.
+    slides = component("components", "marketing", "heroSlides.jsx")
+    assert "<PhotoSlot id={slide.slot} fill bare />" in slides
+    assert "aspect-[3/2]" in slides
     assert "CampaignCover" not in src
     photo = component("components", "marketing", "PhotoSlot.jsx")
     assert "aspectRatio: `${slot.width} / ${slot.height}`" in photo

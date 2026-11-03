@@ -50,7 +50,14 @@ def _now():
 class TestEachClaimHasItsCode:
     def test_the_review_clock_claim_needs_the_timer(self):
         text = _everything()
-        claims_clock = "approved when its window" in text or "approved automatically" in text
+        # Home's promise band carried "approved when its window ends" until
+        # home was cut to two sections; /for-creators' clock card and the
+        # brands FAQ still make the claim.
+        claims_clock = any(
+            phrase in text
+            for phrase in ("approved when its window", "approved automatically",
+                           "approved if nobody answers within its review window")
+        )
         assert claims_clock, "the review clock is no longer claimed — remove this test with it"
         assert "draft_review_days" in server.PostCampaignPayload.model_fields
         assert callable(getattr(server, "_approve_draft_by_window", None))
