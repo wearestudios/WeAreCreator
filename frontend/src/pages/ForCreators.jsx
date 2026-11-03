@@ -36,11 +36,11 @@ import { ASK, CREATORS, aiLive } from "@/content/marketing";
 
 /** The navy band: the three states the record moves through, the payout
  * window drawn, and the figure. */
-function MoneyBand({ n, money }) {
+function MoneyBand({ money }) {
     return (
         <Band ground="navy" track="money" testid={IDS.money}>
             <Wrap className="py-20 md:py-28">
-                <SectionHead n={n} label={money.label} title={money.title} />
+                <SectionHead label={money.label} title={money.title} />
                 <ol className="mt-14 grid gap-6 md:grid-cols-3">
                     {money.states.map((s, i) => (
                         <li key={s.key} data-testid={IDS.moneyState(i)} className="border-t border-border pt-6">
@@ -111,7 +111,7 @@ export default function ForCreators() {
             <Band ground="tint" id="briefs" track="briefs" testid={IDS.briefs} className="scroll-mt-20">
                 <Wrap className="grid gap-12 py-20 md:py-28 lg:grid-cols-12 lg:gap-16">
                     <div className="flex flex-col lg:col-span-5">
-                        <SectionHead n={1} label={briefs.label} title={briefs.title} lead={briefs.lead} />
+                        <SectionHead label={briefs.label} title={briefs.title} lead={briefs.lead} />
                         {aiLive("nicheMatching") ? (
                             <p
                                 data-testid={IDS.briefsAi}
@@ -129,11 +129,11 @@ export default function ForCreators() {
                 </Wrap>
             </Band>
 
-            <MoneyBand n={2} money={money} />
+            <MoneyBand money={money} />
 
             <Band ground="page" track="protections" testid={IDS.protections}>
                 <Wrap className="py-20 md:py-28">
-                    <SectionHead n={3} label={protections.label} title={protections.title} />
+                    <SectionHead label={protections.label} title={protections.title} />
                     <CardRow items={protections.items} />
                 </Wrap>
             </Band>
@@ -143,7 +143,7 @@ export default function ForCreators() {
             <Band ground="tint" track="payouts" testid={IDS.payouts}>
                 <Wrap className="py-20 md:py-28">
                     <div className="grid gap-10 lg:grid-cols-12 lg:items-end lg:gap-16">
-                        <SectionHead n={5} label={payouts.label} title={payouts.title} className="lg:col-span-7" />
+                        <SectionHead label={payouts.label} title={payouts.title} className="lg:col-span-7" />
                         <Illustration name="why-fees-closeup" className="order-first lg:order-none lg:col-span-5" />
                     </div>
                     <CardRow items={payouts.items} columns={4} />
@@ -153,7 +153,7 @@ export default function ForCreators() {
             <Band ground="page" track="record" testid={IDS.record}>
                 <Wrap className="grid gap-12 py-20 md:py-28 lg:grid-cols-12 lg:gap-16">
                     <div className="lg:col-span-6">
-                        <SectionHead n={6} label={record.label} title={record.title} lead={record.lead} />
+                        <SectionHead label={record.label} title={record.title} lead={record.lead} />
                     </div>
                     <div className="lg:col-span-6 lg:pt-16">
                         <RecordCard card={record.card} />
@@ -161,7 +161,7 @@ export default function ForCreators() {
                 </Wrap>
             </Band>
 
-            <Closing id="close" n={7} label={close.label} title={close.title} line={close.line} testid={IDS.close} ground="navy">
+            <Closing id="close" label={close.label} title={close.title} line={close.line} testid={IDS.close} ground="navy">
                 <Cta ask={ASK.joinFree} testid={IDS.ctaBottom} />
             </Closing>
             <StickyCta ask={ASK.joinFree} heroId="hero" closeId="close" />

@@ -125,9 +125,6 @@ export function platformFeeText(percent = FACTS.platformFeePercent) {
 // fails either claim if the field behind it goes.
 // ===========================================================================
 
-/** The section rule's numbers, written once: "(01)". */
-export const sectionNumber = (n) => `(${String(n).padStart(2, "0")})`;
-
 /** The one WhatsApp door on the public pages. A link, not a name. */
 const WHATSAPP_NUMBER = "+919916154048";
 const WHATSAPP_TEXT = "Hi, I'd like to talk about a creator campaign.";
@@ -219,7 +216,6 @@ export const HOME = {
     // any AI switch is on and absent — not hidden — otherwise. The badge is
     // the two-switch claim, the rule `meta.aiTitle` follows.
     slides: {
-        label: "At a glance",
         carousel: "WeAre Creators, slide by slide",
         tabsLabel: "Choose a slide",
         aiBadge: "AI-powered creator marketplace",

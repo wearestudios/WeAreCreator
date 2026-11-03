@@ -1259,8 +1259,8 @@ disagree it wins.
 
 ### The two-section home
 
-**Home is the hero slider, then how it works, then the footer** — `01` and
-`02`, nothing else. It used to be eight sections and told its story three
+**Home is the hero slider, then how it works, then the footer** — two
+sections, nothing else. It used to be eight sections and told its story three
 times: the problem band, the promise band, the creator door and the close each
 restated what the process spine already walks through, and at 390px the page
 was 11,687px long. Cut to two it was 5,131px (4,370 at 1440, from 9,676), and
@@ -1365,9 +1365,14 @@ built it" is `/about`.
   `/for-brands`), the creator door and the close (creators reach their page
   from the navbar and the footer; `HOME.creatorDoor`, `HOME.close`,
   `ASK.forCreators` and `ASK.haveUsRunIt` are deleted), and "who built it".
-- **Budget**: home 463 (453 used: used plus ten, and the field and the
-  footer change added no words) — the first time it went down. `/about` 160
-  (82 used).
+- **The slider opens on the badge, with no section rule.** The hero is the
+  page's opening, not a section of it, so "At a glance" and its rule went
+  (and `HOME.slides.label` with them). The badge's slot keeps its reserved
+  height (`min-h-[2.125rem]`) so the stage does not jump with the AI
+  switches, and sits where the rule was, with no top margin of its own.
+- **Budget**: home 460 (450 used: used plus ten; the field and the footer
+  change added no words, and the slider's rule took three out) — the first
+  time it went down. `/about` 160 (82 used).
 
 ### /about, from the footer only
 
@@ -1399,16 +1404,30 @@ evaluated in node rather than regexing JSX.
   the list so neither path is in the sitemap. `/how-it-works` goes to
   `/#how-it-works` and `/why-weare` to `/for-brands`. `/contact` and the legal pages
   were not touched.
-- **Every section header is numbered** (`SectionHead` → `SectionRule`, a
-  hairline with `01 · Label` in the mono label face) — the page reads as one
-  argument in order, and a reader landing halfway knows where they are.
+- **Every section opens on a labelled rule, and no rule carries a number**
+  (`SectionHead` → `SectionRule`: the section's name in the mono label face,
+  then a hairline filling the rest of the line — "How it works ────"). This
+  **reverses** the rule that every section header was numbered "(01)",
+  "(02)": the numbers were furniture that made every page carry arithmetic
+  (a section added or switched off renumbered everything below it, which is
+  what the old `shift` did) and told a reader nothing they could act on.
+  **Numbering is kept only where it encodes a real sequence** — the process
+  spine's step nodes, 01–05, which are steps somebody follows in order.
+  `sectionNumber()`, every `n` prop (`SectionRule`, `SectionHead`,
+  `PromiseBand`, `Closing`, `MoneyBand`, `HeroSlider`, `ProcessSpine`) and
+  every page's numbering are deleted. The test id is keyed on the label,
+  slugged — `IDS.sectionRule("How it works")` is
+  `section-rule-how-it-works` — and `SectionRules.test.jsx` renders home,
+  `/for-brands`, `/for-creators` and `/about` and fails any rule whose text
+  is a two-digit number.
 - **The section rule is the only place JetBrains Mono or tracked capitals
   appear on a public page.** Everything else — card labels, day names,
   table headers, kickers, the footer's column headings — is sentence case in
   Inter Tight. The hero had five more uses and read as noise.
-  `test_site_foundations.py` allows `mkt-label` in `SectionRule` alone and
-  sweeps the mounted marketing files for hand-tracked capitals; a browser
-  count finds every mono text run inside a rule (2 per rule: number, name).
+  `test_site_foundations.py` allows `mkt-label` once in `SectionRule` (the
+  name) and once in `ProcessSpine` (the step number), and sweeps the mounted
+  marketing files for hand-tracked capitals; a browser count finds every mono
+  text run inside a rule (one per rule: its name) or on a spine node.
 - **Home is two sections** — see "The two-section home". (It was eight:
   hero, the swap, a photograph, the steps, what holds, who built it, the
   creator door, the close.) `/for-brands` is shortlist, pricing, report, photo, promises, comparison,

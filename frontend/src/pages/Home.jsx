@@ -1,12 +1,12 @@
 // The home page. Two sections, then the footer:
 //
-//   01 the hero slider — the deal (the page's only h1), the problem, the
-//      shoot and, while any AI switch is on, what the AI does; the two asks
-//      and the quiet line under them stay put whichever slide is showing
-//      (`components/marketing/HeroSlider.jsx`)
-//   02 how it works — the process spine: five steps a side, brands or
-//      creators, on a navy band, then the feature row
-//      (`components/marketing/ProcessSpine.jsx`)
+//   - the hero slider — the deal (the page's only h1), the problem, the
+//     shoot and, while any AI switch is on, what the AI does; the two asks
+//     and the quiet line under them stay put whichever slide is showing
+//     (`components/marketing/HeroSlider.jsx`)
+//   - how it works — the process spine: five steps a side, brands or
+//     creators, on a navy band, then the feature row
+//     (`components/marketing/ProcessSpine.jsx`)
 //
 // **Two, because the page used to tell its story three times.** The problem,
 // the promises and the creator door each restated what the spine already
@@ -64,8 +64,8 @@ export default function Home() {
         : plainMeta;
     return (
         <MarketingPage testid={IDS.page} title={meta.title} description={meta.description} path="/">
-            <HeroSlider n={1} aiCards={aiCards} aiPowered={aiPowered} />
-            <ProcessSpine n={2} id="how-it-works" />
+            <HeroSlider aiCards={aiCards} aiPowered={aiPowered} />
+            <ProcessSpine id="how-it-works" />
             <StickyCta ask={ASK.postBrief} heroId="hero" />
         </MarketingPage>
     );
