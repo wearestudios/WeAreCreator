@@ -41,12 +41,15 @@ export const DENSITY_STORAGE_KEY = "weare:admin-density";
  * The console sections that may be compact: the action queue, the data tables
  * and the audit log. Keyed by the section's path under /admin.
  *
- * **The overview is not here and must never be**: it is the screen somebody
- * reads to find out what is wrong, not one they work down, and compacting it
- * trades legibility for a density nobody needs on twelve tiles. Health,
- * analytics, settings and the case-study editor are not tables either.
+ * **The overview is here now, and that reverses a rule.** It was kept out
+ * because it was twelve stat tiles somebody reads rather than works down. It
+ * leads with the action queue's rows since board 27 — a table, worked oldest
+ * first — so it has the job the rule reserved density for. Its path is
+ * `/admin` itself, which is why `surfacePath` exists. Health, analytics,
+ * settings and the case-study editor are still not tables.
  */
 export const DENSITY_SURFACES = [
+    "overview",
     "queue",
     "creator-reviews",
     "campaign-reviews",
@@ -146,8 +149,11 @@ export function densityAllowed(surface, pathname) {
     // The section's own list, exactly. A record's detail page under it
     // (`/admin/campaigns/:id`) is a page somebody reads, not a table.
     const path = String(pathname || "").replace(/\/$/, "");
-    return path === `/admin/${surface}`;
+    return path === surfacePath(surface);
 }
+
+/** Where a surface lives: its section under /admin, or /admin for the overview. */
+export const surfacePath = (surface) => (surface === "overview" ? "/admin" : `/admin/${surface}`);
 
 /**
  * The one writer of `data-density`.
@@ -165,8 +171,8 @@ export function DensityScope({ surface, children }) {
     if (!allowed) {
         const message =
             `DensityScope: "${surface}" at ${pathname} is not a density surface. ` +
-            "Compact is for the admin action queue, the console's data tables " +
-            "and the audit log only — see DENSITY_SURFACES.";
+            "Compact is for the overview, the admin action queue, the console's " +
+            "data tables and the audit log only — see DENSITY_SURFACES.";
         if (ON_DEV) throw new Error(message);
         // eslint-disable-next-line no-console
         console.error(message);
@@ -189,8 +195,8 @@ export function DensityScope({ surface, children }) {
 export function DensityToggle() {
     const { pathname } = useLocation();
     const { density, setDensity, adjustable } = useDensity();
-    const section = String(pathname || "").split("/")[2] || "";
-    if (!adjustable || !densityAllowed(section, `/admin/${section}`)) return null;
+    const section = String(pathname || "").split("/")[2] || "overview";
+    if (!adjustable || !densityAllowed(section, surfacePath(section))) return null;
     return (
         <div
             role="group"
@@ -199,7 +205,7 @@ export function DensityToggle() {
             // Hidden below `sm`: on a phone the console's rows are a stacked
             // list rather than a table, and the pill pushed the console's own
             // label out of a 390px header. The stored choice still applies.
-            className="hidden items-center rounded-pill border border-border bg-card p-0.5 sm:inline-flex"
+            className="hidden items-center rounded-pill bg-wash-warm p-1 sm:inline-flex"
         >
             {DENSITIES.map((d) => {
                 const on = density === d;
@@ -210,9 +216,9 @@ export function DensityToggle() {
                         aria-pressed={on}
                         data-testid={IDS.option(d)}
                         onClick={() => setDensity(d)}
-                        className={`min-h-[2.25rem] rounded-pill px-3 text-meta ${CALM} ${FOCUS} ${
+                        className={`min-h-[2rem] rounded-pill px-3.5 text-meta font-bold ${CALM} ${FOCUS} ${
                             on
-                                ? "bg-primary text-primary-foreground"
+                                ? "bg-card text-heading shadow-card"
                                 : "text-muted-foreground hover:text-foreground"
                         }`}
                     >

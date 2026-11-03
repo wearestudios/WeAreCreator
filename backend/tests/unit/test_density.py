@@ -212,12 +212,19 @@ def _surfaces():
     return re.findall(r'"([a-z-]+)"', body)
 
 
-def test_the_surfaces_are_console_sections_and_the_overview_is_not_one():
+def test_the_surfaces_are_console_sections_and_the_overview_is_now_one():
+    """**The overview joined the surfaces, reversing this test's old name.**
+    It was kept out as twelve stat tiles somebody reads rather than works
+    down; since board 27 it leads with the action queue's rows, worked oldest
+    first, which is the job density exists for. Health, analytics, the
+    performance charts and settings are still not tables, and still never
+    compact."""
     sidebar = (SRC / "components" / "admin" / "console" / "Sidebar.jsx").read_text()
     sections = set(re.findall(r'key: "([a-z-]+)"', sidebar))
     surfaces = _surfaces()
     assert surfaces and set(surfaces) <= sections, set(surfaces) - sections
-    for never in ("overview", "", "health", "analytics", "performance", "settings"):
+    assert "overview" in surfaces
+    for never in ("", "health", "analytics", "performance", "settings"):
         assert never not in surfaces, never
     # The three the brief names are all present.
     for must in ("queue", "audit", "creators", "campaigns", "brands"):
@@ -234,8 +241,9 @@ def test_every_scope_names_an_allowed_surface_and_lives_in_the_route_table():
     assert users == ["components/admin/routes.jsx"], users
     named = re.findall(r'<DensityScope surface="([a-z-]+)"', ROUTES)
     assert named and set(named) <= set(_surfaces()), set(named) - set(_surfaces())
+    # The overview's scope names itself and nothing broader.
     overview = ROUTES.split("export const OverviewRoute")[1].split("\nexport ")[0]
-    assert "DensityScope" not in overview
+    assert re.findall(r'<DensityScope surface="([a-z-]+)"', overview) == ["overview"]
 
 
 def test_nothing_outside_the_console_can_reach_it():
@@ -263,7 +271,10 @@ def test_a_mistake_is_loud_in_development():
     # And the check is the exact list route, not a prefix: a record's detail
     # page under /admin/campaigns is not a table.
     allowed = DENSITY_JS.split("export function densityAllowed")[1].split("\n}")[0]
-    assert "return path === `/admin/${surface}`;" in allowed
+    assert "return path === surfacePath(surface);" in allowed
+    # Its own list exactly: the overview is `/admin`, every other surface its
+    # section — never a detail page under either.
+    assert 'surface === "overview" ? "/admin" : `/admin/${surface}`' in DENSITY_JS
     assert "startsWith" not in allowed
 
 

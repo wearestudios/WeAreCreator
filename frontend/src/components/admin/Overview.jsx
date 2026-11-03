@@ -318,7 +318,8 @@ export default function Overview({ onChanged }) {
     return (
         <section data-testid={IDS.section}>
             <SectionHeader
-                kicker="Overview"
+                sub
+                kicker="Every campaign"
                 title="The marketplace, from the inside"
                 blurb="Every number here is a filter. Tap one to see the campaigns behind it."
                 onRefresh={load}

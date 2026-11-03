@@ -13,6 +13,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAdminConsole } from "@/pages/AdminConsole";
 import { SafeSection } from "@/components/ErrorBoundary";
 import Overview from "@/components/admin/Overview";
+import Today from "@/components/admin/Today";
 import Analytics from "@/components/admin/Analytics";
 import {
     ExportsPanel,
@@ -49,22 +50,29 @@ import { DensityScope } from "@/components/admin/console/density";
 export const OverviewRoute = () => {
     const { reloadCounts, allAccess } = useAdminConsole();
     return (
-        <div className="space-y-8">
-            {/* Health and the activity charts moved to sidebar sections of
-                their own. They were stacked here because a tab strip could not
-                afford two more tabs; a sidebar can, and an admin looking for
-                "what is going wrong" should not have to scroll past the stat
-                tiles to find it.
-
-                Independent panels behind independent endpoints get independent
-                boundaries: the exports failing should not also cost the tiles. */}
-            <SafeSection name="overview" label="The overview couldn't load">
-                <Overview onChanged={reloadCounts} />
-            </SafeSection>
-            <SafeSection name="exports" label="Exports couldn't load">
-                <ExportsPanel allAccess={allAccess} />
-            </SafeSection>
-        </div>
+        // **A density surface since it led with the queue's rows** — see
+        // `DENSITY_SURFACES`. Compact tightens the card's rows and the base
+        // size under it; the heading and the tiles keep their own sizes.
+        <DensityScope surface="overview">
+            <div className="space-y-section">
+                {/* What needs a person today: the queue's five tiles, its
+                    oldest rows, and the figures beside them (board 27). Its
+                    own boundary — the campaign table below failing should not
+                    also cost the queue. */}
+                <SafeSection name="today" label="Today's queue couldn't load">
+                    <Today allAccess={allAccess} />
+                </SafeSection>
+                {/* Every campaign, with the stat cards that filter it. Below
+                    the fold now: it is what somebody looks things up in, not
+                    what they open the console to find out. */}
+                <SafeSection name="overview" label="The overview couldn't load">
+                    <Overview onChanged={reloadCounts} />
+                </SafeSection>
+                <SafeSection name="exports" label="Exports couldn't load">
+                    <ExportsPanel allAccess={allAccess} />
+                </SafeSection>
+            </div>
+        </DensityScope>
     );
 };
 

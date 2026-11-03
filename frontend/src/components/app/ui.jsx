@@ -155,20 +155,45 @@ export function StatTile({ value, label, onNavy = false, quiet = false, testid, 
 
 /**
  * A line that draws once. `points` are the endpoint's own numbers in order;
- * nothing is interpolated, smoothed or invented between them. Fewer than two
- * points draws nothing — a line needs two ends.
+ * nothing is interpolated, smoothed or invented between them. A `null` is a
+ * period with no reading and **breaks the line** — a line run straight across
+ * a gap asserts something we do not know, the rule the console's charts
+ * already hold. Fewer than two real points draws nothing.
  */
 export function Sparkline({ points, width = 380, height = 70, className = "", label }) {
-    const values = (points || []).filter((v) => typeof v === "number" && Number.isFinite(v));
+    const all = points || [];
+    const real = (v) => typeof v === "number" && Number.isFinite(v);
+    const values = all.filter(real);
     if (values.length < 2) return null;
     const max = Math.max(...values);
     const min = Math.min(...values);
     const span = max - min || 1;
     const pad = 4;
-    const step = (width - pad * 2) / (values.length - 1);
-    const xy = values.map((v, i) => [pad + i * step, height - pad - ((v - min) / span) * (height - pad * 2)]);
-    const line = xy.map(([x, y], i) => `${i ? "L" : "M"}${x.toFixed(1)} ${y.toFixed(1)}`).join(" ");
-    const area = `${line} L${xy[xy.length - 1][0].toFixed(1)} ${height} L${xy[0][0].toFixed(1)} ${height} Z`;
+    // Positioned by their place in the series, gaps included, so a missing
+    // week still takes its width.
+    const step = (width - pad * 2) / Math.max(1, all.length - 1);
+    const at = (v, i) => [pad + i * step, height - pad - ((v - min) / span) * (height - pad * 2)];
+    const runs = [];
+    let run = [];
+    all.forEach((v, i) => {
+        if (real(v)) run.push(at(v, i));
+        else if (run.length) {
+            runs.push(run);
+            run = [];
+        }
+    });
+    if (run.length) runs.push(run);
+    const f = (n) => n.toFixed(1);
+    const line = runs
+        .map((r) => r.map(([x, y], i) => `${i ? "L" : "M"}${f(x)} ${f(y)}`).join(" "))
+        .join(" ");
+    const area = runs
+        .filter((r) => r.length > 1)
+        .map((r) => {
+            const path = r.map(([x, y], i) => `${i ? "L" : "M"}${f(x)} ${f(y)}`).join(" ");
+            return `${path} L${f(r[r.length - 1][0])} ${height} L${f(r[0][0])} ${height} Z`;
+        })
+        .join(" ");
     return (
         <svg
             viewBox={`0 0 ${width} ${height}`}

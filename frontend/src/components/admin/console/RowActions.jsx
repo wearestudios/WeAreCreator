@@ -14,10 +14,13 @@ import React from "react";
 
 import { CALM, FOCUS, TEXT } from "@/components/admin/console/tokens";
 
+// Quiet tints rather than outlines (board 27): navy-washed for the act, the
+// warm ghost for everything else, and a destructive one outlined in rose —
+// never filled, so it can never read as a second primary.
 const TONES = {
-    bad: "border-state-rejected/30 text-state-rejected hover:bg-state-rejected-wash",
-    primary: "border-primary/40 bg-primary/10 text-primary-ink hover:bg-primary/20",
-    plain: "border-border text-muted-foreground hover:bg-tint/5",
+    bad: "border-state-rejected/30 bg-transparent text-state-rejected hover:bg-state-rejected-wash",
+    primary: "border-transparent bg-wash-navy text-heading hover:bg-primary hover:text-primary-foreground",
+    plain: "border-transparent bg-wash-warm text-muted-foreground hover:text-foreground",
 };
 
 export function RowButton({ children, onClick, disabled, testid, tone = "plain", title }) {
@@ -28,7 +31,7 @@ export function RowButton({ children, onClick, disabled, testid, tone = "plain",
             disabled={disabled}
             title={title}
             data-testid={testid}
-            className={`whitespace-nowrap rounded border px-2 py-0.5 ${TEXT.meta} ${CALM} disabled:opacity-40 ${FOCUS} ${
+            className={`whitespace-nowrap rounded-[10px] border px-2.5 py-1 font-semibold ${TEXT.meta} ${CALM} disabled:opacity-40 ${FOCUS} ${
                 TONES[tone] || TONES.plain
             }`}
         >
@@ -44,7 +47,7 @@ export function PeekButton({ children, onClick, disabled, testid, tone = "plain"
             onClick={onClick}
             disabled={disabled}
             data-testid={testid}
-            className={`inline-flex items-center gap-1.5 rounded border px-3 py-1.5 ${TEXT.body} ${CALM} disabled:opacity-40 ${FOCUS} ${
+            className={`inline-flex items-center gap-1.5 rounded-button border px-3.5 py-2 font-bold ${TEXT.body} ${CALM} disabled:opacity-40 ${FOCUS} ${
                 TONES[tone] || TONES.plain
             }`}
         >

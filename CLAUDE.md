@@ -5677,15 +5677,16 @@ holds every rule below.
   `VIRTUALISE_ABOVE` (150) the body is windowed; below it everything stays in
   the DOM, because windowing forty rows costs more than it saves and breaks
   ⌘F. Measured: 400 rows render 31, and the page still scrolls at 390px.
-  Cards survive in exactly one place — Overview's stat tiles, which are things
-  you look at.
+  Cards survive where a thing is looked at rather than compared — the
+  overview's tiles. The tables themselves sit *in* a card now (`PANEL` is the
+  app's white card on the warm ground: 20px, no border, `--shadow-card`).
 - **One density scale** (`tokens.js`): `DENSITY`, `ROW_H`/`ROW_PX` (which must
   agree — one renders, the other is what virtualisation measures with), and
   `TEXT`, where `text-xs` means *true* metadata. The console had 158 uses of
   it and was effectively set in 12px; a test now fails any `text-xs` that is
   not on an uppercase eyebrow.
 - **One semantic colour per state, always with the word beside it.**
-  `STATUS_TONE` is five tones, `TONE_BY_STATE` maps every wire value onto one,
+  `STATUS_TONE` is five tones for wire states (plus `due` and `info`, picked by `tone` on a row whose state is not a wire value), `TONE_BY_STATE` maps every wire value onto one,
   and `StatusTag` is the only thing that draws a state — the four `meta`
   objects it replaced are why a closed campaign read grey on one screen and
   red on the next. **Ember is never a status**: it is the primary action, and
@@ -6142,7 +6143,9 @@ set reads through the same components:
 - `MetaLine` (facts separated by dots that wraps with no dot dangling at
   either end of a line: each item carries its dot on the left, and the line
   is pulled one dot's width left inside a box that clips sideways);
-- `Sparkline` (draws once through `.dash-draw`, invents nothing between points);
+- `Sparkline` (draws once through `.dash-draw`, invents nothing between points,
+  and **a `null` breaks the line** — positioned by its slot so a missing week
+  keeps its width, never bridged and never drawn as zero);
 - `AiSummaryCard` (absent unless `aiLive("campaignSummary")` **and** a summary arrived).
 
 **The red button is `--urgent` (#C41E27) with a white word, not the brand
@@ -6206,6 +6209,49 @@ warm ghost.
   `tailwind-merge` read `text-meta` as a colour, so a `Button` at `size="sm"`
   dropped its variant's text colour and drew a navy label on a navy button.
   `test_brand_dash.py` holds the list against the Tailwind config.
+
+### The admin overview
+
+`components/admin/Today.jsx` above the campaign table on `/admin`, drawn to
+board 27: today's date (IST), "N things need a person today" as the screen's
+one Fraunces title, five queue tiles, the action queue's oldest rows in a card,
+and a column of served figures beside it.
+
+- **Every count is the action queue's own rows.** `loadQueueRows` is the
+  queue's loader, exported from `ActionQueue.jsx` and used by both screens, so
+  the tiles, the heading's total and the card agree row for row with
+  `/admin/queue`. The sidebar's badges count a slightly different set (a bare
+  signup is a badge and not a row) and are not added up here.
+- **The tiles**: Briefs to approve, Creators to verify (admins only — the
+  creator queues are), Brands to verify, Payouts due, Unanswered questions.
+  The board's "Drafts to approve" is **Briefs to approve**: the queue's rows
+  are submitted briefs, and `draft` is the status before submission.
+  Collaborations to move have no tile; they are in the card and the total.
+- **The payouts tile turns amber on the server's `payout_at_risk`** — an
+  approval five days into the seven-day promise — and names the oldest day.
+  Nothing on the screen works a date out.
+- **The card is oldest first, one button per row**, and the button is a link
+  to the record's own page, where the decision and its dialogs live ("Every
+  review opens a full page"). States are `StatusTag` chips with the two new
+  tones, `due` (amber) and `info` (slate). Eight rows, then "See all".
+- **"How it's going" shows only served figures under their served windows**:
+  active creators over `window_days`, brands who came back, payouts waiting,
+  our fees all time, and the fill rate per week as a sparkline. No endpoint
+  serves a calendar month, so nothing is headed "This month". A team member
+  gets the scoped dashboard's two figures and no admin-only read is fired.
+- **The AI card** is the most recent finished campaign's summary, asked for
+  only by an admin and only with `aiLive("campaignSummary")` on; absent when
+  the API says unavailable or has written none.
+- ⌘K is the console header's own trigger (restyled), not a second button, and
+  the density pill is a warm track with the active half white.
+- Measured: CLS 0.0000 at 390 and 1280 with every response held 700ms, for an
+  admin and a team member; zero running animations under reduced motion.
+
+The console's shared pieces moved with it, at the token level so every list
+picks them up: `PANEL` is the app card, `StatusTag`'s chip is the app pill
+(tint and word, no border), `RowButton` is a quiet tint (navy wash for the
+act, the warm ghost otherwise, rose outline for destructive — never filled),
+and `PeekPanel` floats as a card.
 
 ## Design system
 
@@ -6281,9 +6327,12 @@ reshaping a pill for as long as it was focused; it is gone.
 and hides `.density-avatar`. Nothing else: the compact block in `index.css` may
 contain those five names and a test fails a sixth. `DensityScope` in
 `components/admin/console/density.jsx` is the **one writer** of the attribute,
-takes a `surface` from `DENSITY_SURFACES` (the action queue, the console's data
-tables, the audit log — never the overview), and **throws in development**
-off its own list route. `test_density.py` fails any other writer, any scope
+takes a `surface` from `DENSITY_SURFACES` (the overview, the action queue, the
+console's data tables, the audit log), and **throws in development** off its
+own list route. **The overview joined the list, reversing a rule**: it was
+kept out as twelve stat tiles somebody reads rather than works down, and since
+board 27 it leads with the action queue's rows. Its path is `/admin` itself,
+which `surfacePath` handles. `test_density.py` fails any other writer, any scope
 outside `routes.jsx`, and any import of the module from outside the console.
 
 - Stored as `admin_density` on the admin's own user record —

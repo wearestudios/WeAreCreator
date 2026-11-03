@@ -236,14 +236,20 @@ export const CreatorAvatar = ({ creator, size = "h-12 w-12", testids = {} }) => 
     );
 };
 
-export const SectionHeader = ({ kicker, title, blurb, onRefresh, refreshTestId, children }) => (
+// `sub` is a section under a page that already has its title: one Fraunces
+// per screen, so a second header on the same screen is Manrope 800.
+export const SectionHeader = ({ kicker, title, blurb, onRefresh, refreshTestId, children, sub = false }) => (
     <div className="flex flex-col gap-4">
         <div className="flex items-baseline justify-between gap-6">
             <div>
                 <p className="text-label text-primary-ink">{kicker}</p>
-                <h2 className="app-title mt-3">
-                    {title}
-                </h2>
+                {sub ? (
+                    <h2 className="mt-1.5 text-body-lg font-extrabold text-heading">{title}</h2>
+                ) : (
+                    <h2 className="app-title mt-3">
+                        {title}
+                    </h2>
+                )}
             </div>
             {onRefresh && (
                 <button

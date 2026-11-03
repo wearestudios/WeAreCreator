@@ -73,31 +73,46 @@ export const STATUS_TONE = {
         label: "Pending",
         dot: "bg-state-pending",
         text: "text-state-pending",
-        chip: "border-state-pending/30 bg-state-pending-wash text-state-pending",
+        chip: "bg-state-pending-wash text-state-pending",
     },
     good: {
         label: "Approved",
         dot: "bg-state-approved",
         text: "text-state-approved",
-        chip: "border-state-approved/30 bg-state-approved-wash text-state-approved",
+        chip: "bg-state-approved-wash text-state-approved",
     },
     bad: {
         label: "Rejected",
         dot: "bg-state-rejected",
         text: "text-state-rejected",
-        chip: "border-state-rejected/30 bg-state-rejected-wash text-state-rejected",
+        chip: "bg-state-rejected-wash text-state-rejected",
     },
     active: {
         label: "In progress",
         dot: "bg-state-progress",
         text: "text-state-progress",
-        chip: "border-state-progress/30 bg-state-progress-wash text-state-progress",
+        chip: "bg-state-progress-wash text-state-progress",
     },
     idle: {
         label: "—",
         dot: "bg-tint/30",
         text: "text-muted-foreground",
-        chip: "border-border bg-muted text-muted-foreground",
+        chip: "bg-wash-warm text-muted-foreground",
+    },
+    // The app's two additions (board 27): amber for a clock that is running
+    // — a payout five days into the seven-day promise — and slate for a plain
+    // "this is with us". Picked by `tone`, never by a wire state.
+    due: {
+        label: "Due",
+        dot: "bg-state-due",
+        text: "text-state-due",
+        chip: "bg-state-due-wash text-state-due",
+    },
+    info: {
+        label: "With us",
+        dot: "bg-state-info",
+        text: "text-state-info",
+        chip: "bg-state-info-wash text-state-info",
     },
 };
 
@@ -182,5 +197,9 @@ export const FOCUS =
     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring " +
     "focus-visible:ring-offset-2 focus-visible:ring-offset-background";
 
-/** A panel: hairline border, flat surface, no grain, no shadow. */
-export const PANEL = "rounded-md border border-border bg-card";
+/**
+ * A panel: the app's card — white on the warm ground, 20px, no border, the
+ * one `--shadow-card` lift (a 1px ring on the dark set, where a shadow on navy
+ * reads as nothing). No grain.
+ */
+export const PANEL = "rounded-lg bg-card shadow-card";
