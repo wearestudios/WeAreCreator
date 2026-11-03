@@ -277,10 +277,8 @@ export const Money = ({ children, symbolClass = "h-4 w-4", className = "" }) => 
 export const SectionHead = ({ kicker, title, aside, className = "" }) => (
     <div className={"flex flex-wrap items-end justify-between gap-3 " + className}>
         <div className="min-w-0">
-            <p className="text-label text-primary">{kicker}</p>
-            <h2 className="mt-3 font-bold text-h2 leading-none tracking-tight">
-                {title}
-            </h2>
+            <p className="text-label text-muted-foreground">{kicker}</p>
+            <h2 className="mt-1.5 text-body-lg font-extrabold leading-snug text-heading">{title}</h2>
         </div>
         {aside}
     </div>
@@ -289,17 +287,17 @@ export const SectionHead = ({ kicker, title, aside, className = "" }) => (
 export const EmptyState = ({ Icon, title, children, testid, action }) => (
     <div
         data-testid={testid}
-        className="flex flex-col items-center gap-3 rounded-md border border-border bg-card px-6 py-14 text-center grain-surface"
+        className="flex flex-col items-center gap-3 rounded-lg bg-card px-6 py-12 text-center shadow-card"
     >
-        {Icon && <Icon className="h-6 w-6 text-primary" />}
-        {title && <p className="font-bold text-h3 leading-tight">{title}</p>}
+        {Icon && <Icon aria-hidden="true" className="h-6 w-6 text-muted-foreground" />}
+        {title && <p className="text-body-lg font-extrabold leading-tight text-heading">{title}</p>}
         <p className="max-w-sm text-body leading-relaxed text-muted-foreground">{children}</p>
         {action}
     </div>
 );
 
 export const CardSkeleton = () => (
-    <div className="rounded-md border border-border bg-card p-6 grain-surface">
+    <div className="rounded-lg bg-card p-5 shadow-card">
         <Skeleton className="h-3 w-24" />
         <Skeleton className="mt-4 h-6 w-2/3" />
         <Skeleton className="mt-6 h-2 w-full rounded-full" />
@@ -308,42 +306,63 @@ export const CardSkeleton = () => (
             <Skeleton className="h-3 w-20" />
             <Skeleton className="h-3 w-24" />
         </div>
-        <Skeleton className="mt-6 h-11 w-40 rounded-full" />
+        <Skeleton className="mt-6 h-11 w-40 rounded-button" />
     </div>
 );
 
+// One active card's shape: the cover strip, the title and its line, the
+// bars, and the tinted box with its button.
+const ActiveCardSkeleton = () => (
+    <div className="overflow-hidden rounded-lg bg-card shadow-card">
+        <Skeleton className="aspect-[16/5] w-full rounded-none md:max-h-[7.375rem]" />
+        <div className="p-5 md:px-[22px]">
+            <Skeleton className="h-5 w-3/4" />
+            <Skeleton className="mt-2.5 h-3.5 w-1/2" />
+            <Skeleton className="mt-5 h-1.5 w-full rounded-full" />
+            <Skeleton className="mt-2.5 h-3 w-32" />
+            <Skeleton className="mt-4 h-[6.5rem] w-full rounded-[14px]" />
+        </div>
+    </div>
+);
+
+/**
+ * The page before the payload: the portrait box and the three tiles, two
+ * active cards, and the strip of tab pills — the shapes that occupy the
+ * space once it lands.
+ */
 export const HomeSkeleton = ({ testid }) => (
-    <div data-testid={testid} className="space-y-10 md:space-y-12">
-        {/* The header: a photo the size the real one now is, beside the name,
-            with the earnings card on the right. */}
-        <div className="grid gap-8 md:grid-cols-12">
-            <div className="md:col-span-7">
-                <Skeleton className="h-3 w-28" />
-                <div className="mt-5 flex items-center gap-5 md:gap-7">
-                    <Skeleton className="h-28 w-28 flex-none rounded-lg sm:h-32 sm:w-32 md:h-40 md:w-40" />
-                    <div className="min-w-0 flex-1">
-                        <Skeleton className="h-10 w-3/4" />
-                        <Skeleton className="mt-3 h-6 w-28 rounded-full" />
-                    </div>
+    <div data-testid={testid}>
+        <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:gap-8">
+            <div className="flex min-w-0 flex-1 items-center gap-4 md:gap-6">
+                <Skeleton className="h-28 w-[5.6rem] flex-none rounded-xl md:h-40 md:w-32" />
+                <div className="min-w-0 flex-1">
+                    <Skeleton className="h-6 w-24 rounded-pill" />
+                    <Skeleton className="mt-3 h-9 w-3/4" />
+                    <Skeleton className="mt-3 h-3.5 w-2/3" />
                 </div>
-                <Skeleton className="mt-5 h-3 w-40" />
             </div>
-            <div className="grid grid-cols-2 gap-4 md:col-span-5 md:grid-cols-1">
-                <Skeleton className="h-28 rounded-md" />
-                <Skeleton className="h-28 rounded-md" />
-            </div>
-        </div>
-        <div className="space-y-4">
-            <Skeleton className="h-3 w-36" />
-            {/* The active card leads with its cover strip now. */}
-            <div className="overflow-hidden rounded-md border border-border">
-                <Skeleton className="aspect-[16/5] w-full rounded-none" />
-                <CardSkeleton />
+            <div className="grid grid-cols-3 gap-2.5 sm:gap-3 xl:flex xl:flex-none">
+                <Skeleton className="h-[4.25rem] rounded-tile sm:h-20 xl:w-[9.5rem]" />
+                <Skeleton className="h-[4.25rem] rounded-tile sm:h-20 xl:w-[9.5rem]" />
+                <Skeleton className="h-[4.25rem] rounded-tile sm:h-20 xl:w-[9.5rem]" />
             </div>
         </div>
-        {/* The tab strip, and the first drawer's grid. */}
-        <div className="space-y-8">
-            <Skeleton className="h-12 w-full max-w-sm rounded-full" />
+        <div className="mt-6">
+            <Skeleton className="mb-3.5 h-4 w-48" />
+            <div className="grid items-start gap-4 lg:grid-cols-[1.25fr_1fr]">
+                <ActiveCardSkeleton />
+                <ActiveCardSkeleton />
+            </div>
+        </div>
+        {/* The tab pills, and the first drawer's grid. */}
+        <div className="mt-8 flex gap-2 md:mt-10">
+            <Skeleton className="h-10 w-32 rounded-pill" />
+            <Skeleton className="h-10 w-28 rounded-pill" />
+            <Skeleton className="h-10 w-24 rounded-pill" />
+        </div>
+        <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <CardSkeleton />
+            <CardSkeleton />
             <CardSkeleton />
         </div>
     </div>

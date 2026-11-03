@@ -10,7 +10,7 @@ import { motion, useReducedMotion } from "framer-motion";
 import { ArrowRight } from "lucide-react";
 import { CREATOR_COMPLETENESS as IDS } from "@/constants/testIds";
 
-const RADIUS = 30;
+const RADIUS = 22;
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
 
 const Ring = ({ percent }) => {
@@ -21,20 +21,20 @@ const Ring = ({ percent }) => {
             data-testid={IDS.ring}
             role="img"
             aria-label={`Profile ${percent}% complete`}
-            className="relative h-[72px] w-[72px] flex-none"
+            className="relative h-[52px] w-[52px] flex-none"
         >
-            <svg viewBox="0 0 72 72" className="h-full w-full -rotate-90">
+            <svg viewBox="0 0 52 52" className="h-full w-full -rotate-90">
                 <circle
-                    cx="36"
-                    cy="36"
+                    cx="26"
+                    cy="26"
                     r={RADIUS}
                     fill="none"
                     strokeWidth="3"
                     className="stroke-border"
                 />
                 <motion.circle
-                    cx="36"
-                    cy="36"
+                    cx="26"
+                    cy="26"
                     r={RADIUS}
                     fill="none"
                     strokeWidth="3"
@@ -48,7 +48,7 @@ const Ring = ({ percent }) => {
             </svg>
             <span
                 data-testid={IDS.percent}
-                className="absolute inset-0 grid place-items-center font-bold text-body-lg"
+                className="absolute inset-0 grid place-items-center text-label font-extrabold tabular-nums"
             >
                 {percent}%
             </span>
@@ -61,44 +61,41 @@ export default function Completeness({ completeness }) {
     // Hidden entirely once there's nothing left to ask for.
     if (!completeness || completeness.complete || missing.length === 0) return null;
 
+    // **One row, not a panel.** It sits between the header and the live
+    // work, and as a 290px card it pushed the work's first button below the
+    // fold on a laptop — a nudge about the profile costing the creator the
+    // thing they opened the page to do.
     return (
-        <div className="rounded-md border border-border bg-card p-6 md:p-7 grain-surface">
-            <div className="flex flex-col gap-6 sm:flex-row sm:items-start">
-                <Ring percent={completeness.percent ?? 0} />
+        <div className="flex items-center gap-3 rounded-lg bg-card px-4 py-3.5 shadow-card sm:gap-4 md:px-[22px]">
+            <Ring percent={completeness.percent ?? 0} />
 
+            <div className="min-w-0 flex-1 sm:flex sm:items-center sm:gap-4">
                 <div className="min-w-0 flex-1">
-                    <p className="text-label text-muted-foreground">
-                        Your profile
-                    </p>
-                    <p className="mt-3 font-bold text-h3 leading-tight">
+                    <p className="text-body font-bold leading-snug text-heading">
                         {/* Framed as what it unlocks, not as a chore. */}
                         A few more details and brands can find you properly.
                     </p>
-
-                    <ul
-                        data-testid={IDS.list}
-                        className="mt-5 flex flex-wrap gap-2"
-                    >
+                    <ul data-testid={IDS.list} className="mt-1.5 flex flex-wrap gap-1.5">
                         {missing.map((row) => (
                             <li
                                 key={row.field}
                                 data-testid={IDS.item(row.field)}
-                                className="rounded-full border border-border bg-background/60 px-3 py-1 text-meta text-muted-foreground"
+                                className="rounded-pill bg-wash-warm px-2.5 py-1 text-label text-muted-foreground"
                             >
                                 {row.label}
                             </li>
                         ))}
                     </ul>
-
-                    <Link
-                        to="/onboarding/creator"
-                        data-testid={IDS.cta}
-                        className="group mt-6 inline-flex items-center gap-2 text-meta text-primary transition-colors duration-200 hover:text-primary-hover"
-                    >
-                        Finish your profile
-                        <ArrowRight className="h-4 w-4 transition-transform duration-200 group-hover:translate-x-1" />
-                    </Link>
                 </div>
+
+                <Link
+                    to="/onboarding/creator"
+                    data-testid={IDS.cta}
+                    className="group inline-flex min-h-[2.75rem] flex-none items-center gap-2 text-meta font-bold text-foreground transition-colors duration-200 hover:text-primary"
+                >
+                    Finish your profile
+                    <ArrowRight className="h-4 w-4 transition-transform duration-200 group-hover:translate-x-1" />
+                </Link>
             </div>
         </div>
     );

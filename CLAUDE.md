@@ -454,30 +454,61 @@ already has their answer.
 
 ## The creator's home
 
-`pages/Dashboard.jsx` + `components/creator/`. The rule the layout answers to:
-**status, active work and the next action are visible without scrolling.**
+`pages/CreatorHome.jsx` + `components/creator/`, drawn to board 26. The rule
+the layout answers to: **status, active work and the next action are visible
+without scrolling** — measured at 1280×900, the first card's primary button
+ends at 671px with the profile nudge showing.
 
-- The header opens with the photo at portrait size (`h-28` → `md:h-40`, the
-  monogram holding the same box), the verification badge, the handle, and the
-  three headline stats — lifetime earned (a one-shot `CountUp`), campaigns
-  completed, pending. Status banners and the completeness nudge sit directly
-  under it, outside any tab: a blocked account is not a section, it is the
-  situation.
-- **The live work never goes behind a tab.** Each active card leads with a
-  16:5 slice of the campaign's cover (`md:max-h-44` — aspect-ratio yields to
-  max-height, which is what stops a full-width card growing a 350px wall of
-  tint), the animated lifecycle tracker, the next action in plain words with
-  whose move it is, and **one** primary button — every action variant fills
-  the same `IDS.primary` slot.
-- Everything a creator consults rather than acts on — suggestions, past
-  pitches, the ledger — lives in Radix tabs below, each drawer keeping its own
-  `SafeSection`, the strip `overflow-x-auto` so three labels don't wrap and
-  eat the fold at 390px.
-- Motion is entrance-only (`Reveal` staggers by index, the tracker fills as
-  one stroke, nothing loops) and everything checks `prefers-reduced-motion` —
-  verified by emulation: under `reduce` the money's first paint is its final
-  value. `HomeSkeleton` mirrors the new arrangement (photo box, cover strip,
-  tab strip); CLS measured 0.0000 at 390 and 1280 with the payload delayed.
+- **The header** (`Hero.jsx`): a 4:5 portrait (`PHOTO_BOX`, `h-28` →
+  `md:h-40`, the monogram holding the same box), the verification pill above
+  the name, the name as the screen's one Fraunces title, then one `MetaLine`
+  — handle · niche · *their* city · followers · where the count came from
+  ("from Instagram" only when it was read from there, "self-reported"
+  otherwise). Three `StatTile`s beside it from `xl` and under it below:
+  earned so far and on its way count up once; campaigns done is a count and
+  does not. The header's "Edit profile" and "Browse campaigns" buttons went —
+  the sidebar's Profile and Find briefs are the same two places.
+- Status banners, the revalidation prompt and the completeness nudge sit
+  directly under it, outside any tab: a blocked account is not a section, it
+  is the situation. **The nudge is one row** (a 52px ring, the sentence, the
+  missing fields, the link); as a 290px panel it put the first card's button
+  below the fold.
+- **The live work never goes behind a tab**, two up from `lg` at the board's
+  1.25 : 1 (one card takes the row). Each card, top to bottom: a 16:5 slice of
+  the cover capped at 118px; the title, then brand · deliverables · fee on
+  one `MetaLine` (barter reads as barter, through `formatCollabMoney`);
+  **whose move it is**, read off the server's `process.next_action.owner` —
+  which is mapped through `execution_owner`, so a draft our manager reviews
+  says "WeAre's move" rather than blaming the brand; the stages as
+  **`ProcessFlow variant="bars"`** (done navy, current red, one label under
+  them); anything that is the situation (an open dispute, a takedown, a
+  shortfall, a step WeAre took for them, terms waiting on their tap, an extra
+  round asked of them); then **one tinted box** — red when the move is
+  theirs, navy while they wait — with the next step in words and the one
+  button in the `IDS.primary` slot (`urgent` on their move, `solid`
+  otherwise, so a card has at most one red button). Where, when and who to
+  call follow, never folded.
+- **The reference half folds** into a native `<details>` ("More about this
+  job"): the brief's checklist, terms already accepted, the draft on file, the
+  fee's history, and the door to *raising* a dispute. Drawn open, it made a
+  two-up card a 1,400px tower with the button in the middle; a dispute that
+  exists still leads the card.
+- Everything a creator consults rather than acts on lives in tab **pills**
+  below — Briefs for you, My pitches, Finished, Payments (active navy) — each
+  drawer keeping its own `SafeSection`, the strip `overflow-x-auto`.
+  "Finished" is the one the board does not draw and is kept: the takedown
+  answers live there. The suggestion tiles are a cover strip (84px from
+  `md`), the title, brand · area, why it surfaced, the category pill and the
+  fee.
+- The sidebar's Home count is the open invitations off this payload
+  (`useShellBadges`), published before the steer's early return.
+- Motion is entrance-only (`Reveal` staggers by index, the money counts once,
+  nothing loops) and everything checks `prefers-reduced-motion` — measured:
+  zero running animations, and under `reduce` the money's first paint is its
+  final value. `HomeSkeleton` mirrors the arrangement (portrait box, three
+  tiles, two cards with cover strips, the tab pills); CLS measured 0.0000 at
+  390 and 1280 with the payload delayed 700ms, for a creator with three live
+  cards, two, and none.
 
 ### An undefined name was not a lint error, and this page is where it bit
 
@@ -3173,6 +3204,10 @@ Content delivery → Payment. `_process_flow` groups; it decides nothing.
   stages), the console's raw ladder and the brand's state pill were three
   answers to "where has this got to". The first is deleted, not left beside the
   new one.
+- **The creator's work card asks it for `variant="bars"`** — the same stages
+  as segmented bars with the current one named under them, and no next-action
+  line, because the card draws that beside its button. A variant of the one
+  component rather than a slimmer copy, which is what the six-stage bar was.
 
 ## A booking is a request until somebody says yes
 
@@ -6104,6 +6139,9 @@ set reads through the same components:
 - `Pill` (five tones);
 - `ActionCard` (red for the item whose clock is running, navy otherwise, one button);
 - `StatTile`;
+- `MetaLine` (facts separated by dots that wraps with no dot dangling at
+  either end of a line: each item carries its dot on the left, and the line
+  is pulled one dot's width left inside a box that clips sideways);
 - `Sparkline` (draws once through `.dash-draw`, invents nothing between points);
 - `AiSummaryCard` (absent unless `aiLive("campaignSummary")` **and** a summary arrived).
 

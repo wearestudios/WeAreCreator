@@ -75,7 +75,80 @@ const Stage = ({ stage, index }) => (
     </li>
 );
 
-export default function ProcessFlow({ process, className = "" }) {
+/** An exit or a send-back, in place of the next action. */
+const Banner = ({ banner }) => {
+    const tone = BANNER_TONE[banner.tone] || BANNER_TONE.attention;
+    const BannerIcon = tone.icon;
+    return (
+        <div
+            data-testid={APPLICATION.processBanner}
+            className={"mt-3 flex items-start gap-3 rounded-md border px-4 py-3 " + tone.className}
+        >
+            <BannerIcon aria-hidden="true" className={"mt-0.5 h-4 w-4 flex-none " + tone.iconClass} />
+            <span className="min-w-0 text-meta">
+                <span className="font-medium">{banner.title}</span>
+                {banner.detail ? (
+                    <span className="mt-0.5 block text-meta opacity-80">{banner.detail}</span>
+                ) : null}
+            </span>
+        </div>
+    );
+};
+
+/**
+ * The same eight stages as segmented bars — done navy, the current one red,
+ * the rest a warm track — with the current stage named under them.
+ *
+ * **A variant of this component, not a second tracker.** The creator's card
+ * used to draw its own six-stage rail, and that copy is the one the shared
+ * flow replaced; the work card wants a slimmer shape, so it asks this
+ * component for one. The stages, the position and the banner are still the
+ * server's. The next action is not drawn here: the card carries it in its own
+ * box, beside the button that does it.
+ *
+ * One label rather than eight. Under each bar, "Content delivery" at 12.5px
+ * is wider than its share of a 430px card, so the line would wrap into a
+ * second row of fragments; each bar names itself to a screen reader and on
+ * hover instead.
+ */
+function Bars({ process, className }) {
+    const { stages = [], banner, stage_number: number, stage_count: count } = process;
+    const current = stages.find((s) => s.current);
+    return (
+        <div data-testid={APPLICATION.process} data-variant="bars" className={"min-w-0 " + className}>
+            <ol className="flex gap-1" aria-label="Application process">
+                {stages.map((stage) => {
+                    const state = stage.current ? "current" : stage.done ? "done" : "todo";
+                    return (
+                        <li
+                            key={stage.key}
+                            data-testid={APPLICATION.processStage(stage.key)}
+                            data-state={state}
+                            aria-current={stage.current ? "step" : undefined}
+                            title={stage.label}
+                            className={
+                                "h-1.5 min-w-0 flex-1 rounded-full " +
+                                (state === "current" ? "bg-accent" : state === "done" ? "bg-primary" : "bg-muted")
+                            }
+                        >
+                            <span className="sr-only">
+                                {stage.label}
+                                {state === "current" ? ", current" : state === "done" ? ", done" : ""}
+                            </span>
+                        </li>
+                    );
+                })}
+            </ol>
+            <p className="mt-2 flex flex-wrap gap-x-1.5 text-label text-muted-foreground">
+                <span className="font-bold text-foreground">{current?.label || "Not on the line"}</span>
+                {number ? <span>· Stage {number} of {count}</span> : null}
+            </p>
+            {banner ? <Banner banner={banner} /> : null}
+        </div>
+    );
+}
+
+export default function ProcessFlow({ process, variant = "line", className = "" }) {
     // **Read synchronously**, so a phone never mounts the eight-across form
     // even for a frame — the other way round, a row of eight boxes appears and
     // vanishes on the device least able to lay it out.
@@ -83,13 +156,12 @@ export default function ProcessFlow({ process, className = "" }) {
     const [open, setOpen] = useState(false);
 
     if (!process) return null;
+    if (variant === "bars") return <Bars process={process} className={className} />;
 
     const { stages = [], next_action: next, banner, stage_number: number, stage_count: count } =
         process;
     const owner = next?.owner ? OWNER[next.owner] : null;
     const current = stages.find((s) => s.current);
-    const tone = banner ? BANNER_TONE[banner.tone] || BANNER_TONE.attention : null;
-    const BannerIcon = tone?.icon;
 
     return (
         <div data-testid={APPLICATION.process} className={"min-w-0 " + className}>
@@ -148,26 +220,7 @@ export default function ProcessFlow({ process, className = "" }) {
                 the work still has a position on it, and an exit that erased
                 the stepper would lose the record of how far it got. */}
             {banner ? (
-                <div
-                    data-testid={APPLICATION.processBanner}
-                    className={
-                        "mt-3 flex items-start gap-3 rounded-md border px-4 py-3 " +
-                        tone.className
-                    }
-                >
-                    <BannerIcon
-                        aria-hidden="true"
-                        className={"mt-0.5 h-4 w-4 flex-none " + tone.iconClass}
-                    />
-                    <span className="min-w-0 text-meta">
-                        <span className="font-medium">{banner.title}</span>
-                        {banner.detail ? (
-                            <span className="mt-0.5 block text-meta opacity-80">
-                                {banner.detail}
-                            </span>
-                        ) : null}
-                    </span>
-                </div>
+                <Banner banner={banner} />
             ) : next ? (
                 <div
                     data-testid={APPLICATION.processNext}

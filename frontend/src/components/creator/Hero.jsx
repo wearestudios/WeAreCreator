@@ -1,39 +1,26 @@
-// The creator's hero.
+// The creator's header.
 //
-// Who they are on the left, what they've made on the right. The money is the
-// headline because it is the reason anybody keeps a profile here — everything
-// else on this page is in service of that number going up.
+// Who they are on the left, what they have made on the right. The photo is a
+// portrait rather than a thumbnail, because creators are the product and the
+// page should say whose it is at a glance; the money counts up once, because
+// it is the reason anybody keeps a profile here.
+//
+// The two buttons this used to carry ("Edit profile", "Browse campaigns") are
+// the sidebar's "Profile" and "Find briefs" now. A header that repeats the
+// navigation beside it spends the fold on a second way to the same two places.
 import React from "react";
-import { Link } from "react-router-dom";
-import {
-    ArrowRight,
-    BadgeCheck,
-    CheckCircle2,
-    Clock,
-    Instagram,
-    XCircle,
-} from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { CheckCircle2, Clock, Instagram, XCircle } from "lucide-react";
+
+import { MetaLine, Pill, StatTile } from "@/components/app/ui";
 import { mediaUrl } from "@/lib/api";
+import { categoryLabel } from "@/lib/categories";
 import { CREATOR_HERO as IDS } from "@/constants/testIds";
-import { CountUp, Money, formatCompact, formatRupees } from "./shared";
+import { CountUp, formatCompact } from "./shared";
 
 const VERIFICATION_META = {
-    pending: {
-        Icon: Clock,
-        label: "Under review",
-        tone: "bg-state-pending-wash text-state-pending border-state-pending/40",
-    },
-    verified: {
-        Icon: CheckCircle2,
-        label: "Verified",
-        tone: "bg-state-approved-wash text-state-approved border-state-approved/40",
-    },
-    rejected: {
-        Icon: XCircle,
-        label: "Needs changes",
-        tone: "bg-state-rejected-wash text-state-rejected border-state-rejected/40",
-    },
+    pending: { Icon: Clock, label: "Under review", tone: "due" },
+    verified: { Icon: CheckCircle2, label: "Verified", tone: "good" },
+    rejected: { Icon: XCircle, label: "Needs changes", tone: "warn" },
 };
 
 const initialsOf = (name) =>
@@ -44,175 +31,138 @@ const initialsOf = (name) =>
         .map((w) => w[0].toUpperCase())
         .join("") || "·";
 
-const SmallStat = ({ label, children, testid }) => (
-    <div className="rounded-md border border-border bg-card p-5 grain-surface">
-        <p className="text-label text-muted-foreground">
-            {label}
-        </p>
-        <div data-testid={testid} className="mt-3 app-figure text-h3 leading-none">
-            {children}
-        </div>
-    </div>
-);
+// A niche is free text, but the seed and older profiles carry category values
+// ("fnb"), so the category's own words come first and anything else is the
+// creator's word with a capital.
+const nicheLabel = (value) => {
+    const label = categoryLabel(value);
+    return label ? label.charAt(0).toUpperCase() + label.slice(1) : "";
+};
+
+// The photo box: a 4:5 portrait, 112px tall on a phone and 160px from `md`.
+// Both branches hold the same box, because most creators start without a
+// photo and the monogram must not be a smaller thing in the same place.
+const PHOTO_BOX = "h-28 w-[5.6rem] flex-none rounded-xl md:h-40 md:w-32";
 
 export default function Hero({ user, profile, earnings }) {
     const status = profile?.verification_status || "pending";
     const meta = VERIFICATION_META[status] || VERIFICATION_META.pending;
     const handle = profile?.instagram_handle;
+    const niche = nicheLabel((profile?.niches || [])[0]);
     const lifetime = earnings?.lifetime_earned ?? 0;
+    const pending = earnings?.pending_earnings ?? 0;
 
     return (
         <header
             data-testid={IDS.section}
-            className="grid gap-6 md:grid-cols-12 md:items-start md:gap-8"
+            className="flex flex-col gap-5 xl:flex-row xl:items-center xl:gap-8"
         >
-            <div className="md:col-span-7">
-                {/* **Their city, not ours.** This said "Bengaluru" to every
-                    creator on the platform, including the ones who had just
-                    told us in the profile form that they are somewhere else —
-                    a hardcoded city on the one screen that knows the real
-                    answer. Absent falls back to the role alone rather than
-                    guessing. */}
-                <p className="text-label text-primary">
-                    {profile?.city ? `Creator · ${profile.city}` : "Creator"}
-                </p>
+            <div className="flex min-w-0 flex-1 items-center gap-4 md:gap-6">
+                {profile?.profile_image_url ? (
+                    <span className={"media-frame block overflow-hidden " + PHOTO_BOX}>
+                        <img
+                            src={mediaUrl(profile.profile_image_url)}
+                            alt=""
+                            data-testid={IDS.photo}
+                            className="h-full w-full object-cover"
+                        />
+                    </span>
+                ) : (
+                    <span
+                        data-testid={IDS.monogram}
+                        aria-hidden="true"
+                        className={
+                            "grid place-items-center bg-card text-[2rem] font-extrabold text-muted-foreground shadow-card md:text-[2.5rem] " +
+                            PHOTO_BOX
+                        }
+                    >
+                        {initialsOf(profile?.name || user?.name)}
+                    </span>
+                )}
 
-                {/* The photo is the anchor of the page — creators are the
-                    heart of the product and the header should say so at a
-                    glance, not in a thumbnail. The media-frame reserves and
-                    tints the box so a slow image is a surface, not a hole. */}
-                <div className="mt-5 flex items-center gap-5 md:gap-7">
-                    {profile?.profile_image_url ? (
-                        <span className="media-frame block aspect-square h-28 w-28 flex-none overflow-hidden rounded-lg border border-border sm:h-32 sm:w-32 md:h-40 md:w-40">
-                            <img
-                                src={mediaUrl(profile.profile_image_url)}
-                                alt=""
-                                data-testid={IDS.photo}
-                                className="h-full w-full object-cover"
-                            />
-                        </span>
-                    ) : (
-                        <span
-                            data-testid={IDS.monogram}
-                            aria-hidden="true"
-                            className="grid h-28 w-28 flex-none place-items-center rounded-lg border border-border bg-muted font-bold text-h1 text-muted-foreground sm:h-32 sm:w-32 md:h-40 md:w-40 md:text-h1"
-                        >
-                            {initialsOf(profile?.name || user?.name)}
-                        </span>
-                    )}
-                    <div className="min-w-0">
-                        <h1
-                            data-testid={IDS.name}
-                            className="app-title"
-                        >
-                            {profile?.name || user?.name}
-                        </h1>
-                        <span
-                            data-testid={IDS.badge(status)}
-                            className={
-                                "mt-3 inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-label " +
-                                meta.tone
-                            }
-                        >
-                            <meta.Icon className="h-3.5 w-3.5" />
-                            {meta.label}
-                        </span>
-                    </div>
-                </div>
+                <div className="min-w-0">
+                    <Pill tone={meta.tone} data-testid={IDS.badge(status)}>
+                        <meta.Icon aria-hidden="true" className="h-3.5 w-3.5" />
+                        {meta.label}
+                    </Pill>
+                    <h1 data-testid={IDS.name} className="app-title mt-2 break-words">
+                        {profile?.name || user?.name}
+                    </h1>
 
-                <div className="mt-5 flex flex-wrap items-center gap-x-3 gap-y-2 text-meta text-muted-foreground">
-                    {handle ? (
-                        <a
-                            href={
-                                profile?.instagram_profile_url ||
-                                `https://instagram.com/${handle}`
-                            }
-                            target="_blank"
-                            rel="noreferrer"
-                            data-testid={IDS.handle}
-                            className="-my-2 min-h-[2.75rem] py-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background md:my-0 md:min-h-0 md:py-0 inline-flex items-center gap-1.5 transition-colors duration-200 hover:text-primary"
-                        >
-                            <Instagram className="h-4 w-4" />@{handle}
-                        </a>
-                    ) : (
-                        <span data-testid={IDS.handleEmpty}>No Instagram handle yet</span>
-                    )}
-                    {profile?.follower_count != null && (
-                        <>
-                            <span className="text-muted-foreground/50">·</span>
+                    {/* Handle · niche · city · followers · where the number
+                        came from. **Their city, not ours** — this said
+                        "Bengaluru" to every creator once, including the ones
+                        who had just told us otherwise: `profile?.city`. */}
+                    <MetaLine className="mt-2 text-meta font-semibold text-muted-foreground">
+                        {handle ? (
+                            <a
+                                href={profile?.instagram_profile_url || `https://instagram.com/${handle}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                data-testid={IDS.handle}
+                                className="-my-2 inline-flex min-h-[2.75rem] items-center gap-1.5 py-2 text-foreground transition-colors duration-200 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:my-0 md:min-h-0 md:py-0"
+                            >
+                                <Instagram aria-hidden="true" className="h-4 w-4" />@{handle}
+                            </a>
+                        ) : (
+                            <span data-testid={IDS.handleEmpty}>No Instagram handle yet</span>
+                        )}
+                        {niche}
+                        {profile?.city}
+                        {profile?.follower_count != null && (
                             <span data-testid={IDS.followers}>
                                 {formatCompact(profile.follower_count)} followers
                             </span>
-                            {/* Where the number came from, always said. A
-                                measured figure and a remembered one are worth
-                                different amounts to a brand, and showing them
-                                identically is how the scraped ones got
-                                trusted. */}
-                            {profile.follower_count_verified ? (
+                        )}
+                        {/* Where the number came from, always said. A measured
+                            figure and a remembered one are worth different
+                            amounts to a brand, and showing them identically is
+                            how the scraped ones got trusted. */}
+                        {profile?.follower_count != null &&
+                            (profile.follower_count_verified ? (
                                 <span
                                     data-testid={IDS.followersVerified}
-                                    title="Pulled from Instagram, refreshed every 12 hours"
-                                    className="inline-flex items-center gap-1 rounded-full border border-state-approved/40 bg-state-approved-wash px-2 py-0.5 text-label text-state-approved"
+                                    title="Read from Instagram, refreshed every 12 hours"
+                                    className="text-state-approved"
                                 >
-                                    <BadgeCheck className="h-3 w-3" />
-                                    Verified
+                                    from Instagram
                                 </span>
                             ) : (
-                                <span
-                                    data-testid={IDS.followersNote}
-                                    className="text-meta text-muted-foreground/70"
-                                >
-                                    (self-reported)
-                                </span>
-                            )}
-                        </>
-                    )}
-                </div>
-
-                <div className="mt-5 flex flex-wrap gap-3 md:mt-7">
-                    <Link to="/onboarding/creator" data-testid={IDS.editProfile}>
-                        <Button
-                            variant="outline"
-                            className="h-11 rounded-full border-input bg-transparent hover:bg-muted"
-                        >
-                            Edit profile
-                        </Button>
-                    </Link>
-                    <Link to="/campaigns" data-testid={IDS.browse}>
-                        <Button className="group h-11 rounded-full bg-primary text-primary-foreground hover:bg-primary-hover">
-                            Browse campaigns
-                            <ArrowRight className="ml-2 h-4 w-4 transition-transform duration-200 group-hover:translate-x-1" />
-                        </Button>
-                    </Link>
+                                <span data-testid={IDS.followersNote}>self-reported</span>
+                            ))}
+                    </MetaLine>
                 </div>
             </div>
 
-            <div className="md:col-span-5">
-                <div className="rounded-md border border-border bg-card p-6 md:p-7 grain-surface">
-                    <p className="text-label text-muted-foreground">
-                        Earned with WeAre
-                    </p>
-                    <Money
-                        symbolClass="h-6 w-6 md:h-7 md:w-7"
-                        className="mt-4 app-figure text-h1 leading-none text-data"
-                    >
-                        <CountUp value={lifetime} testid={IDS.lifetime} />
-                    </Money>
-                    <p className="mt-4 text-meta leading-relaxed text-muted-foreground">
-                        Paid out to you, after our fee.
-                    </p>
-                </div>
-
-                <div className="mt-4 grid grid-cols-2 gap-4">
-                    <SmallStat label="Campaigns done" testid={IDS.completed}>
-                        {earnings?.campaigns_completed ?? 0}
-                    </SmallStat>
-                    <SmallStat label="On its way" testid={IDS.pending}>
-                        <Money symbolClass="h-4 w-4">
-                            {formatRupees(earnings?.pending_earnings ?? 0)}
-                        </Money>
-                    </SmallStat>
-                </div>
+            {/* Three tiles, beside the name where there is room and under it
+                where there is not. The money counts up once; the count of
+                campaigns is a count, and counting a 3 up from 0 is theatre. */}
+            {/* From `xl` each tile is as wide as its figure needs and never
+                narrower than 9.5rem — a fixed third truncated "₹49,000". */}
+            <div className="grid grid-cols-3 gap-2.5 sm:gap-3 xl:flex xl:flex-none">
+                <StatTile
+                    label="Earned so far"
+                    className="xl:min-w-[9.5rem]"
+                    value={
+                        <>
+                            ₹<CountUp value={lifetime} testid={IDS.lifetime} />
+                        </>
+                    }
+                />
+                <StatTile
+                    label="Campaigns done"
+                    className="xl:min-w-[9.5rem]"
+                    value={<span data-testid={IDS.completed}>{earnings?.campaigns_completed ?? 0}</span>}
+                />
+                <StatTile
+                    label="On its way"
+                    className="xl:min-w-[9.5rem]"
+                    value={
+                        <>
+                            ₹<CountUp value={pending} testid={IDS.pending} />
+                        </>
+                    }
+                />
             </div>
         </header>
     );

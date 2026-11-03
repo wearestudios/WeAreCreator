@@ -77,7 +77,7 @@ export default function Earnings({ payments, inPaymentCollabs, earnings }) {
                 }
             />
 
-            <div className="mt-8">
+            <div className="mt-4">
                 {rows.length === 0 ? (
                     <EmptyState testid={IDS.empty} Icon={Wallet} title="No payouts yet.">
                         Once a brand approves your content, the payment shows up here
@@ -86,7 +86,7 @@ export default function Earnings({ payments, inPaymentCollabs, earnings }) {
                 ) : (
                     <ul
                         data-testid={IDS.list}
-                        className="divide-y divide-divider overflow-hidden rounded-md border border-border bg-card grain-surface"
+                        className="divide-y divide-divider overflow-hidden rounded-lg bg-card shadow-card"
                     >
                         {rows.map((p) => (
                             <li

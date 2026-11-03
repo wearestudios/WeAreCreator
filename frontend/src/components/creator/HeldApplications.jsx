@@ -39,7 +39,7 @@ function ResolvedHeld({ rows }) {
             <p className="text-label text-muted-foreground">
                 Pitches that didn&apos;t go in
             </p>
-            <ul className="mt-3 divide-y divide-divider overflow-hidden rounded-md border border-border bg-card">
+            <ul className="mt-3 divide-y divide-divider overflow-hidden rounded-lg bg-card shadow-card">
                 {rows.map((row) => (
                     <li key={row.id} data-testid={RESOLVED_IDS.row(row.id)} className="px-5 py-4 sm:px-6">
                         <span className="flex flex-wrap items-baseline justify-between gap-2">
@@ -120,7 +120,7 @@ export default function HeldApplications({ held, resolved, outstanding, onChange
                 )}
             </p>
 
-            <ul className="mt-4 divide-y divide-divider overflow-hidden rounded-md border border-border bg-card grain-surface">
+            <ul className="mt-4 divide-y divide-divider overflow-hidden rounded-lg bg-card shadow-card">
                 {held.map((row) => (
                     <li
                         key={row.id}

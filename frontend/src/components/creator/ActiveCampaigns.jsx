@@ -3,14 +3,20 @@
 // One card per collaboration, carrying everything needed to turn up: where the
 // creator is in the process, what they have to do next in words they'd use
 // themselves, the manager's number as a link that dials, the venue, and the
-// time. Nothing here is behind a tap, because half the time this is being read
-// on a footpath outside the venue.
+// time. None of that is behind a tap, because half the time this is being
+// read on a footpath outside the venue — only the reference half (the brief's
+// checklist, accepted terms, the draft on file, the fee's history) folds
+// under the work.
+//
+// Laid out as board 26 draws it: the cover slice, the title over brand ·
+// deliverables · fee, whose move it is, the stages as segmented bars, and one
+// tinted box holding the next step and its button.
 import React, { useState } from "react";
 import { Link } from "react-router-dom";
-import { motion, useReducedMotion } from "framer-motion";
 import { notifyError, notifySuccess } from "@/lib/feedback";
 import {
     CalendarClock,
+    ChevronDown,
     FileVideo,
     Loader2,
     MapPin,
@@ -30,16 +36,13 @@ import {
 } from "@/constants/testIds";
 import ReviewWindowNote from "@/components/collab/ReviewWindowNote";
 import NegotiationHistory from "@/components/collab/NegotiationHistory";
-import {
-    EmptyState,
-    Money,
-    SectionHead,
-    formatDateTime,
-    formatRupees,
-} from "./shared";
+import { EmptyState, formatDateTime } from "./shared";
+import { CardHeading, MetaLine, Pill } from "@/components/app/ui";
+import { DeliverableSummary } from "@/components/Deliverables";
+import { hasBriefDetails } from "@/lib/briefDetails";
 import ProcessFlow from "@/components/application/ProcessFlow";
 import Shortfall from "@/components/Shortfall";
-import { formatCollabMoney } from "@/lib/compensation";
+import { formatCollabMoney, formatInr } from "@/lib/compensation";
 import BrandAvatar from "@/components/BrandAvatar";
 import CampaignCover from "@/components/CampaignCover";
 import DisputePanel from "@/components/DisputePanel";
@@ -77,6 +80,13 @@ const ACTION_ICON = {
     add_payout_details: Wallet,
 };
 
+// Whose move it is, in two words, on the card's corner.
+const MOVE = {
+    creator: { label: "Your move", tone: "warn" },
+    brand: { label: "Brand's move", tone: "info" },
+    admin: { label: "WeAre's move", tone: "info" },
+};
+
 const Detail = ({ Icon, children, testid }) => (
     <div data-testid={testid} className="flex items-start gap-2 text-meta text-muted-foreground">
         <Icon className="mt-0.5 h-4 w-4 flex-none text-primary/80" />
@@ -85,7 +95,6 @@ const Detail = ({ Icon, children, testid }) => (
 );
 
 const ActiveCard = ({ collab, onBook, onSubmit, onDraft, onRefresh }) => {
-    const still = useReducedMotion();
     const [releasing, setReleasing] = useState(false);
     const next = collab.next_action || {};
     const Icon = ACTION_ICON[next.action];
@@ -142,14 +151,31 @@ const ActiveCard = ({ collab, onBook, onSubmit, onDraft, onRefresh }) => {
         }
     };
 
+    // **Whose move it is, from the server's owner of the next step.** That
+    // owner is mapped through `execution_owner`, so a draft our manager is
+    // reviewing reads as ours rather than the brand's. The card's own
+    // `waiting_on` is the fallback for a row whose flow has no next step.
+    const owner = collab.process?.next_action?.owner || (next.waiting_on === "you" ? "creator" : null);
+    const mine = owner === "creator";
+    const move = MOVE[owner];
+    // Their move: the card's own sentence, which knows about slots, venues and
+    // drafts. Somebody else's: the flow's, which names the wait without
+    // putting it on the wrong party.
+    const nextText = mine
+        ? next.label || collab.process?.next_action?.label
+        : collab.process?.next_action?.label || next.label;
+    const buttonVariant = mine ? "urgent" : "solid";
+    const BUTTON = "h-11 w-full sm:w-auto";
+
     const action = (() => {
         if (next.action === "confirm_address") {
             return (
                 <Button
                     data-testid={IDS.primary(collab.id)}
+                    variant={buttonVariant}
                     disabled={confirming === "address"}
                     onClick={() => confirmDelivery("address")}
-                    className="h-12 w-full rounded-full bg-primary text-primary-foreground hover:bg-primary-hover sm:w-auto"
+                    className={BUTTON}
                 >
                     <Icon className="mr-2 h-4 w-4" />
                     {confirming === "address" ? "Confirming…" : "Confirm my address"}
@@ -160,9 +186,10 @@ const ActiveCard = ({ collab, onBook, onSubmit, onDraft, onRefresh }) => {
             return (
                 <Button
                     data-testid={IDS.primary(collab.id)}
+                    variant={buttonVariant}
                     disabled={confirming === "received"}
                     onClick={() => confirmDelivery("received")}
-                    className="h-12 w-full rounded-full bg-primary text-primary-foreground hover:bg-primary-hover sm:w-auto"
+                    className={BUTTON}
                 >
                     <Icon className="mr-2 h-4 w-4" />
                     {confirming === "received" ? "Confirming…" : "It arrived"}
@@ -173,8 +200,9 @@ const ActiveCard = ({ collab, onBook, onSubmit, onDraft, onRefresh }) => {
             return (
                 <Button
                     data-testid={IDS.primary(collab.id)}
+                    variant={buttonVariant}
                     onClick={() => onBook(collab)}
-                    className="h-12 w-full rounded-full bg-primary text-primary-foreground hover:bg-primary-hover sm:w-auto"
+                    className={BUTTON}
                 >
                     <Icon className="mr-2 h-4 w-4" />
                     Pick your slot
@@ -185,8 +213,9 @@ const ActiveCard = ({ collab, onBook, onSubmit, onDraft, onRefresh }) => {
             return (
                 <Button
                     data-testid={IDS.primary(collab.id)}
+                    variant={buttonVariant}
                     onClick={() => onDraft(collab)}
-                    className="h-12 w-full rounded-full bg-primary text-primary-foreground hover:bg-primary-hover sm:w-auto"
+                    className={BUTTON}
                 >
                     <Icon className="mr-2 h-4 w-4" />
                     {next.action === "resubmit_draft" ? "Replace your draft" : "Send your draft"}
@@ -197,8 +226,9 @@ const ActiveCard = ({ collab, onBook, onSubmit, onDraft, onRefresh }) => {
             return (
                 <Button
                     data-testid={IDS.primary(collab.id)}
+                    variant={buttonVariant}
                     onClick={() => onSubmit(collab)}
-                    className="h-12 w-full rounded-full bg-primary text-primary-foreground hover:bg-primary-hover sm:w-auto"
+                    className={BUTTON}
                 >
                     <Icon className="mr-2 h-4 w-4" />
                     {/* **"Upload your content link" is a lie on a brief whose
@@ -225,7 +255,7 @@ const ActiveCard = ({ collab, onBook, onSubmit, onDraft, onRefresh }) => {
                     rel="noreferrer"
                     data-testid={IDS.primary(collab.id)}
                 >
-                    <Button className="h-12 w-full rounded-full bg-primary text-primary-foreground hover:bg-primary-hover sm:w-auto">
+                    <Button variant={buttonVariant} className={BUTTON}>
                         <MapPin className="mr-2 h-4 w-4" />
                         Get directions
                     </Button>
@@ -235,7 +265,7 @@ const ActiveCard = ({ collab, onBook, onSubmit, onDraft, onRefresh }) => {
         if (next.action === "add_payout_details") {
             return (
                 <Link to="/onboarding/creator" data-testid={IDS.primary(collab.id)}>
-                    <Button className="h-12 w-full rounded-full bg-primary text-primary-foreground hover:bg-primary-hover sm:w-auto">
+                    <Button variant={buttonVariant} className={BUTTON}>
                         <Icon className="mr-2 h-4 w-4" />
                         Add payout details
                     </Button>
@@ -245,16 +275,44 @@ const ActiveCard = ({ collab, onBook, onSubmit, onDraft, onRefresh }) => {
         return null;
     })();
 
+    // The reference half of the card — the brief's checklist, the terms
+    // already accepted, the draft on file, how the fee was agreed and the
+    // door to a dispute — folds under the work. None of it is the next thing to do, and drawn open it
+    // made a two-up card a 1,400px tower with the button somewhere in the
+    // middle. Terms still waiting on their tap stay out in the open, because
+    // that one *is* a thing to do.
+    const termsToAccept = Boolean(collab.terms && collab.can_accept_terms);
+    // A dispute that exists is the situation and goes first; the button to
+    // raise one is a door kept for when it is needed, and drawn open on every
+    // card it was the loudest thing on the page while nothing was wrong.
+    const dispute = (
+        <DisputePanel
+            collaborationId={collab.id}
+            dispute={collab.dispute}
+            actions={{
+                can_raise_dispute: collab.can_raise_dispute,
+                can_withdraw_dispute: collab.can_withdraw_dispute,
+            }}
+            onChanged={onRefresh}
+        />
+    );
+    const canRaise = !collab.dispute && Boolean(collab.can_raise_dispute);
+    const hasMore =
+        canRaise ||
+        hasBriefDetails(collab.brief_details) ||
+        (collab.terms && !termsToAccept) ||
+        Boolean(collab.draft?.submitted_at) ||
+        collab.negotiation?.entries?.length > 0;
+
     return (
-        <motion.li
+        <li
             data-testid={IDS.card(collab.id)}
-            whileHover={still ? undefined : { y: -2 }}
-            transition={{ duration: 0.2, ease: "easeOut" }}
-            className="overflow-hidden rounded-md border border-border bg-card transition-colors duration-200 hover:border-tint/30 grain-surface"
+            className="flex min-w-0 flex-col overflow-hidden rounded-lg bg-card shadow-card"
         >
             {/* A slim slice of the campaign's own cover, so a card of work
-                reads as a place rather than a form. 16:5, not 16:9 — this is
-                a work card and the tracker below it is the point. */}
+                reads as a place rather than a form. 16:5 on a phone, capped
+                at 118px from `md` — aspect-ratio yields to max-height, which
+                is what stops a wide card growing a wall of tint. */}
             <CampaignCover
                 campaign={{
                     id: collab.campaign_id,
@@ -264,315 +322,274 @@ const ActiveCard = ({ collab, onBook, onSubmit, onDraft, onRefresh }) => {
                 }}
                 ratio="aspect-[16/5]"
                 rounded="rounded-none"
-                // aspect-ratio yields to max-height: on a phone the strip is
-                // 16:5 of the card, on a desktop-width card it stops growing
-                // at 11rem instead of becoming a 350px wall of tint.
-                className="border-0 border-b md:max-h-44"
+                className="border-0 md:max-h-[7.375rem]"
             />
-            <div className="p-6 md:p-7">
-            <div className="flex flex-wrap items-start justify-between gap-4">
-                <div className="min-w-0">
-                    <p className="flex items-center gap-2 text-label text-muted-foreground">
-                        <BrandAvatar brand={collab} size="h-6 w-6" />
-                        <span className="truncate">
-                            {collab.brand_name || "Brand"}
-                            {collab.area ? ` · ${collab.area}` : ""}
-                        </span>
-                    </p>
+            <div className="flex flex-1 flex-col p-5 md:px-[22px]">
+                <div className="flex items-start justify-between gap-3">
                     <Link
                         to={`/campaigns/${collab.campaign_id}`}
                         data-testid={IDS.title(collab.id)}
-                        className="mt-2 block font-bold text-h3 leading-tight transition-colors duration-200 hover:text-primary"
+                        className="min-w-0 text-body-lg font-extrabold leading-snug text-heading transition-colors duration-200 hover:text-primary"
                     >
                         {collab.campaign_title || "Untitled campaign"}
                     </Link>
+                    {move && (
+                        <Pill tone={move.tone} data-testid={IDS.move(collab.id)} className="mt-0.5 flex-none">
+                            {move.label}
+                        </Pill>
+                    )}
                 </div>
-                {money.isBarter ? (
-                    <span
-                        data-testid={IDS.amount(collab.id)}
-                        data-barter="true"
-                        className="max-w-[14rem] text-right text-meta leading-snug text-muted-foreground"
-                    >
-                        {money.text}
+                {/* Brand · what they asked for · what it pays — the full
+                    width of the card, so the pill above never squeezes it. */}
+                <MetaLine className="mt-1.5 text-meta font-semibold text-muted-foreground">
+                    <span className="inline-flex items-center gap-1.5">
+                        <BrandAvatar brand={collab} size="h-5 w-5" />
+                        {collab.brand_name || "Brand"}
                     </span>
-                ) : (
-                    <Money
-                        symbolClass="h-4 w-4"
-                        className="app-figure text-h3 leading-none"
-                    >
-                        <span data-testid={IDS.amount(collab.id)}>{formatRupees(amount)}</span>
-                    </Money>
-                )}
-            </div>
+                    {(collab.deliverable_items?.length > 0 || collab.deliverables) && (
+                        <DeliverableSummary campaign={collab} />
+                    )}
+                    {money.isBarter ? (
+                        <span data-testid={IDS.amount(collab.id)} data-barter="true">
+                            {money.text}
+                        </span>
+                    ) : (
+                        <span data-testid={IDS.amount(collab.id)} className="tabular-nums text-foreground">
+                            {formatInr(amount)}
+                        </span>
+                    )}
+                </MetaLine>
 
-            {/* **The same eight stages the brand and the admin read.** This
-                card used to draw its own six, which meant a creator asking
-                "where is this" and a brand answering the same question were
-                looking at two different pictures. The stages, the position and
-                the next line all come from the server — in the creator's
-                voice, because the server knows who asked. */}
-            <ProcessFlow process={collab.process} className="mt-6" />
+                {/* **The same eight stages the brand and the admin read**, as
+                    segmented bars. The stages, the position and any banner all
+                    come from the server; the next step is the box below. */}
+                <ProcessFlow process={collab.process} variant="bars" className="mt-4" />
 
-            {/* **What arrived short, and why it was accepted anyway**, on the
-                card of the person it is a judgement about. The shortfall was
-                shipped on this row and drawn nowhere on it, so a creator found
-                out from a smaller payment than they expected. Only when it
-                actually was partial — an ordinary approval says nothing. */}
-            {/* The rounds of changes agreed, "1 of 2 used" — and, when the
-                reviewer has asked for one more, the creator's two answers. */}
-            <RevisionAllowance
-                collabId={collab.id}
-                revisions={collab.revisions}
-                canAnswer={collab.can_answer_extra_revision}
-                onChanged={onRefresh}
-                className="mt-5"
-            />
+                {/* **The creator sees these first.** A freeze on their own
+                    payment, a request to pull their own post, what arrived
+                    short, a step WeAre took for them, terms waiting on their
+                    tap, an extra round asked of them. Each renders nothing
+                    when there is nothing to say, and what they may do comes
+                    off the row rather than being worked out here. */}
+                <div className="mt-4 space-y-3 empty:hidden">
+                    {collab.dispute && dispute}
+                    <TakedownPanel
+                        collaborationId={collab.id}
+                        takedown={collab.takedown}
+                        canRespond={Boolean(collab.can_respond_takedown)}
+                        onChanged={onRefresh}
+                    />
+                    {collab.partial_delivery && (
+                        <Shortfall
+                            shortfall={collab.shortfall}
+                            note={collab.partial_note}
+                            testid={IDS.shortfall(collab.id)}
+                        />
+                    )}
+                    {/* A booking they did not make must never read as one
+                        they did. */}
+                    <OnBehalfNote onBehalf={collab.on_behalf} voice="you" testid={IDS.onBehalf(collab.id)} />
+                    {/* **Their copy of what was agreed, and their one tap.**
+                        The shared application page is mounted at no creator
+                        route, so this card is the only place they can accept. */}
+                    {termsToAccept && (
+                        <TermsCard
+                            terms={collab.terms}
+                            collabId={collab.id}
+                            canAccept
+                            onAccepted={onRefresh}
+                        />
+                    )}
+                    {/* "1 of 2 used" — and, when the reviewer has asked for
+                        one more round, the creator's two answers. */}
+                    <RevisionAllowance
+                        collabId={collab.id}
+                        revisions={collab.revisions}
+                        canAnswer={collab.can_answer_extra_revision}
+                        onChanged={onRefresh}
+                    />
+                </div>
 
-            {collab.partial_delivery && (
-                <Shortfall
-                    shortfall={collab.shortfall}
-                    note={collab.partial_note}
-                    testid={IDS.shortfall(collab.id)}
-                    className="mt-5"
-                />
-            )}
-
-            {/* **The creator sees both, and sees them first.** A freeze on
-                their own payment and a request to pull their own post are the
-                two things they would otherwise learn about from a payment that
-                never arrived. Both render nothing when there is neither
-                anything to say nor anything to offer, and what they may do
-                comes off the row rather than being worked out here. */}
-            <div className="mt-5 space-y-3 empty:mt-0">
-                <DisputePanel
-                    collaborationId={collab.id}
-                    dispute={collab.dispute}
-                    actions={{
-                        can_raise_dispute: collab.can_raise_dispute,
-                        can_withdraw_dispute: collab.can_withdraw_dispute,
-                    }}
-                    onChanged={onRefresh}
-                />
-                <TakedownPanel
-                    collaborationId={collab.id}
-                    takedown={collab.takedown}
-                    canRespond={Boolean(collab.can_respond_takedown)}
-                    onChanged={onRefresh}
-                />
-                {/* **The creator's copy of what was agreed, and their one
-                    tap.** The shared application page is mounted at /admin,
-                    /brand and /manager and at no creator route, so a terms
-                    card that lived only there would be a card the one party
-                    who has to accept it can never reach — the acceptance
-                    would be an endpoint with no caller. This is their
-                    surface. */}
-                <TermsCard
-                    terms={collab.terms}
-                    collabId={collab.id}
-                    canAccept={Boolean(collab.can_accept_terms)}
-                    onAccepted={onRefresh}
-                />
-
-                {/* **The checklist, while there is still time to act on it.**
-                    A creator's only surface for one of their applications is
-                    this card, so a checklist that lived on the reviewer's
-                    screen alone would reach them at draft review — which is
-                    after the shoot, when the fix is a reshoot. */}
-                <BriefChecklist
-                    details={collab.brief_details}
-                    title="What this brief asks for"
-                />
-
-                {/* **The date, once the work has been approved.** The brief
-                    said "within N days" and that was the right shape there;
-                    by the time somebody has delivered, the useful thing is a
-                    day they can hold us to. Absent on every row that has not
-                    reached approval — the server decides, as everywhere on
-                    this card. */}
-                <PayoutDue dueAt={collab.payout_due_at} className="mt-4" />
-
-                {/* **What they sent, and what became of it.** `draft` was on
-                    the row with the submission time, the file or link, the
-                    count of send-backs and the approval date — and the card
-                    drew only the review deadline, so a creator could not
-                    check which version was in front of the reviewer. */}
-                {collab.draft?.submitted_at && (
-                    <div
-                        data-testid={DRAFT_IDS.block(collab.id)}
-                        className="rounded-md border border-border bg-background/60 px-4 py-3 text-meta leading-relaxed text-muted-foreground"
-                    >
-                        <p className="text-foreground">
-                            Draft sent {formatDateTime(collab.draft.submitted_at)}
-                            {collab.draft.kind === "link" && collab.draft.draft_url ? (
-                                <>
-                                    {" · "}
-                                    <a
-                                        href={collab.draft.draft_url}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="underline underline-offset-4"
+                {/* **One box, one button.** Tinted red when the move is
+                    theirs and navy while they wait; the button fills the one
+                    `IDS.primary` slot whichever action it is. */}
+                {(nextText || action) && (
+                    <div className={"mt-4 rounded-[14px] px-4 py-3.5 " + (mine ? "bg-wash-red" : "bg-wash-navy")}>
+                        {nextText && (
+                            <p
+                                data-testid={IDS.nextAction(collab.id)}
+                                className="text-body font-bold leading-snug text-heading"
+                            >
+                                {nextText}
+                            </p>
+                        )}
+                        <ReviewWindowNote
+                            reviewWindow={collab.draft?.review_window}
+                            testid={WINDOW_IDS.creatorNote(collab.id)}
+                        />
+                        {(action || collab.can_cancel_slot || collab.cancel_blocked_reason) && (
+                            <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-4">
+                                {action}
+                                {/* **Disabled with the reason, not offered and
+                                    refused.** Inside the cutoff, or past the
+                                    reschedule cap, the route answers 409 — so
+                                    the server sends why instead. */}
+                                {!collab.can_cancel_slot && collab.cancel_blocked_reason && (
+                                    <p
+                                        data-testid={IDS.cancelBlocked(collab.id)}
+                                        className="text-meta leading-relaxed text-muted-foreground"
                                     >
-                                        the link you sent
+                                        {collab.cancel_blocked_reason}
+                                    </p>
+                                )}
+                                {collab.can_cancel_slot && (
+                                    <button
+                                        type="button"
+                                        data-testid={IDS.cancelSlot(collab.id)}
+                                        onClick={cancelSlot}
+                                        disabled={releasing}
+                                        className="inline-flex min-h-[2.75rem] items-center justify-start gap-2 self-start text-meta font-semibold text-muted-foreground transition-colors duration-200 hover:text-primary disabled:opacity-50 sm:self-auto"
+                                    >
+                                        {releasing && <Loader2 className="h-4 w-4 animate-spin" />}
+                                        Can't make it? Release this slot
+                                        {/* How many of their moves are left,
+                                            from the numbers the cap is
+                                            checked against. */}
+                                        {collab.reschedule_limit > 0 && (
+                                            <span data-testid={IDS.moves(collab.id)} className="font-normal">
+                                                ({collab.reschedule_count} of {collab.reschedule_limit} moves used)
+                                            </span>
+                                        )}
+                                    </button>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {/* Where, when and who to call — never behind a tap, because
+                    half the time this is being read outside the venue. */}
+                {(collab.slot_starts_at || collab.venue?.address || collab.manager?.name) && (
+                    <div className="mt-4 grid gap-2.5">
+                        {collab.slot_starts_at && (
+                            <Detail Icon={CalendarClock} testid={IDS.slotTime(collab.id)}>
+                                {formatDateTime(collab.slot_starts_at)}
+                            </Detail>
+                        )}
+                        {collab.venue?.address && (
+                            <Detail Icon={MapPin} testid={IDS.venue(collab.id)}>
+                                {collab.venue.address}
+                                {collab.venue.instructions && (
+                                    <span className="mt-1 block text-meta text-muted-foreground/80">
+                                        {collab.venue.instructions}
+                                    </span>
+                                )}
+                            </Detail>
+                        )}
+                        {collab.manager?.name && (
+                            <Detail Icon={Phone} testid={IDS.manager(collab.id)}>
+                                {collab.manager.phone ? (
+                                    // Tap to call: standing outside a venue
+                                    // that can't find your booking, this is
+                                    // the whole reason the page is open.
+                                    <a
+                                        href={`tel:${collab.manager.phone.replace(/\s+/g, "")}`}
+                                        data-testid={IDS.call(collab.id)}
+                                        className="underline underline-offset-4 transition-colors duration-200 hover:text-primary"
+                                    >
+                                        {collab.manager.name} · {collab.manager.phone}
                                     </a>
-                                </>
-                            ) : collab.draft.original_name ? (
-                                ` · ${collab.draft.original_name}`
-                            ) : null}
-                        </p>
-                        <p className="mt-1">
-                            {collab.draft.revision_count > 0
-                                ? `Sent back ${collab.draft.revision_count} time${collab.draft.revision_count === 1 ? "" : "s"}`
-                                : "Not sent back"}
-                            {collab.draft.approved_at
-                                ? ` · approved ${formatDateTime(collab.draft.approved_at)}`
-                                : ""}
-                        </p>
+                                ) : (
+                                    <>{collab.manager.name} · no number on file</>
+                                )}
+                            </Detail>
+                        )}
                     </div>
                 )}
 
-                {/* When the draft goes through if nobody answers. The
-                    creator is the party waiting, so the date is theirs. */}
-                <ReviewWindowNote
-                    reviewWindow={collab.draft?.review_window}
-                    testid={WINDOW_IDS.creatorNote(collab.id)}
-                />
+                {/* **Why the runner moved it**, on the card of the person
+                    whose day it is. */}
+                {collab.reschedule_reason && (
+                    <p
+                        data-testid={IDS.rescheduleReason(collab.id)}
+                        className="mt-3 text-meta leading-relaxed text-muted-foreground"
+                    >
+                        Your booking was moved
+                        {collab.rescheduled_at ? ` on ${formatDateTime(collab.rescheduled_at)}` : ""}:{" "}
+                        {collab.reschedule_reason}
+                    </p>
+                )}
 
-                {/* **How the fee got here**, in their own card — the one
-                    surface a creator has for one of their applications. */}
-                {collab.negotiation?.entries?.length > 0 && (
-                    <div>
-                        <p className="mb-3 text-label text-muted-foreground">
-                            How the fee was agreed
-                        </p>
-                        <NegotiationHistory negotiation={collab.negotiation} compact />
-                    </div>
+                {/* **The date, once the work has been approved** — a day they
+                    can hold us to. Absent on every row before approval. */}
+                <PayoutDue dueAt={collab.payout_due_at} className="mt-3" />
+
+                {hasMore && (
+                    <details data-testid={IDS.more(collab.id)} className="group mt-4 border-t border-divider pt-3">
+                        <summary className="flex min-h-[2.75rem] cursor-pointer list-none items-center gap-2 text-meta font-semibold text-foreground transition-colors duration-200 hover:text-primary [&::-webkit-details-marker]:hidden">
+                            <ChevronDown
+                                aria-hidden="true"
+                                className="h-4 w-4 transition-transform duration-200 group-open:rotate-180"
+                            />
+                            More about this job
+                        </summary>
+                        <div className="mt-2 space-y-4">
+                            {/* **The checklist, while there is still time to
+                                act on it** — at draft review the fix is a
+                                reshoot. */}
+                            <BriefChecklist details={collab.brief_details} title="What this brief asks for" />
+                            {!termsToAccept && (
+                                <TermsCard terms={collab.terms} collabId={collab.id} onAccepted={onRefresh} />
+                            )}
+                            {/* **What they sent, and what became of it**, so a
+                                creator can check which version is in front of
+                                the reviewer. */}
+                            {collab.draft?.submitted_at && (
+                                <div
+                                    data-testid={DRAFT_IDS.block(collab.id)}
+                                    className="rounded-md bg-wash-warm px-4 py-3 text-meta leading-relaxed text-muted-foreground"
+                                >
+                                    <p className="text-foreground">
+                                        Draft sent {formatDateTime(collab.draft.submitted_at)}
+                                        {collab.draft.kind === "link" && collab.draft.draft_url ? (
+                                            <>
+                                                {" · "}
+                                                <a
+                                                    href={collab.draft.draft_url}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="underline underline-offset-4"
+                                                >
+                                                    the link you sent
+                                                </a>
+                                            </>
+                                        ) : collab.draft.original_name ? (
+                                            ` · ${collab.draft.original_name}`
+                                        ) : null}
+                                    </p>
+                                    <p className="mt-1">
+                                        {collab.draft.revision_count > 0
+                                            ? `Sent back ${collab.draft.revision_count} time${collab.draft.revision_count === 1 ? "" : "s"}`
+                                            : "Not sent back"}
+                                        {collab.draft.approved_at
+                                            ? ` · approved ${formatDateTime(collab.draft.approved_at)}`
+                                            : ""}
+                                    </p>
+                                </div>
+                            )}
+                            {/* **How the fee got here**, in their own card. */}
+                            {collab.negotiation?.entries?.length > 0 && (
+                                <div>
+                                    <p className="mb-3 text-label text-muted-foreground">How the fee was agreed</p>
+                                    <NegotiationHistory negotiation={collab.negotiation} compact />
+                                </div>
+                            )}
+                            {canRaise && dispute}
+                        </div>
+                    </details>
                 )}
             </div>
-
-            {/* The card's own next-action line stays where the server has
-                nothing more specific to say — it knows about slots, venues and
-                drafts that the generic flow does not. */}
-            {next.label && !collab.process?.next_action && (
-                <p
-                    data-testid={IDS.nextAction(collab.id)}
-                    className={
-                        "mt-6 rounded-md border px-4 py-3 text-body leading-relaxed " +
-                        (next.waiting_on === "you"
-                            ? "border-primary/30 bg-primary/10 text-primary"
-                            : "border-border bg-background/60 text-muted-foreground")
-                    }
-                >
-                    {next.label}
-                </p>
-            )}
-
-            {/* **A step WeAre took for them, said on their own card.** A
-                booking they did not make must never read as one they did —
-                this is the one surface the creator has, and "slot booked"
-                with no author is exactly the bare word the override is not
-                allowed to leave behind. Renders nothing on every row they
-                moved themselves. */}
-            <OnBehalfNote
-                onBehalf={collab.on_behalf}
-                voice="you"
-                testid={IDS.onBehalf(collab.id)}
-                className="mt-5"
-            />
-
-            {(collab.slot_starts_at || collab.venue?.address || collab.manager?.name) && (
-                <div className="mt-5 grid gap-3 sm:grid-cols-2">
-                    {collab.slot_starts_at && (
-                        <Detail Icon={CalendarClock} testid={IDS.slotTime(collab.id)}>
-                            {formatDateTime(collab.slot_starts_at)}
-                        </Detail>
-                    )}
-                    {collab.venue?.address && (
-                        <Detail Icon={MapPin} testid={IDS.venue(collab.id)}>
-                            {collab.venue.address}
-                            {collab.venue.instructions && (
-                                <span className="mt-1 block text-meta text-muted-foreground/80">
-                                    {collab.venue.instructions}
-                                </span>
-                            )}
-                        </Detail>
-                    )}
-                    {collab.manager?.name && (
-                        <Detail Icon={Phone} testid={IDS.manager(collab.id)}>
-                            {collab.manager.phone ? (
-                                // Tap to call: standing outside a venue that
-                                // can't find your booking, this is the whole
-                                // reason the page is open.
-                                <a
-                                    href={`tel:${collab.manager.phone.replace(/\s+/g, "")}`}
-                                    data-testid={IDS.call(collab.id)}
-                                    className="underline underline-offset-4 transition-colors duration-200 hover:text-primary"
-                                >
-                                    {collab.manager.name} · {collab.manager.phone}
-                                </a>
-                            ) : (
-                                <>{collab.manager.name} · no number on file</>
-                            )}
-                        </Detail>
-                    )}
-                </div>
-            )}
-
-            {/* **Why the runner moved it**, on the card of the person whose
-                day it is. Required at the move and read by nobody, so a
-                creator found a different time here with no word about why. */}
-            {collab.reschedule_reason && (
-                <p
-                    data-testid={IDS.rescheduleReason(collab.id)}
-                    className="mt-5 text-meta leading-relaxed text-muted-foreground"
-                >
-                    Your booking was moved
-                    {collab.rescheduled_at ? ` on ${formatDateTime(collab.rescheduled_at)}` : ""}:{" "}
-                    {collab.reschedule_reason}
-                </p>
-            )}
-
-            {(action || collab.can_cancel_slot || collab.cancel_blocked_reason) && (
-                <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center">
-                    {action}
-                    {/* **Disabled with the reason, not offered and refused.**
-                        Inside the cutoff, or past the reschedule cap, the
-                        route answers 409 — so the server sends why instead. */}
-                    {!collab.can_cancel_slot && collab.cancel_blocked_reason && (
-                        <p
-                            data-testid={IDS.cancelBlocked(collab.id)}
-                            className="text-meta leading-relaxed text-muted-foreground"
-                        >
-                            {collab.cancel_blocked_reason}
-                        </p>
-                    )}
-                    {collab.can_cancel_slot && (
-                        <button
-                            type="button"
-                            data-testid={IDS.cancelSlot(collab.id)}
-                            onClick={cancelSlot}
-                            disabled={releasing}
-                            className="inline-flex min-h-[3rem] items-center justify-start gap-2 self-start text-meta text-muted-foreground transition-colors duration-200 hover:text-primary disabled:opacity-50"
-                        >
-                            {releasing && <Loader2 className="h-4 w-4 animate-spin" />}
-                            {/* Up to the cutoff. The server refuses inside it and
-                                says so, rather than us guessing at the clock. */}
-                            Can't make it? Release this slot
-                            {/* How many of their moves are left, from the
-                                same numbers the cap is checked against. */}
-                            {collab.reschedule_limit > 0 && (
-                                <span
-                                    data-testid={IDS.moves(collab.id)}
-                                    className="text-muted-foreground/80"
-                                >
-                                    ({collab.reschedule_count} of {collab.reschedule_limit} moves used)
-                                </span>
-                            )}
-                        </button>
-                    )}
-                </div>
-            )}
-            </div>
-        </motion.li>
+        </li>
     );
 };
 
@@ -586,53 +603,57 @@ export default function ActiveCampaigns({ collaborations, onRefresh }) {
 
     return (
         <>
-            <SectionHead
-                kicker="Live right now"
-                title="What you're working on."
+            <CardHeading
                 aside={
                     rows.length > 0 && (
-                        <span
-                            data-testid={IDS.count}
-                            className="text-meta text-muted-foreground"
-                        >
+                        <span data-testid={IDS.count}>
                             {rows.length} {rows.length === 1 ? "collaboration" : "collaborations"}
                         </span>
                     )
                 }
-            />
+            >
+                What you&apos;re working on
+            </CardHeading>
 
-            <div className="mt-8">
-                {rows.length === 0 ? (
-                    <EmptyState
-                        testid={IDS.empty}
-                        Icon={Rocket}
-                        title="Nothing live yet."
-                        action={
-                            <Link to="/campaigns" className="mt-2">
-                                <Button className="h-12 rounded-full bg-primary text-primary-foreground hover:bg-primary-hover">
-                                    Find a campaign
-                                </Button>
-                            </Link>
-                        }
-                    >
-                        The moment a brand takes you on, the campaign shows up here
-                        with the venue, the time and who to call.
-                    </EmptyState>
-                ) : (
-                    <ul data-testid={IDS.list} className="space-y-4">
-                        {rows.map((c) => (
-                            <ActiveCard
-                                key={c.id}
-                                collab={c}
-                                onBook={setBooking}
-                                onSubmit={setSubmitting}
-                                onDraft={setDrafting}
-                                onRefresh={onRefresh}
-                            />
-                        ))}
-                    </ul>
-                )}
-            </div>
+            {rows.length === 0 ? (
+                <EmptyState
+                    testid={IDS.empty}
+                    Icon={Rocket}
+                    title="Nothing live yet."
+                    action={
+                        <Link to="/campaigns" className="mt-2">
+                            <Button variant="solid" className="h-11">
+                                Find a brief
+                            </Button>
+                        </Link>
+                    }
+                >
+                    The moment a brand takes you on, the campaign shows up here
+                    with the venue, the time and who to call.
+                </EmptyState>
+            ) : (
+                // Two up from `lg`, the first a little wider (the board's
+                // 1.25 : 1). One card takes the row — a lone card in the
+                // wider column would leave a hole beside it.
+                <ul
+                    data-testid={IDS.list}
+                    className={
+                        "grid items-start gap-4 " +
+                        (rows.length > 1 ? "lg:grid-cols-[1.25fr_1fr]" : "")
+                    }
+                >
+                    {rows.map((c) => (
+                        <ActiveCard
+                            key={c.id}
+                            collab={c}
+                            onBook={setBooking}
+                            onSubmit={setSubmitting}
+                            onDraft={setDrafting}
+                            onRefresh={onRefresh}
+                        />
+                    ))}
+                </ul>
+            )}
 
             <SlotPicker
                 open={Boolean(booking)}
