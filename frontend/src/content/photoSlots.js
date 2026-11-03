@@ -1,20 +1,29 @@
 // Every photograph the public site has room for, in one place.
 //
-// **The site ships without photography and takes it later with no code
-// change.** No image path is written in JSX on the public pages: a page names
-// a slot, `<PhotoSlot id="…" />`, and this file says what is in it. Adding a
-// photograph is a file drop into `public/img/photos/` plus one `src` line, and
-// nothing else moves, because the box is reserved by `width`/`height` whether
-// or not the picture has arrived.
+// **Photographs arrive with no code change.** No image path is written in JSX
+// on the public pages: a page names a slot, `<PhotoSlot id="…" />`, and this
+// file says what is in it. Adding a photograph is an original dropped into
+// `public/img/photos/_incoming/`, one run of `npm run photos`
+// (`scripts/prepare-photos.mjs`: crop to the slot's ratio, two WebP widths
+// inside their byte budgets, metadata stripped), and this file's
+// `src`/`srcSet`/`alt`/`focal` for the slot. Nothing else moves, because the
+// box is reserved by the layout whether or not the picture has arrived.
 //
 // Each entry:
 //
-//   src               the file, or null while the slot is empty
-//   alt               what the picture shows. Written when the photograph is
-//                     chosen, not before — alt text for a picture nobody has
-//                     taken is a guess read aloud.
-//   focal             CSS object-position, so a crop keeps the subject
-//   width, height     the size to shoot or export at; also the reserved ratio
+//   src               the large export, or null while the slot is empty
+//   srcSet            both exports with their widths, so a phone is sent the
+//                     1200px file and a laptop the 2400px one. Written by
+//                     `scripts/prepare-photos.mjs`, which prints the line
+//   alt               what the picture shows, in one plain sentence and with
+//                     nobody named. Written when the photograph is chosen,
+//                     not before — alt text for a picture nobody has taken is
+//                     a guess read aloud
+//   focal             CSS object-position, so a crop keeps the subject — and,
+//                     on the two bands, keeps the subject out from under the
+//                     headline card, which sits bottom left
+//   width, height     the size the large file is exported at; also the
+//                     reserved ratio
 //   brief             one sentence for a photographer — **development and
 //                     Vercel previews only** (see `SHOW_BRIEFS`)
 //   fallbackHeadline  what a visitor sees while `src` is null, in production:
@@ -52,13 +61,17 @@ export const SHOW_BRIEFS =
 
 export const PHOTO_SLOTS = {
     "home-on-location": {
+        // **Still the drawing**: the photograph for this slot did not arrive
+        // with the other five. The size is the 3:2 frame slide C draws it in,
+        // so the export and the frame agree when it does.
         src: null,
+        srcSet: null,
         alt: "",
-        focal: "50% 50%",
+        focal: "65% 50%",
         width: 2400,
-        height: 1200,
+        height: 1600,
         brief: SHOW_BRIEFS
-            ? "A creator mid-shoot at a venue — phone on a small rig, the room busy around them. Daylight or warm interior light; keep the left third quiet for a headline."
+            ? "A creator mid-shoot at a venue — phone on a small rig, the room busy around them. Daylight or warm interior light; subject on the right, bottom-left and top-right calm for the booking card and the chip drawn over it. 3:2."
             : null,
         fallbackIllustration: "/img/marketing/home-on-location.svg",
         fallbackHeadline: "The shoot still has to be good.",
@@ -67,9 +80,10 @@ export const PHOTO_SLOTS = {
             "Verified creators who turn up, shoot well and post what they agreed. That part is on us.",
     },
     "brands-full-room": {
-        src: null,
-        alt: "",
-        focal: "50% 50%",
+        src: "/img/photos/brands-full-room-2400.webp",
+        srcSet: "/img/photos/brands-full-room-1200.webp 1200w, /img/photos/brands-full-room-2400.webp 2400w",
+        alt: "A packed restaurant at dinner, long tables of people eating, two of them photographing their food.",
+        focal: "60% 50%",
         width: 2400,
         height: 1200,
         brief: SHOW_BRIEFS
@@ -81,9 +95,10 @@ export const PHOTO_SLOTS = {
         fallbackLine: null,
     },
     "creators-on-shoot": {
-        src: null,
-        alt: "",
-        focal: "50% 50%",
+        src: "/img/photos/creators-on-shoot-2400.webp",
+        srcSet: "/img/photos/creators-on-shoot-1200.webp 1200w, /img/photos/creators-on-shoot-2400.webp 2400w",
+        alt: "A man photographing a dessert on a café table with his phone, beside a window.",
+        focal: "85% 50%",
         width: 2400,
         height: 1200,
         brief: SHOW_BRIEFS
@@ -116,9 +131,39 @@ export const PLACEHOLDER_BRIEFS = {
 };
 
 /**
- * What the three tinted slots show in production, where there is no brief to
- * show: a drawing that fits the screen, instead of an empty tint. In
- * development and on a preview they keep the brief exactly as before.
+ * The photographs in the three tinted slots, in every environment: a real
+ * picture wins over the drawing and over the brief, the way `src` does on a
+ * `PhotoSlot`. Same shape as a `PHOTO_SLOTS` entry's picture half, exported
+ * by the same script (900/1800 for the two portrait asides, 1200/2400 for the
+ * 404). A slot missing here falls back to its drawing in production and its
+ * brief in development, exactly as before.
+ */
+export const PLACEHOLDER_PHOTOS = {
+    "auth-login": {
+        src: "/img/photos/auth-login-1800.webp",
+        srcSet: "/img/photos/auth-login-900.webp 900w, /img/photos/auth-login-1800.webp 1800w",
+        alt: "Two people at a café table looking at a phone together, coffee cups and an open notebook between them.",
+        focal: "50% 50%",
+    },
+    "auth-signup": {
+        src: "/img/photos/auth-signup-1800.webp",
+        srcSet: "/img/photos/auth-signup-900.webp 900w, /img/photos/auth-signup-1800.webp 1800w",
+        alt: "A woman adjusting a ring light on a small camera rig set up on a bar counter.",
+        focal: "50% 50%",
+    },
+    "not-found": {
+        src: "/img/photos/not-found-2400.webp",
+        srcSet: "/img/photos/not-found-1200.webp 1200w, /img/photos/not-found-2400.webp 2400w",
+        alt: "An empty café in the afternoon, chairs stacked on the tables and sunlight across the wooden floor.",
+        focal: "50% 50%",
+    },
+};
+
+/**
+ * What the three tinted slots show in production when there is no photograph,
+ * where there is no brief to show: a drawing that fits the screen, instead of
+ * an empty tint. In development and on a preview they keep the brief exactly
+ * as before.
  */
 export const PLACEHOLDER_ILLUSTRATIONS = {
     // A creator and a brand manager going over a shoot at a venue table.

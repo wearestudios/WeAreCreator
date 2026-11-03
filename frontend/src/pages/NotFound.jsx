@@ -84,6 +84,11 @@ export default function NotFound() {
                         // than apologetic. Portrait-friendly 4:3.
                         slot="not-found"
                         ratio="4/3"
+                        sizes="(min-width: 768px) 50vw, 100vw"
+                        // In the first screen at every width: beside the
+                        // links from `md`, and its top half under them on a
+                        // 390×844 phone.
+                        eager
                         zoom
                     />
                 </Reveal>

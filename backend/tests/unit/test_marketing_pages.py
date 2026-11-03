@@ -664,14 +664,17 @@ def test_no_image_path_is_written_in_a_page(name):
 
 def test_every_full_bleed_band_is_the_two_to_one_slot():
     """Each audience page has one full-bleed photograph at 2400×1200, under
-    the id the brief names. Home's slot is the same 2:1 photograph, drawn in
-    the hero slider's "On location" slide rather than as a band of its own."""
+    the id the brief names. Home's slot is drawn in the hero slider's "On
+    location" slide rather than as a band of its own, in a 3:2 frame — so it
+    is exported at 2400×1600, the frame's own ratio, rather than as a 2:1
+    photograph cropped a second time by the frame."""
     manifest = read("src", "content", "photoSlots.js")
     for name, sid in (("brands", "brands-full-room"), ("creators", "creators-on-shoot")):
         assert f'slot="{sid}"' in read(*PAGES[name]), name
-    for sid in ("home-on-location", "brands-full-room", "creators-on-shoot"):
+    for sid, height in (("home-on-location", 1600), ("brands-full-room", 1200), ("creators-on-shoot", 1200)):
         block = manifest[manifest.index(f'"{sid}"') :]
-        assert "width: 2400," in block[:400] and "height: 1200," in block[:400], sid
+        block = block[: block.index("brief:")]
+        assert "width: 2400," in block and f"height: {height}," in block, sid
     assert content()["HOME"]["slides"]["onLocation"]["slot"] == "home-on-location"
     assert "PhotoBand" not in read(*PAGES["home"])
 

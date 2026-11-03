@@ -302,7 +302,7 @@ def test_the_hero_uses_no_image_of_its_own_and_names_no_colour():
         assert "<img" not in code and "PlaceholderImage" not in code, name
         assert not palette.search(code), (name, palette.search(code).group(0))
         assert not literal.search(code), (name, literal.search(code).group(0))
-    assert "<PhotoSlot id={slide.slot} fill bare />" in _code(SCREENS)
+    assert '<PhotoSlot id={slide.slot} fill bare sizes="(min-width: 1024px) 540px, 100vw" />' in _code(SCREENS)
 
 
 def test_no_real_brand_is_named_in_public_product_ui():

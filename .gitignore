@@ -100,3 +100,6 @@ credentials.json
 *.key
 .credentials
 .venv-check/
+
+# Photo originals waiting for scripts/prepare-photos.mjs — only its exports are committed.
+frontend/public/img/photos/_incoming/

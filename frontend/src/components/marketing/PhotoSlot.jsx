@@ -7,7 +7,10 @@
 // Three states:
 //
 //   - **a `src`**: the image, positioned on the slot's focal point, lazy
-//     unless the caller says it is above the fold;
+//     unless the caller says it is above the fold. With a `srcSet` (both
+//     exports, 1200w and 2400w) it carries the caller's `sizes`, which is
+//     what lets a phone take the small file: a full-bleed band is `100vw`,
+//     the slider's frame is never wider than 540px from `lg`;
 //   - **no `src`, in production**: the slot's drawing
 //     (`fallbackIllustration`), full bleed, with the `fallbackHeadline` in
 //     display type on a navy band across its foot. A visitor must read it as
@@ -55,8 +58,20 @@ function Headline({ text, accent }) {
  * `bare` draws the picture alone, without the headline band: for a frame
  * whose headline is already on the page beside it — the homepage slider's
  * "On location" slide, where the slot's headline is the slide's own `h2`.
+ *
+ * `sizes` is how wide the frame is drawn, for choosing between the `srcSet`
+ * widths. It has no default worth trusting — `100vw` on a 540px frame sends a
+ * laptop the 2400px file for nothing — so each caller says.
  */
-export default function PhotoSlot({ id, eager = false, fill = false, className = "", headingLevel = "h2", bare = false }) {
+export default function PhotoSlot({
+    id,
+    eager = false,
+    fill = false,
+    className = "",
+    headingLevel = "h2",
+    bare = false,
+    sizes = "100vw",
+}) {
     const slot = photoSlot(id);
     const box = fill ? {} : { aspectRatio: `${slot.width} / ${slot.height}` };
     const frame = `relative w-full overflow-hidden ${fill ? "h-full" : ""} ${className}`;
@@ -66,6 +81,8 @@ export default function PhotoSlot({ id, eager = false, fill = false, className =
             <div data-testid={`photo-slot-${id}`} data-slot={id} className={`${frame} bg-muted`} style={box}>
                 <img
                     src={slot.src}
+                    srcSet={slot.srcSet || undefined}
+                    sizes={slot.srcSet ? sizes : undefined}
                     alt={slot.alt}
                     width={slot.width}
                     height={slot.height}
