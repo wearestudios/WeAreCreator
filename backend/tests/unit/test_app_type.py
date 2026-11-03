@@ -340,7 +340,7 @@ TITLE_OWNERS = {
     "components/dashboard/CampaignDashboard.jsx": (1, "the campaign on its results page"),
     "components/manager/shared.jsx": (1, "the manager screens' page header"),
     "pages/BrandCampaignApplicants.jsx": (1, "the campaign on its applicant board"),
-    "pages/BrandDashboardView.jsx": (1, "the brand's dashboard"),
+    "components/brand/BrandOverview.jsx": (2, "the live campaign, or the post-a-brief panel in its place — one at a time"),
     "pages/BrandOnboarding.jsx": (1, "onboarding"),
     "pages/CreatorOnboarding.jsx": (1, "the profile builder"),
     "pages/CreatorProfile.jsx": (1, "the creator's own profile"),

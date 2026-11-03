@@ -6114,6 +6114,61 @@ token rather than `accent-ink`, because the navy chrome redefines
 navy the failing pair. It is the `urgent` variant, at most one per card. `solid` is navy and `quiet` is the
 warm ghost.
 
+### The brand dashboard
+
+`BrandDashboardView` with `components/brand/BrandOverview.jsx` on top
+(board 24). The layout, top to bottom:
+- a greeting (by `istHour()`, the hour in Bengaluru), with the screen's one red action, *Post a brief*;
+- the **navy panel** for the campaign live now;
+- three columns: *Needs you*, *Creators*, and a stack of the AI summary, the budget and *Other campaigns*;
+- below those, the results rollup and the campaign list with every action it always had.
+
+- **The live campaign** is `pickLiveCampaign`: open or in progress, and
+  already under way before merely open. The panel shows:
+  - the chip (`Live · day N`, counted from its start in IST);
+  - the title (the screen's one Fraunces);
+  - the booked/committed line, read off the row's fill and budget block;
+  - a sparkline of the analytics' cumulative `timeseries`;
+  - up to three tiles (views, shares, engagement). **A tile the analytics
+    returned as unknown is left out**, and with none, one line says the
+    numbers arrive with the first post.
+- **With nothing live**, a navy panel with the same footprint says *Post your
+  first brief* (or *next*). Its action is a link, because the red button is
+  already at the top.
+- **Needs you** comes from the dashboard's own totals, with one red card at
+  most: deliveries waiting on the brand (the creator is waiting to be paid).
+  The navy cards are applicants to decide on (brand-run briefs), a
+  verification step the app can take them to, and drafts. An overdue invoice
+  is **not** a card: the standing notice says it, and the app has no button
+  for it.
+- **Creators** joins two responses the page already makes, on the name both
+  read off the same profile:
+  - from the analytics: the status label and the views;
+  - from the applicant board: the photo and the agreed fee, through `formatCollabMoney`.
+
+  A creator is read for `name` and `profile_image_url` and nothing else; a
+  test plants contact values on the row and searches the render. When the
+  board is gated (unverified, invoice overdue) the rows still show status and
+  views.
+- **Budget** is the campaign's budget block: agreed against left. There is
+  **no paid segment**, because the block does not serve one. The card is
+  absent with no cap or on barter.
+- **The AI card** is the summary's headline: absent unless
+  `aiLive("campaignSummary")` and the endpoint returned a summary, and not
+  even requested with the switch off.
+- **It draws once.** `load` fetches the dashboard, then the overview's three
+  reads and `/brand/analytics` in parallel, then sets state.
+  `BrandAnalyticsSummary` takes that rollup as `initial`; before, it fetched
+  for itself and pushed the campaign list down (0.03 CLS at 1280). Now it is
+  CLS 0.0000 at 390 and 1280 with every response held 700ms.
+- **Nothing loops.** The *Live* pill's pulsing dot is still. The sparkline
+  draws once through `.dash-draw` and the budget bar grows once; reduced
+  motion runs zero animations.
+- `cn()` is `extendTailwindMerge` with the type scale named. Plain
+  `tailwind-merge` read `text-meta` as a colour, so a `Button` at `size="sm"`
+  dropped its variant's text colour and drew a navy label on a navy button.
+  `test_brand_dash.py` holds the list against the Tailwind config.
+
 ## Design system
 
 `design_guidelines.json` describes what ships: light by default, navy headings

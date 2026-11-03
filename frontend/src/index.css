@@ -332,6 +332,8 @@
          * payout on day five of seven. Amber, and not the pending amber: a
          * state that needs a person soon is a different fact from one that
          * is merely waiting. #8A5A00 on #FFF1D6 is 5.31:1. */
+        /* The "live" dot on the navy campaign panel: a fill, never a word. */
+        --state-live: 145.2 69.4% 55.1%; /* #3DDC84 */
         --state-due: 39.1 100% 27.1%; /* #8A5A00 */
         --state-due-wash: 40.5 100% 92%; /* #FFF1D6 */
         /* "Info": the neutral pill — whose move it is when it is not yours.
@@ -424,6 +426,7 @@
         --state-progress-wash: 199 89% 60% / 0.12;
         --state-done: 262 83% 68%; /* violet */
         --state-done-wash: 262 83% 68% / 0.12;
+        --state-live: 145.2 69.4% 55.1%;
         --state-due: 43 96% 56%;
         --state-due-wash: 43 96% 56% / 0.12;
         --state-info: 216 38% 85%;
@@ -750,6 +753,17 @@
      * own title, at 28px or more, weight 600. Its size is set here rather
      * than by a utility so the floor is structural — an element carrying
      * `app-title` carries no `text-*` size, and a test holds that. */
+    /* The navy campaign panel's glow: the brand red, soft, from the top
+     * right corner. A background on the panel itself — nothing it holds
+     * sits on it unscrimmed below 4.5:1, because it fades out well before
+     * the text column. */
+    .app-hero-glow {
+        background-image: radial-gradient(
+            circle at 100% 0%,
+            color-mix(in srgb, hsl(var(--brand-red)) 28%, transparent) 0%,
+            transparent 55%
+        );
+    }
     /* A figure somebody reads as a number — a stat, a fee, a count. Manrope
      * 800, -0.02em, tabular. The size is the caller's. */
     .app-figure {

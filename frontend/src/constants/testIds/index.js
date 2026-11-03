@@ -41,3 +41,4 @@ export * from './scheduling';
 export * from './share';
 export { DASHBOARD } from './dashboard';
 export * from './appShell';
+export * from './brandOverview';

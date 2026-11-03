@@ -77,16 +77,14 @@ export function ActionCard({ tone = "navy", title, detail, action, testid, class
         <div
             data-testid={testid}
             className={cx(
-                "flex flex-col gap-3 rounded-[14px] px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between",
+                "rounded-[14px] px-4 py-3.5",
                 tone === "red" ? "bg-wash-red" : "bg-wash-navy",
                 className,
             )}
         >
-            <div className="min-w-0">
-                <p className="text-body font-bold leading-snug text-heading">{title}</p>
-                {detail ? <p className="mt-0.5 text-meta text-muted-foreground">{detail}</p> : null}
-            </div>
-            {action ? <div className="shrink-0">{action}</div> : null}
+            <p className="text-body font-bold leading-snug text-heading">{title}</p>
+            {detail ? <p className="mt-0.5 text-meta text-muted-foreground">{detail}</p> : null}
+            {action ? <div className="mt-2.5">{action}</div> : null}
         </div>
     );
 }
@@ -111,12 +109,16 @@ export function StatTile({ value, label, onNavy = false, quiet = false, testid, 
         <div
             data-testid={testid}
             className={cx(
-                "rounded-tile px-4 py-3.5",
+                "min-w-0 rounded-tile px-3 py-3 sm:px-4 sm:py-3.5",
                 onNavy ? "bg-tint/[0.07]" : quiet ? "bg-wash-warm" : "bg-card shadow-card",
                 className,
             )}
         >
-            <div className="app-figure text-[1.75rem] leading-none text-heading md:text-[1.875rem]">{value}</div>
+            {/* Smaller on a phone: three tiles share 300px there, and a
+                "8.83%" at 28px is wider than its third. */}
+            <div className="app-figure truncate text-[1.375rem] leading-none text-heading sm:text-[1.75rem] md:text-[1.875rem]">
+                {value}
+            </div>
             <div className="mt-1.5 text-[13px] font-semibold text-muted-foreground">{label}</div>
         </div>
     );
@@ -160,7 +162,6 @@ export function Sparkline({ points, width = 380, height = 70, className = "", la
                 strokeWidth="2.6"
                 strokeLinecap="round"
                 strokeLinejoin="round"
-                vectorEffect="non-scaling-stroke"
             />
         </svg>
     );

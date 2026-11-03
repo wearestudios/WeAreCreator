@@ -7,7 +7,6 @@ import { EXECUTION } from "@/constants/testIds";
 import { Link, useNavigate } from "react-router-dom";
 import { notifyError, notifySuccess } from "@/lib/feedback";
 import {
-    ArrowRight,
     Building2,
     Compass,
     Copy,
@@ -17,7 +16,6 @@ import {
     Loader2,
     Lock,
     MapPin,
-    MessageSquare,
     Pause,
     Pencil,
     Play,
@@ -34,13 +32,13 @@ import { formatCompensation, isBarter } from "@/lib/compensation";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ListSkeleton } from "@/components/data/DenseView";
 import {
     BRAND_CAMPAIGN_CONTROLS,
     BRAND_STANDING,
     CAMPAIGN_TEMPLATES as TEMPLATES,
     VISIBILITY,
 } from "@/constants/testIds";
+import { BRAND_OVERVIEW as OVERVIEW } from "@/constants/testIds";
 import { SaveAsTemplate } from "@/components/brand/CampaignTemplates";
 import { BrandAnalyticsSummary } from "@/components/brand/CampaignAnalytics";
 import { SafeSection } from "@/components/ErrorBoundary";
@@ -63,7 +61,9 @@ import {
     AlertDialogHeader,
     AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { IST } from "@/lib/time";
+import { IST, istHour } from "@/lib/time";
+import BrandOverview, { loadBrandOverview } from "@/components/brand/BrandOverview";
+import { useShellBadges } from "@/components/app/shellContext";
 import { formatInr } from "@/lib/compensation";
 
 const CAT_LABEL = {
@@ -128,7 +128,7 @@ const StatusPill = ({ status }) => {
             }
         >
             {status === "open" && (
-                <span className="inline-block h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
+                <span className="inline-block h-1.5 w-1.5 rounded-full bg-primary" />
             )}
             {meta.label}
         </span>
@@ -148,34 +148,19 @@ const formatDate = (iso) => {
     }
 };
 
-const StatTile = ({ label, value, Icon, highlight }) => (
-    <div
-        className={
-            "rounded-md border p-5 transition-colors duration-200 " +
-            (highlight
-                ? "border-primary/40 bg-primary/10"
-                : "border-border bg-card grain-surface")
-        }
-    >
-        <div className="flex items-center justify-between">
-            <p className="text-label text-muted-foreground">
-                {label}
-            </p>
-            {Icon && <Icon className="h-4 w-4 text-primary" />}
-        </div>
-        <div
-            className={
-                "mt-4 app-figure text-h2 md:text-h1 " +
-                (highlight ? "text-primary" : "")
-            }
-        >
-            {value}
-        </div>
-    </div>
-);
+
+/** "Good morning" by the clock in Bengaluru, not the browser's. */
+const greeting = () => {
+    const h = istHour();
+    return h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening";
+};
+
+const firstName = (name) => String(name || "").trim().split(/\s+/)[0] || "there";
 
 export default function BrandDashboardView({ user, justOnboarded = false }) {
     const [data, setData] = useState(null);
+    const [overview, setOverview] = useState(null);
+    const [results, setResults] = useState(undefined);
     const [error, setError] = useState("");
     const [busyId, setBusyId] = useState(null);
     // Which row's report is being built, so its own button says so rather than
@@ -193,6 +178,12 @@ export default function BrandDashboardView({ user, justOnboarded = false }) {
 
     // Derived once: both the list and its empty state need to agree about
     // what the filter left behind.
+    // The sidebar's Overview count: what is waiting on this brand, from the
+    // dashboard's own totals — the sidebar never asks for a number itself.
+    useShellBadges({
+        needs: (data?.totals?.awaiting_decision || 0) + (data?.totals?.content_to_review || 0),
+    });
+
     const visibleCampaigns = (data?.campaigns || []).filter(
         (c) => execution === "all" || executionOwner(c) === execution,
     );
@@ -200,6 +191,15 @@ export default function BrandDashboardView({ user, justOnboarded = false }) {
     const load = useCallback(async () => {
         try {
             const { data } = await api.get("/brand/dashboard");
+            // The live campaign's three reads, before anything is drawn: the
+            // page arrives in one commit rather than as a panel that grows
+            // three times under the reader's eye.
+            const [next, results] = await Promise.all([
+                loadBrandOverview(data.campaigns || []),
+                api.get("/brand/analytics").then((r) => r.data).catch(() => undefined),
+            ]);
+            setOverview(next);
+            setResults(results);
             setData(data);
             setError("");
         } catch (err) {
@@ -343,24 +343,22 @@ export default function BrandDashboardView({ user, justOnboarded = false }) {
     return (
         <div data-testid="dashboard-page" className="min-h-screen bg-background grain-page">
             <Navbar />
-            <main className="mx-auto max-w-7xl px-6 py-12 md:py-16">
+            <main className="mx-auto max-w-7xl px-5 py-7 md:px-[34px] md:pb-10">
                 {!data && !error && (
+                    // **The shape of what is coming**: the greeting, the navy
+                    // panel and the three columns, at the heights they draw.
                     <div data-testid="brand-dashboard-skeleton" aria-hidden="true">
-                        <Skeleton className="h-3 w-40" />
-                        <Skeleton className="mt-6 h-11 w-2/3 max-w-md" />
-                        <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                            {Array.from({ length: 4 }).map((_, i) => (
-                                <div
-                                    key={i}
-                                    className="rounded-lg border border-border bg-card p-6 grain-surface"
-                                >
-                                    <Skeleton className="h-3 w-24" />
-                                    <Skeleton className="mt-4 h-8 w-16" />
+                        <Skeleton className="h-5 w-80 max-w-full" />
+                        <Skeleton className="mt-2 h-4 w-52" />
+                        <div data-surface="inverse" className="mt-5 h-[23rem] rounded-[24px] bg-card md:h-[17rem]" />
+                        <div className="mt-4 grid gap-4 lg:grid-cols-3">
+                            {[0, 1, 2].map((i) => (
+                                <div key={i} className="h-64 rounded-lg bg-card p-5 shadow-card">
+                                    <Skeleton className="h-4 w-28" />
+                                    <Skeleton className="mt-5 h-16 w-full" />
+                                    <Skeleton className="mt-3 h-16 w-full" />
                                 </div>
                             ))}
-                        </div>
-                        <div className="mt-12">
-                            <ListSkeleton rows={3} />
                         </div>
                     </div>
                 )}
@@ -374,66 +372,62 @@ export default function BrandDashboardView({ user, justOnboarded = false }) {
                 )}
                 {data && (
                     <>
-                        <header data-testid="brand-header" className="grid gap-6 md:grid-cols-12 md:items-end">
-                            <div className="md:col-span-8">
+                        <header
+                            data-testid="brand-header"
+                            className="flex flex-wrap items-start justify-between gap-4"
+                        >
+                            <div className="min-w-0">
+                                <p data-testid={OVERVIEW.greeting} className="text-body font-semibold text-muted-foreground">
+                                    {greeting()}, {firstName(user.name)} —{" "}
+                                    {overview?.live ? "here's your live campaign." : "here's where things stand."}
+                                </p>
                                 {/* The brand's own city, the same rule the
                                     creator's header follows: a hardcoded one
                                     is wrong for everybody it is not about, and
                                     this screen already knows the answer. */}
-                                <p className="text-label text-primary">
-                                    {data?.profile?.city
-                                        ? `Brand · ${data.profile.city}`
-                                        : "Brand"}
-                                </p>
-                                <h1
-                                    data-testid="brand-name-heading"
-                                    className="app-title mt-3"
-                                >
-                                    {businessName}
-                                </h1>
-                                {data.profile && (
-                                    <div className="mt-4 flex flex-wrap items-center gap-3 text-meta text-muted-foreground">
+                                <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-2 text-meta text-muted-foreground">
+                                    <span data-testid="brand-name-heading" className="font-bold text-heading">
+                                        {businessName}
+                                    </span>
+                                    {data?.profile?.city ? <span>{data.profile.city}</span> : null}
+                                    {data.profile && (
                                         <StandingPill
                                             verification={data.verification}
                                             block={data.publish_block}
                                         />
-                                        {data.profile.category && (
-                                            <span className="inline-flex items-center gap-1.5">
-                                                <Building2 className="h-4 w-4" />
-                                                {CAT_LABEL[data.profile.category] ||
-                                                    data.profile.category}
-                                            </span>
-                                        )}
-                                        {data.profile.areas?.length > 0 && (
-                                            <span className="inline-flex flex-wrap items-center gap-1.5">
-                                                <MapPin className="h-4 w-4" />
-                                                {data.profile.areas.join(" · ")}
-                                            </span>
-                                        )}
-                                    </div>
-                                )}
+                                    )}
+                                    {data.profile?.category && (
+                                        <span className="inline-flex items-center gap-1.5">
+                                            <Building2 className="h-4 w-4" />
+                                            {CAT_LABEL[data.profile.category] || data.profile.category}
+                                        </span>
+                                    )}
+                                    {data.profile?.areas?.length > 0 && (
+                                        <span className="inline-flex flex-wrap items-center gap-1.5">
+                                            <MapPin className="h-4 w-4" />
+                                            {data.profile.areas.join(" · ")}
+                                        </span>
+                                    )}
+                                </div>
                             </div>
-                            <div className="flex flex-wrap items-center gap-3 md:col-span-4 md:justify-end">
-                                <Link to="/onboarding/brand" data-testid="brand-header-edit">
-                                    <Button
-                                        variant="outline"
-                                        className="rounded-full border-input bg-transparent hover:bg-muted"
-                                    >
+                            <div className="flex flex-wrap items-center gap-2">
+                                <Button asChild variant="quiet">
+                                    <Link to="/onboarding/brand" data-testid="brand-header-edit">
                                         Edit brand
-                                    </Button>
-                                </Link>
+                                    </Link>
+                                </Button>
                                 {/* "Browse creators" was here and is gone with
                                     the directory behind it. Creators are
                                     matched to a brief rather than shopped for,
                                     so the way to them starts with the brief —
-                                    which is the button beside this one. */}
-                                <Link to="/campaigns/new" data-testid="brand-header-post-btn">
-                                    <Button className="group rounded-full bg-primary text-primary-foreground hover:bg-primary-hover">
-                                        <Plus className="mr-1 h-4 w-4" />
-                                        Post a campaign
-                                        <ArrowRight className="ml-2 h-4 w-4 transition-transform duration-200 group-hover:translate-x-1" />
-                                    </Button>
-                                </Link>
+                                    which is this button, the screen's one red
+                                    action. */}
+                                <Button asChild variant="urgent">
+                                    <Link to="/campaigns/new" data-testid="brand-header-post-btn">
+                                        <Plus className="h-4 w-4" />
+                                        Post a brief
+                                    </Link>
+                                </Button>
                             </div>
                         </header>
 
@@ -504,34 +498,9 @@ export default function BrandDashboardView({ user, justOnboarded = false }) {
                             </div>
                         )}
 
-                        <section
-                            data-testid="brand-stats-panel"
-                            className="mt-10 grid gap-4 sm:grid-cols-2 md:grid-cols-4"
-                        >
-                            {/* The two tiles that mean "somebody do something" come first. */}
-                            <StatTile
-                                label="Waiting on you"
-                                value={data.totals.awaiting_decision ?? 0}
-                                Icon={Users}
-                                highlight={(data.totals.awaiting_decision ?? 0) > 0}
-                            />
-                            <StatTile
-                                label="Content to review"
-                                value={data.totals.content_to_review ?? 0}
-                                Icon={MessageSquare}
-                                highlight={(data.totals.content_to_review ?? 0) > 0}
-                            />
-                            <StatTile
-                                label="Live campaigns"
-                                value={data.totals.live_campaigns}
-                                Icon={Compass}
-                            />
-                            <StatTile
-                                label="Applications received"
-                                value={data.totals.total_applications}
-                                Icon={Building2}
-                            />
-                        </section>
+                        <div className="mt-5">
+                            <BrandOverview data={data} overview={overview} />
+                        </div>
 
                         {/* Above the campaign list rather than below it: the
                             question "was the last one worth it" is what somebody
@@ -539,7 +508,7 @@ export default function BrandDashboardView({ user, justOnboarded = false }) {
                             one. It renders nothing until a campaign has
                             actually delivered something. */}
                         <SafeSection name="BrandAnalyticsSummary" label="your results">
-                            <BrandAnalyticsSummary />
+                            <BrandAnalyticsSummary initial={results} />
                         </SafeSection>
 
                         <section data-testid="brand-campaigns-section" className="mt-14">
@@ -551,6 +520,14 @@ export default function BrandDashboardView({ user, justOnboarded = false }) {
                                     <h2 className="mt-3 font-bold text-h2">
                                         Every brief you've posted.
                                     </h2>
+                                    {/* The two counts the old stat row carried,
+                                        where they describe the list beneath
+                                        them — both served, neither summed here. */}
+                                    <p data-testid="brand-campaigns-counts" className="mt-1.5 text-meta tabular-nums text-muted-foreground">
+                                        {data.totals.live_campaigns} live ·{" "}
+                                        {data.totals.total_applications}{" "}
+                                        {data.totals.total_applications === 1 ? "application" : "applications"} in all
+                                    </p>
                                 </div>
                                 <Link
                                     to="/campaigns/new"

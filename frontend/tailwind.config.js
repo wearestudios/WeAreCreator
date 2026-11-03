@@ -217,6 +217,7 @@ module.exports = {
                     "done-wash": "hsl(var(--state-done-wash))",
                     // "Due soon" (amber, a running clock) and the neutral
                     // "info" pill — the app's two additions.
+                    live: "hsl(var(--state-live) / <alpha-value>)",
                     due: "hsl(var(--state-due) / <alpha-value>)",
                     "due-wash": "hsl(var(--state-due-wash))",
                     info: "hsl(var(--state-info) / <alpha-value>)",

@@ -217,3 +217,10 @@ export function fromLocalInput(value) {
     const d = new Date(`${String(value).slice(0, 16)}:00+05:30`);
     return Number.isNaN(d.getTime()) ? "" : d.toISOString();
 }
+
+/** The hour of the day in IST, 0–23 — for a greeting, which has to be the
+ * reader's evening in Bengaluru whatever clock the browser is on. */
+export function istHour(value = new Date()) {
+    const h = new Intl.DateTimeFormat(LOCALE, { hour: "numeric", hourCycle: "h23", timeZone: IST }).format(value);
+    return Number.parseInt(h, 10);
+}

@@ -19,7 +19,7 @@
  * would take the sidebar down for the length of a download. This one keeps
  * the column and holds the page's space.
  */
-import React, { Suspense, createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import React, { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { Outlet, useNavigate } from "react-router-dom";
 import * as Dialog from "@radix-ui/react-dialog";
 import {
@@ -53,6 +53,7 @@ import {
     SHELL_ROLE_LABEL,
 } from "@/components/app/SideNav";
 import { APP_SHELL as IDS } from "@/constants/testIds";
+import { BadgeContext } from "@/components/app/shellContext";
 
 /**
  * Each role's destinations. `testId` keeps the id the old top bar's link
@@ -96,22 +97,7 @@ export function shellNavFor(role) {
 // Counts a page can hand the sidebar
 // ---------------------------------------------------------------------------
 
-const BadgeContext = createContext(() => {});
-
-/**
- * A page publishes counts it already has — the dashboard's open invitations,
- * say — and the sidebar shows them. The sidebar never fetches a count of its
- * own: every number on it comes from a response a page was making anyway.
- * Published counts outlive the page, because the shell does, until the next
- * page that knows better publishes again.
- */
-export function useShellBadges(badges) {
-    const publish = useContext(BadgeContext);
-    const key = JSON.stringify(badges || {});
-    useEffect(() => {
-        publish(JSON.parse(key));
-    }, [publish, key]);
-}
+export { useShellBadges } from "@/components/app/shellContext";
 
 // ---------------------------------------------------------------------------
 // The shell
