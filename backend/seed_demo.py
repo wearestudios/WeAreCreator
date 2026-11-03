@@ -119,6 +119,12 @@ WIPED = (
     # Derived and rebuilt on a schedule, so a stale one over fresh demo data
     # would show yesterday's business against today's records.
     "analytics_cache",
+    # AI campaign summaries name the creators they are about, so they go with
+    # the campaigns; and the AI call log, which counts the day's provider calls
+    # against the ceilings and would otherwise carry a used-up limit into a
+    # fresh demo.
+    "campaign_summaries",
+    "ai_calls",
     "creator_lists",
     "payments",
     "deletion_requests",

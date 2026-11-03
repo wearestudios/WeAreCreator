@@ -108,6 +108,19 @@ const webpackConfig = {
       },
     },
   },
+  // Jest does not read webpack's alias, so a component test importing a
+  // file that says `@/lib/...` would fail to resolve without the same
+  // mapping here.
+  jest: {
+    configure: {
+      moduleNameMapper: {
+        '^@/(.*)$': '<rootDir>/src/$1',
+        // CRA's Jest predates package `exports`, which is the only way
+        // react-router v7 names its DOM entry.
+        '^react-router/dom$': '<rootDir>/node_modules/react-router/dist/development/dom-export.js',
+      },
+    },
+  },
   webpack: {
     alias: {
       '@': path.resolve(__dirname, 'src'),

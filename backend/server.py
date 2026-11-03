@@ -150,6 +150,14 @@ mongo_url = os.environ["MONGO_URL"]
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ["DB_NAME"]]
 
+# The shared AI module and the one feature built on it so far. Imported after
+# `db` because `ai` is handed a getter for it — a getter, so a test that swaps
+# `server.db` for an in-memory database is logging there too.
+import ai  # noqa: E402
+import campaign_summary  # noqa: E402
+
+ai.configure(lambda: db)
+
 JWT_ALGORITHM = "HS256"
 ACCESS_TOKEN_MIN = 60 * 24  # 1 day
 REFRESH_TOKEN_DAYS = 7
@@ -13706,6 +13714,9 @@ async def close_brand_campaign(
     # rather than a decision and reading it as a promise is exactly the wrong
     # way round.
     await _raise_refund_decision({**doc, "status": "closed"})
+    # The campaign is over, so its summary can be written — in the background,
+    # never between the brand and the response to their close.
+    _summarise_when_closed(doc["_id"])
     return {"id": campaign_id, "status": "closed", "applications_closed": len(stale)}
 
 
@@ -14137,6 +14148,316 @@ async def export_brand_analytics(
         )
 
     return _csv_response(rows, headers, name)
+
+
+# ---------------------------------------------------------------------------
+# The AI campaign summary
+# ---------------------------------------------------------------------------
+#
+# Three sentences' worth of "was it worth it", written by a model from the
+# analytics above and checked number by number before anybody reads it. The
+# engine is `campaign_summary.py` and the door to the model is `ai.py`; what
+# lives here is the part that touches the database: building the input from
+# the same `_campaign_analytics` the brand's screen draws, caching the result
+# against a hash of that input, and saying when the data has moved on.
+#
+# **Stored as text for a person to read, and nothing reads it as a command.**
+# A summary never changes a campaign, a collaboration or a payment.
+#
+# The screen is the next PR. Until then these routes are called by nothing in
+# the frontend, which `test_router_callers.py` records as UNBUILT.
+
+
+def _summary_format_label(campaign: dict, collab: Optional[dict]) -> Optional[str]:
+    """What this creator delivered, as the brief's own sentence — what they
+    were counted against where somebody counted, the brief's ask otherwise."""
+    counted = _delivered_counts(collab)
+    if counted:
+        items = [{"type": k, "quantity": n} for k, n in counted.items() if n]
+        if items:
+            return _deliverables_text(items) or None
+    asked = _deliverable_items(campaign)
+    return _deliverables_text(asked) or None if asked else None
+
+
+async def _campaign_summary_input(campaign: dict) -> dict:
+    """The model's input, from exactly what the brand's analytics page shows.
+
+    Built through `_campaign_analytics` — so every creator in it came through
+    `_brand_visible_creator` and the shortlist gate — and then through
+    `ai.redact_for_ai` inside `generate_json` as well. Two fences, because the
+    second is the one that still holds when somebody adds a field to the first.
+    """
+    analytics = await _campaign_analytics(campaign)
+    others = await db.campaigns.find(
+        {
+            "brand_id": campaign.get("brand_id"),
+            "_id": {"$ne": campaign["_id"]},
+            "status": {"$in": _COMPARABLE_CAMPAIGN_STATUSES},
+        }
+    ).to_list(length=200)
+    history = [await _campaign_analytics(c, with_creators=False) for c in others]
+    versus = _against_their_own_history(analytics, history)
+
+    collabs = await db.collaborations.find(
+        {"campaign_id": campaign["_id"]}, {"creator_id": 1, "delivered_items": 1}
+    ).to_list(length=500)
+    by_creator = {str(c["creator_id"]): c for c in collabs}
+    formats = {
+        row.get("creator_id"): _summary_format_label(
+            campaign, by_creator.get(str(row.get("creator_id")))
+        )
+        for row in analytics.get("creators") or []
+    }
+    return campaign_summary.build_summary_input(
+        analytics,
+        versus,
+        formats,
+        category_label=CATEGORY_LABELS.get(campaign.get("category")),
+    )
+
+
+def _regenerations_today(doc: Optional[dict], now: datetime) -> int:
+    since = _ist_day_start(now)
+    return sum(
+        1 for at in (doc or {}).get("regenerations") or [] if _as_utc(at) >= since
+    )
+
+
+def _ist_day_start(now: datetime) -> datetime:
+    local = now.astimezone(SHOOT_TZ)
+    return local.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(timezone.utc)
+
+
+def _serialize_summary_state(
+    campaign: dict, data: dict, doc: Optional[dict], now: datetime
+) -> dict:
+    """What the dashboard reads. Decided here, so the screen draws flags."""
+    measured, total = campaign_summary.post_counts(data)
+    eligible = measured >= campaign_summary.MIN_MEASURED_POSTS
+    digest = campaign_summary.input_digest(data)
+    summary = (doc or {}).get("summary")
+    used = _regenerations_today(doc, now)
+    out = {
+        "available": True,
+        "campaign_id": str(campaign["_id"]),
+        "eligible": eligible,
+        "posts_measured": measured,
+        "posts_total": total,
+        "min_measured_posts": campaign_summary.MIN_MEASURED_POSTS,
+        "summary": summary,
+        # **Stale is the data having moved, said rather than hidden.** A
+        # reading corrected last night changes the input hash; the summary
+        # still stands as what was true when it was written, and the screen
+        # says it is out of date beside a Regenerate button.
+        "stale": bool(summary) and doc.get("input_hash") != digest,
+        "generated_at": _iso((doc or {}).get("generated_at")),
+        "prompt_version": (doc or {}).get("prompt_version"),
+        "regenerations_left": max(0, campaign_summary.REGENERATIONS_PER_DAY - used),
+        "reason": None,
+    }
+    if not eligible:
+        out["reason"] = "too_few_measured"
+    elif not summary:
+        out["reason"] = (doc or {}).get("last_error") and "unavailable" or "not_generated"
+    return out
+
+
+async def _generate_campaign_summary(
+    campaign: dict,
+    data: dict,
+    *,
+    trigger: str,
+    actor: Optional[dict] = None,
+) -> Optional[dict]:
+    """Ask for a summary, check it, store it. `None` when nothing is shown.
+
+    Fails closed: an `AIUnavailable` of any kind — switched off, over a
+    ceiling, a provider error, a summary that would not ground — stores the
+    attempt and no text, and the previous summary (if any) stays where it was.
+    """
+    now = datetime.now(timezone.utc)
+    digest = campaign_summary.input_digest(data)
+    creator_ids = await db.collaborations.distinct(
+        "creator_id", {"campaign_id": campaign["_id"]}
+    )
+    base = {
+        "campaign_id": campaign["_id"],
+        "brand_id": campaign.get("brand_id"),
+        # Who a summary may name — so an erasure can take it with them.
+        "creator_ids": creator_ids,
+        "last_attempt_at": now,
+    }
+    try:
+        summary = await ai.generate_json(
+            campaign_summary.TASK,
+            campaign_summary.PROMPT.system,
+            data,
+            campaign_summary.CampaignSummary,
+            prompt_version=campaign_summary.PROMPT.version,
+            max_output_tokens=campaign_summary.MAX_OUTPUT_TOKENS,
+            timeout_s=campaign_summary.TIMEOUT_S,
+            account=str(_brand_scope(actor)) if actor and is_brand_side(actor) else (
+                str(actor["_id"]) if actor else None
+            ),
+            check=lambda s: campaign_summary.ground(s, data),
+        )
+    except ai.AIUnavailable as exc:
+        await db.campaign_summaries.update_one(
+            {"campaign_id": campaign["_id"]},
+            {"$set": {**base, "last_error": exc.reason}},
+            upsert=True,
+        )
+        logger.info("Campaign summary not produced (%s): %s", trigger, exc.reason)
+        return None
+
+    status = ai.ai_status()
+    await db.campaign_summaries.update_one(
+        {"campaign_id": campaign["_id"]},
+        {
+            "$set": {
+                **base,
+                "summary": summary.model_dump(),
+                "input_hash": digest,
+                "prompt_version": campaign_summary.PROMPT.version,
+                "provider": status["provider"],
+                "model": status["model"],
+                "generated_at": now,
+                "trigger": trigger,
+                "last_error": None,
+            }
+        },
+        upsert=True,
+    )
+    return await db.campaign_summaries.find_one({"campaign_id": campaign["_id"]})
+
+
+# Held so a fire-and-forget task is not collected mid-flight, and so a test can
+# wait for the one a close started.
+_SUMMARY_TASKS: set = set()
+
+
+def _summarise_when_closed(campaign_id) -> None:
+    """Start the summary for a campaign that has just finished, without making
+    the close wait on a model. Nothing at all when AI is off."""
+    if not ai.ai_configured():
+        return
+
+    async def run():
+        try:
+            campaign = await db.campaigns.find_one({"_id": campaign_id})
+            if not campaign:
+                return
+            data = await _campaign_summary_input(campaign)
+            measured, _ = campaign_summary.post_counts(data)
+            if measured < campaign_summary.MIN_MEASURED_POSTS:
+                return
+            existing = await db.campaign_summaries.find_one({"campaign_id": campaign_id})
+            if existing and existing.get("input_hash") == campaign_summary.input_digest(data):
+                return
+            await _generate_campaign_summary(campaign, data, trigger="campaign_closed")
+        except Exception:  # pragma: no cover — a background summary never fails a close
+            logger.exception("Automatic campaign summary failed")
+
+    try:
+        task = asyncio.get_running_loop().create_task(run())
+    except RuntimeError:  # pragma: no cover — no loop, nothing to schedule on
+        return
+    _SUMMARY_TASKS.add(task)
+    task.add_done_callback(_SUMMARY_TASKS.discard)
+
+
+@brand_router.get("/campaigns/{campaign_id}/summary")
+async def brand_campaign_summary(
+    campaign_id: str, user: dict = Depends(require_roles(*BRAND_ROLES, "admin"))
+):
+    """The summary for one brief, cached, with whether it is still current.
+
+    **Off is a clean absence**: with AI switched off this answers
+    `{"available": false}` and nothing else — not a stale summary from before
+    the switch was flipped, which would be a feature that is off and still
+    talking. Ownership first, as on the analytics route beside it.
+    """
+    campaign = await _own_campaign_or_404(campaign_id, user)
+    if not ai.ai_configured():
+        return {"available": False, "campaign_id": str(campaign["_id"])}
+    data = await _campaign_summary_input(campaign)
+    doc = await db.campaign_summaries.find_one({"campaign_id": campaign["_id"]})
+    return _serialize_summary_state(campaign, data, doc, datetime.now(timezone.utc))
+
+
+@brand_router.post("/campaigns/{campaign_id}/summary/regenerate")
+async def regenerate_campaign_summary(
+    campaign_id: str, user: dict = Depends(require_roles(*BRAND_ROLES, "admin"))
+):
+    """Write it again, at most five times a campaign a day.
+
+    **The cache is by input**: if the data has not moved since the last
+    summary, this returns that summary rather than paying for the same answer
+    in different words. Every real attempt counts against the five, including
+    one that failed — the limit exists to stop a button being pressed into a
+    bill, and a failing call costs the same as a working one.
+    """
+    campaign = await _own_campaign_or_404(campaign_id, user)
+    if not ai.ai_configured():
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "ai_unavailable", "message": "Summaries are switched off."},
+        )
+    now = datetime.now(timezone.utc)
+    data = await _campaign_summary_input(campaign)
+    doc = await db.campaign_summaries.find_one({"campaign_id": campaign["_id"]})
+    state = _serialize_summary_state(campaign, data, doc, now)
+    if not state["eligible"]:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "too_few_measured",
+                "message": (
+                    f"A summary needs at least {campaign_summary.MIN_MEASURED_POSTS} "
+                    f"measured posts; this campaign has {state['posts_measured']}."
+                ),
+            },
+        )
+    if state["summary"] and not state["stale"]:
+        return {**state, "cached": True}
+    if state["regenerations_left"] <= 0:
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "code": "regenerate_limit",
+                "message": (
+                    f"A summary can be rewritten {campaign_summary.REGENERATIONS_PER_DAY} "
+                    "times a day. Try again tomorrow."
+                ),
+            },
+        )
+    await db.campaign_summaries.update_one(
+        {"campaign_id": campaign["_id"]},
+        {"$push": {"regenerations": now}},
+        upsert=True,
+    )
+    stored = await _generate_campaign_summary(campaign, data, trigger="regenerate", actor=user)
+    await audit(
+        user,
+        "campaign.summary_regenerated",
+        "campaign",
+        campaign["_id"],
+        after={"produced": stored is not None, "prompt_version": campaign_summary.PROMPT.version},
+        **_campaign_audit_context(campaign),
+    )
+    doc = await db.campaign_summaries.find_one({"campaign_id": campaign["_id"]})
+    out = _serialize_summary_state(campaign, data, doc, now)
+    if stored is None:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "summary_unavailable",
+                "message": "We couldn't write a summary we could check. Nothing was changed.",
+                "regenerations_left": out["regenerations_left"],
+            },
+        )
+    return {**out, "cached": False}
 
 
 @brand_router.get("/campaigns/{campaign_id}/export")
@@ -24659,6 +24980,7 @@ async def admin_close_campaign(
         after={"status": "closed", "applications_closed": len(stale)},
         note=payload.reason,
     )
+    _summarise_when_closed(doc["_id"])
     return {
         "id": campaign_id,
         "status": "closed",
@@ -29676,7 +29998,9 @@ async def _erase_personal_data(account: dict) -> dict:
         async for doc in db.brand_documents.find({"brand_id": brand_oid}):
             _remove_private_upload(doc.get("stored_name"))
         await db.brand_documents.delete_many({"brand_id": brand_oid})
-        erased["collections"] += ["brand_profiles", "brand_documents"]
+        # Their campaign summaries were written for them and about them.
+        await db.campaign_summaries.delete_many({"brand_id": brand_oid})
+        erased["collections"] += ["brand_profiles", "brand_documents", "campaign_summaries"]
 
     # The conversations. A work note and a question thread are somebody's
     # words, so the words go; that they were said, and when, is what the
@@ -29691,6 +30015,12 @@ async def _erase_personal_data(account: dict) -> dict:
     # Notifications are addressed to a person who no longer exists.
     await db.notifications.delete_many({"user_id": oid})
     erased["collections"].append("notifications")
+
+    # **A campaign summary may name them**, in prose a model wrote from their
+    # display name. Text cannot be partially un-named, so the summary goes; the
+    # brand can regenerate one from the data that remains.
+    await db.campaign_summaries.delete_many({"creator_ids": oid})
+    erased["collections"].append("campaign_summaries")
 
     # **Payout snapshots are the one hard case, and they go.** They carry a
     # bank account and a PAN; the amount, the date and the reference beside
@@ -42969,6 +43299,11 @@ async def _startup():
     # fixed login code. It belongs at the top of the deploy log, not buried
     # under index maintenance.
     warn_about_fixed_test_otp()
+
+    # The AI call log ages out on its own, and the summaries are one per brief.
+    await ai.ensure_indexes(db)
+    await db.campaign_summaries.create_index("campaign_id", unique=True)
+    await db.campaign_summaries.create_index("creator_ids")
 
     # users
     # NOTE: partial-unique indexes on email + phone because creators/brands now

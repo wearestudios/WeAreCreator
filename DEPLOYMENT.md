@@ -241,6 +241,23 @@ on a production box, that box is handing out a fixed login code right now.
 
 ---
 
+## AI features
+
+Off unless `AI_ENABLED` is `true` **and** the chosen provider's key is set. Off
+is a supported state: every AI feature hides itself and nothing else depends on
+it. See `backend/ai.py`.
+
+| Variable | Production value |
+| --- | --- |
+| `AI_ENABLED` | `true` to switch AI on. Unset or anything else reads as off. **If you set it back to `false`, also flip `AI_FEATURES` in `frontend/src/content/marketing.js` off**, or the public site keeps describing a feature that has gone dark. |
+| `AI_PROVIDER` | `gemini` (default) or `anthropic`. |
+| `AI_MODEL` | Optional. Defaults to `gemini-2.5-flash` or `claude-opus-5-5`. |
+| `GEMINI_API_KEY` | The Gemini key, when `AI_PROVIDER=gemini`. Sent in a header, never logged. |
+| `ANTHROPIC_API_KEY` | The Anthropic key, when `AI_PROVIDER=anthropic`. Never logged. |
+| `AI_DAILY_CALL_LIMIT` | `500`. Provider calls per IST day across every feature — the cost ceiling. |
+| `AI_ACCOUNT_TASK_DAILY_LIMIT` | `20`. Provider calls one account may make for one feature per IST day. |
+| `AI_LOG_SALT` | Any random string. Salts the account hash in the `ai_calls` log. |
+
 ## Everything else
 
 | Variable | Default | Notes |

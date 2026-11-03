@@ -83,6 +83,18 @@ def test_the_creator_card_draws_barter_as_barter():
     assert "<Shortfall" in card and "collab.partial_note" in card
 
 
+def test_the_creator_applications_list_draws_barter_as_barter():
+    """The same mistake on the Applications list: `agreed_amount ?? quoted_rate`
+    with a rupee sign printed the creator's quote as a fee on a barter brief.
+    `Applications.test.jsx` renders the row; this holds the wiring for the
+    backend job."""
+    rows = (SRC / "components/creator/Applications.jsx").read_text(encoding="utf-8")
+    assert "formatCollabMoney" in rows
+    assert "row.compensation_type" in rows and "row.barter_terms" in rows
+    assert "money.isBarter" in rows
+    assert (SRC / "components/creator/Applications.test.jsx").exists()
+
+
 def test_the_creator_row_carries_the_kind_of_money_and_the_partial_note():
     import server
 

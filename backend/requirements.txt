@@ -32,6 +32,12 @@ cryptography>=42.0.8      # Fernet, for the encrypted Instagram tokens
 # --- Outbound HTTP: AiSensy (WhatsApp OTP) and the Instagram Graph API ---
 httpx==0.28.1
 
+# --- AI features (backend/ai.py) ---
+# The official SDK for the Anthropic provider; Gemini is plain REST over the
+# httpx above. Imported lazily inside the provider, so a deployment with AI
+# switched off never loads it.
+anthropic>=2.3.0
+
 # --- Config ---
 python-dotenv>=1.0.1
 tzdata>=2024.2            # zoneinfo data; the slim images ship without it
