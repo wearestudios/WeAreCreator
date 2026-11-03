@@ -472,7 +472,7 @@ export default function CampaignDetailPage() {
                                     {campaign.brief}
                                 </p>
                                 <div>
-                                    <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                                    <p className="text-label text-muted-foreground">
                                         Deliverables
                                     </p>
                                     <DeliverableList
@@ -555,7 +555,7 @@ export default function CampaignDetailPage() {
                                     <Link
                                         to={`/admin/brands/${detail.brand.user_id}`}
                                         data-testid={IDS.brandLink}
-                                        className="flex items-center gap-3 font-serif text-h3 transition-colors duration-150 hover:text-primary-ink"
+                                        className="flex items-center gap-3 font-bold text-h3 transition-colors duration-150 hover:text-primary-ink"
                                     >
                                         <BrandAvatar brand={detail.brand} />
                                         {detail.brand.business_name || "Unknown brand"}
@@ -591,7 +591,7 @@ export default function CampaignDetailPage() {
                                             loadManagers();
                                             setDialog({ kind: "reassign" });
                                         }}
-                                        className="inline-flex min-h-[2.75rem] items-center gap-1.5 text-eyebrow uppercase tracking-eyebrow text-muted-foreground transition-colors duration-150 hover:text-primary-ink md:min-h-0"
+                                        className="inline-flex min-h-[2.75rem] items-center gap-1.5 text-label text-muted-foreground transition-colors duration-150 hover:text-primary-ink md:min-h-0"
                                     >
                                         <UserCog className="h-3.5 w-3.5" />
                                         Reassign
@@ -609,7 +609,7 @@ export default function CampaignDetailPage() {
                                     </div>
                                     <p
                                         data-testid={IDS.managerName}
-                                        className="font-serif text-h3"
+                                        className="font-bold text-h3"
                                     >
                                         {campaign.manager_name || "Nobody assigned"}
                                     </p>
@@ -674,7 +674,7 @@ export default function CampaignDetailPage() {
                                             {formatDateTime(s.starts_at)}
                                             {s.ends_at ? ` – ${formatDateTime(s.ends_at)}` : ""}
                                         </span>
-                                        <span className="flex-none text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                                        <span className="flex-none text-label text-muted-foreground">
                                             {s.booked_count}/{s.capacity} booked
                                         </span>
                                         <span className="flex min-w-0 flex-1 flex-wrap gap-2">
@@ -736,7 +736,7 @@ export default function CampaignDetailPage() {
                                             key={g.key}
                                             data-testid={IDS.applicantGroup(g.key)}
                                         >
-                                            <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                                            <p className="text-label text-muted-foreground">
                                                 {g.label}
                                                 <span className="ml-2 text-primary-ink">
                                                     {g.rows.length}
@@ -783,7 +783,7 @@ export default function CampaignDetailPage() {
                                                                 <StatePill state={a.state} />
                                                                 <Link
                                                                     to={`/admin/applications/${a.collaboration_id}`}
-                                                                    className="flex-none text-eyebrow uppercase tracking-eyebrow text-muted-foreground transition-colors duration-150 hover:text-primary-ink"
+                                                                    className="flex-none text-label text-muted-foreground transition-colors duration-150 hover:text-primary-ink"
                                                                 >
                                                                     Open
                                                                 </Link>
@@ -860,7 +860,7 @@ export default function CampaignDetailPage() {
                                             />
                                             <CollaborationLink
                                                 id={p.collaboration_id}
-                                                className="ml-3 text-eyebrow uppercase tracking-eyebrow text-muted-foreground"
+                                                className="ml-3 text-label text-muted-foreground"
                                             >
                                                 application
                                             </CollaborationLink>
@@ -868,7 +868,7 @@ export default function CampaignDetailPage() {
                                         <span className="flex-none text-meta">
                                             ₹{formatRupees(p.creator_payout)}
                                         </span>
-                                        <span className="flex-none text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                                        <span className="flex-none text-label text-muted-foreground">
                                             {p.state}
                                         </span>
                                         <span className="w-40 flex-none text-meta text-muted-foreground">
@@ -1015,10 +1015,10 @@ function ReassignManagerDialog({
                 className="max-w-md rounded-md border border-border bg-card"
             >
                 <DialogHeader className="text-left">
-                    <p className="text-eyebrow uppercase tracking-eyebrow text-primary-ink">
+                    <p className="text-label text-primary-ink">
                         Reassign
                     </p>
-                    <DialogTitle className="mt-3 font-serif text-h3 leading-tight">
+                    <DialogTitle className="mt-3 font-bold text-h3 leading-tight">
                         Who runs this campaign
                     </DialogTitle>
                     <DialogDescription className="mt-2 text-body leading-relaxed text-muted-foreground">

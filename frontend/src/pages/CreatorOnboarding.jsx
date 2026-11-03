@@ -109,7 +109,7 @@ const Ring = ({ percent }) => {
             </svg>
             <span
                 data-testid={IDS.percent}
-                className="absolute inset-0 grid place-items-center font-serif text-body"
+                className="absolute inset-0 grid place-items-center font-bold text-body"
             >
                 {percent}%
             </span>
@@ -120,7 +120,7 @@ const Ring = ({ percent }) => {
 const Section = ({ id, title, note, children }) => (
     <section data-testid={IDS.section(id)} className="space-y-5">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">{title}</p>
+            <p className="text-label text-muted-foreground">{title}</p>
             {note && <span className="text-meta text-muted-foreground/80">{note}</span>}
         </div>
         {children}
@@ -163,7 +163,7 @@ const ChipList = ({ values, onChange, suggestions, editorId, inputId, chipId, su
                         <span
                             key={v}
                             data-testid={chipId(v)}
-                            className="inline-flex items-center gap-1.5 rounded-full bg-primary/15 px-3 py-1 text-eyebrow uppercase tracking-eyebrow text-primary"
+                            className="inline-flex items-center gap-1.5 rounded-full bg-primary/15 px-3 py-1 text-label text-primary"
                         >
                             {v}
                             <button
@@ -195,7 +195,7 @@ const ChipList = ({ values, onChange, suggestions, editorId, inputId, chipId, su
                 <div className="space-y-3">
                     {groups.map(([groupName, terms]) => (
                         <div key={groupName}>
-                            <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground/70">
+                            <p className="text-label text-muted-foreground/70">
                                 {groupName}
                             </p>
                             <div className="mt-1.5 flex flex-wrap gap-2">
@@ -205,7 +205,7 @@ const ChipList = ({ values, onChange, suggestions, editorId, inputId, chipId, su
                                         key={s}
                                         onClick={() => add(s)}
                                         data-testid={suggestId(s.replace(/\s+/g, "-"))}
-                                        className="inline-flex min-h-[2.75rem] items-center rounded-full border border-border bg-transparent px-4 py-1 text-eyebrow uppercase tracking-eyebrow text-muted-foreground transition-colors duration-200 hover:border-primary/40 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background md:min-h-0 md:px-3"
+                                        className="inline-flex min-h-[2.75rem] items-center rounded-full border border-border bg-transparent px-4 py-1 text-label text-muted-foreground transition-colors duration-200 hover:border-primary/40 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background md:min-h-0 md:px-3"
                                     >
                                         + {s}
                                     </button>
@@ -221,7 +221,7 @@ const ChipList = ({ values, onChange, suggestions, editorId, inputId, chipId, su
 
 const Field = ({ id, label, hint, children }) => (
     <div>
-        <Label htmlFor={id} className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+        <Label htmlFor={id} className="text-label text-muted-foreground">
             {label}
         </Label>
         {children}
@@ -496,10 +496,10 @@ export default function CreatorOnboarding() {
         <div data-testid={IDS.page} className="min-h-screen bg-background grain-page">
             <Navbar />
             <main className="mx-auto max-w-3xl px-5 py-12 md:px-6 md:py-16">
-                <p className="text-eyebrow uppercase tracking-eyebrow text-primary">
+                <p className="text-label text-primary">
                     Creator · Your profile
                 </p>
-                <h1 className="mt-4 font-serif text-h1 leading-none tracking-tight">
+                <h1 className="app-title mt-4">
                     Tell us about you.
                 </h1>
                 <p className="mt-6 max-w-xl text-body leading-relaxed text-muted-foreground">
@@ -515,12 +515,12 @@ export default function CreatorOnboarding() {
                     <Ring percent={percent} />
                     <div className="min-w-0 flex-1">
                         {completeness?.complete ? (
-                            <p className="font-serif text-h3 leading-tight">
+                            <p className="font-bold text-h3 leading-tight">
                                 That's everything — send it over when you're ready.
                             </p>
                         ) : (
                             <>
-                                <p className="font-serif text-h3 leading-tight">
+                                <p className="font-bold text-h3 leading-tight">
                                     {percent === 0
                                         ? "Let's get you on the directory."
                                         : "Nearly there."}
@@ -567,7 +567,7 @@ export default function CreatorOnboarding() {
                                 )}
                             </div>
                             <div className="min-w-0">
-                                <Label className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                                <Label className="text-label text-muted-foreground">
                                     Profile photo
                                 </Label>
                                 <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -605,7 +605,7 @@ export default function CreatorOnboarding() {
                                             disabled={imageBusy}
                                             onClick={onRemoveImage}
                                             data-testid={IDS.photoRemove}
-                                            className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground transition-colors duration-200 hover:text-state-rejected disabled:opacity-40"
+                                            className="text-label text-muted-foreground transition-colors duration-200 hover:text-state-rejected disabled:opacity-40"
                                         >
                                             Remove
                                         </button>

@@ -62,7 +62,7 @@ export function ReliabilityBadge({ reliability, className = "", testid }) {
 /** One figure, drawn as an em dash when we do not have it. */
 const Figure = ({ label, value, suffix = "", testid }) => (
     <div>
-        <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">{label}</p>
+        <p className="text-label text-muted-foreground">{label}</p>
         <p data-testid={testid} className="mt-1 text-meta tabular-nums">
             {/* **Unknown is an em dash, never a zero.** A creator with no
                 finished campaigns has an unknown on-time rate, not a 0% one,

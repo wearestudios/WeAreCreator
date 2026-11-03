@@ -58,7 +58,7 @@ const Row = ({ row, testid, muted, onWithdraw, onRefresh }) => {
             to={`/campaigns/${row.campaign_id}`}
             className="group min-w-0 flex-1"
         >
-            <span className="flex items-center gap-2 text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+            <span className="flex items-center gap-2 text-label text-muted-foreground">
                 <BrandAvatar brand={row} size="h-5 w-5" />
                 <span className="truncate">
                     {row.brand_name || "Brand"}
@@ -68,7 +68,7 @@ const Row = ({ row, testid, muted, onWithdraw, onRefresh }) => {
             </span>
             <span
                 className={
-                    "mt-1 block truncate font-serif text-body-lg leading-tight transition-colors duration-200 group-hover:text-primary " +
+                    "mt-1 block truncate font-bold text-body-lg leading-tight transition-colors duration-200 group-hover:text-primary " +
                     (muted ? "text-muted-foreground" : "")
                 }
             >
@@ -101,7 +101,7 @@ const Row = ({ row, testid, muted, onWithdraw, onRefresh }) => {
                     {money.text}
                 </span>
             ) : (
-                <Money symbolClass="h-3.5 w-3.5" className="font-serif text-h3 leading-none">
+                <Money symbolClass="h-3.5 w-3.5" className="app-figure text-h3 leading-none">
                     <span data-testid={IDS.amount(row.id)}>
                         {formatRupees(row.agreed_amount ?? row.quoted_rate)}
                     </span>
@@ -136,7 +136,7 @@ const Row = ({ row, testid, muted, onWithdraw, onRefresh }) => {
                     type="button"
                     onClick={() => onWithdraw(row)}
                     data-testid={IDS.withdraw(row.id)}
-                    className="inline-flex min-h-[2.75rem] items-center gap-1.5 text-eyebrow uppercase tracking-eyebrow text-muted-foreground transition-colors duration-200 hover:text-foreground sm:min-h-0"
+                    className="inline-flex min-h-[2.75rem] items-center gap-1.5 text-label text-muted-foreground transition-colors duration-200 hover:text-foreground sm:min-h-0"
                 >
                     <X className="h-3.5 w-3.5" />
                     Withdraw
@@ -308,7 +308,7 @@ export default function Applications({ applied, declined, invitations, onChanged
 
                         {notThisTime.length > 0 && (
                             <div className="overflow-hidden rounded-md border border-border bg-card/50">
-                                <p className="border-b border-border px-5 py-4 text-eyebrow uppercase tracking-eyebrow text-muted-foreground sm:px-6">
+                                <p className="border-b border-border px-5 py-4 text-label text-muted-foreground sm:px-6">
                                     Went another way
                                 </p>
                                 <ul data-testid={IDS.declinedList} className="divide-y divide-divider">

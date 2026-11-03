@@ -63,7 +63,7 @@ export default function CreatorAvatarMenu({ user, profileImageUrl, onLogout }) {
                         className="h-full w-full object-cover"
                     />
                 ) : (
-                    <span className="text-meta font-medium tracking-wide text-muted-foreground">
+                    <span className="text-meta font-medium text-muted-foreground">
                         {initials(user?.name)}
                     </span>
                 )}

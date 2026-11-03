@@ -469,7 +469,7 @@ export default function ApplicationDetail({
                             nothing until somebody has offered anything. */}
                         {app.negotiation?.entries?.length > 0 && (
                             <div className="mt-8">
-                                <p className="mb-3 text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                                <p className="mb-3 text-label text-muted-foreground">
                                     Fee history
                                 </p>
                                 <NegotiationHistory negotiation={app.negotiation} />
@@ -996,7 +996,7 @@ export default function ApplicationDetail({
             >
                 <DialogContent className="max-w-md rounded-md border border-border bg-card">
                     <DialogHeader className="text-left">
-                        <DialogTitle className="font-serif text-h3 leading-tight">
+                        <DialogTitle className="font-bold text-h3 leading-tight">
                             That time doesn't work?
                         </DialogTitle>
                         <DialogDescription className="text-body leading-relaxed text-muted-foreground">
@@ -1101,7 +1101,7 @@ export default function ApplicationDetail({
             >
                 <DialogContent className="max-w-md rounded-md border border-border bg-card">
                     <DialogHeader className="text-left">
-                        <DialogTitle className="font-serif text-h3 leading-tight">
+                        <DialogTitle className="font-bold text-h3 leading-tight">
                             What needs to change?
                         </DialogTitle>
                         <DialogDescription className="text-body leading-relaxed text-muted-foreground">

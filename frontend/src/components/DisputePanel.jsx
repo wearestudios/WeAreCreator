@@ -124,7 +124,7 @@ export default function DisputePanel({
                     aria-hidden="true"
                     className={`h-4 w-4 ${open ? "text-destructive" : "text-muted-foreground"}`}
                 />
-                <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                <p className="text-label text-muted-foreground">
                     {open ? "Under dispute" : "Dispute"}
                 </p>
                 {/* **The freeze is said, not implied.** Somebody wondering why

@@ -138,7 +138,7 @@ export default function BrandDetailPage() {
                     <>
                         <span
                             className={
-                                "rounded-full border px-2.5 py-1 text-eyebrow uppercase tracking-eyebrow " +
+                                "rounded-full border px-2.5 py-1 text-label " +
                                 (brand.verified
                                     ? "border-state-approved/30 bg-state-approved-wash text-state-approved"
                                     : brand.verification_state === "rejected"
@@ -304,7 +304,7 @@ export default function BrandDetailPage() {
 
                         <Section id="manager" title="Brand manager">
                             <Panel data-testid={IDS.manager}>
-                                <p className="font-serif text-h3">
+                                <p className="font-bold text-h3">
                                     {brand.manager_name || "Nobody named"}
                                 </p>
                                 <p className="mt-1 text-meta text-muted-foreground">

@@ -48,7 +48,7 @@ const Ring = ({ percent }) => {
             </svg>
             <span
                 data-testid={IDS.percent}
-                className="absolute inset-0 grid place-items-center font-serif text-body-lg"
+                className="absolute inset-0 grid place-items-center font-bold text-body-lg"
             >
                 {percent}%
             </span>
@@ -67,10 +67,10 @@ export default function Completeness({ completeness }) {
                 <Ring percent={completeness.percent ?? 0} />
 
                 <div className="min-w-0 flex-1">
-                    <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                    <p className="text-label text-muted-foreground">
                         Your profile
                     </p>
-                    <p className="mt-3 font-serif text-h3 leading-tight">
+                    <p className="mt-3 font-bold text-h3 leading-tight">
                         {/* Framed as what it unlocks, not as a chore. */}
                         A few more details and brands can find you properly.
                     </p>

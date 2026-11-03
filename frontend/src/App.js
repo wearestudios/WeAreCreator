@@ -9,7 +9,7 @@ import { RETIRED_MARKETING_PATHS } from "@/lib/siteNav";
 import { ImpersonationBanner } from "@/components/ImpersonationBanner";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import RouteFade from "@/components/motion/RouteFade";
-import { applyTheme, surfaceFor } from "@/lib/surfaceTheme";
+import { applyAppScope, applyTheme, surfaceFor } from "@/lib/surfaceTheme";
 import RouteFallback from "@/components/RouteFallback";
 import AnalyticsGate from "@/components/AnalyticsGate";
 import { retryImport } from "@/lib/lazyRoute";
@@ -235,6 +235,7 @@ function SurfaceGuard() {
     const accountTheme = user?.console_theme ?? null;
     React.useEffect(() => {
         applyTheme(surfaceFor(pathname, accountTheme));
+        applyAppScope(pathname);
     }, [pathname, accountTheme]);
     return null;
 }

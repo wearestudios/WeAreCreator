@@ -6001,6 +6001,53 @@ now.
   with the reason in the file. A dead third copy in `admin/shared.jsx` is what
   the test now stops coming back.
 
+## The app's look
+
+The signed-in app — the dashboards, the console, the manager screens,
+onboarding and authoring a brief — has its own type, and the public site
+keeps its own. **The line is `[data-surface="app"]` on `<html>`**, written by
+the pre-paint script in `public/index.html` and by `applyAppScope` in
+`lib/surfaceTheme.js` (from `SurfaceGuard`), for every path `isAppPath` says
+yes to: every product path except `/admin/login`, which is an auth screen.
+On `<html>` rather than a wrapper because Radix portals dialogs into
+`<body>`. `test_app_type.py` evaluates the script and the module in node over
+thirty paths and fails them if they disagree.
+
+### Type
+
+- **Manrope is the one sans** — self-hosted, wght 400–800, built by
+  `scripts/build-fonts.py` with metric-matched fallbacks (Arial/Liberation and
+  Roboto). Only an app path preloads it (the pre-paint script appends the
+  link), so a visitor who never signs in never downloads it.
+- **Inside the scope every family token is Manrope**: `--font-sans`,
+  `--font-serif`, `--font-display`, `--font-label`. That is what makes "no
+  Inter Tight and no JetBrains Mono in the app" true of a shared component
+  too: `BrandAvatar`'s initial, the navbar's sheet, `DenseView`'s table head
+  render on public pages in the public faces and inside the app in Manrope,
+  with no fork. A rule naming a family outside the tokens would escape this,
+  and a test refuses one.
+- **Fraunces is reachable only through `.app-title`**: the screen's own
+  title, 28→38px, weight 600, on an `h1`/`h2`, carrying no size, weight,
+  tracking or leading utility of its own so the floor is structural. The
+  files allowed to carry it are `TITLE_OWNERS` in the test, each with a
+  reason; one screen shows one. Measured in a browser on eleven app screens
+  at 1440 and 390: exactly one Fraunces element (38px / 28.3px), the rest
+  Manrope.
+- Body 15px, meta 13.5px (13 compact), labels 12.5px — **`text-label`**,
+  Manrope 600, sentence case, untracked, the eyebrow's replacement. Nothing
+  below 12px and nothing lighter than 400; bold and extrabold are real
+  weights here, so `test_site_foundations.py`'s ban on them stops at the
+  app's own files (`app_surface.APP_ONLY`, walked from the router). A
+  heading is Manrope 700 through a `:where()` rule a class can override.
+- `.app-figure` is a stat: 800, -0.02em, tabular. Every figure is tabular
+  anyway (the document rule); the app scope does not touch it.
+- A shared component's eyebrow (`text-eyebrow uppercase tracking-eyebrow`)
+  reads as a label inside the scope: `--tracking-eyebrow` is 0 there and
+  `[data-surface="app"] .text-eyebrow` drops the transform. App-only files
+  carry no eyebrow at all. The three IFSC/PAN inputs keep `uppercase`, which
+  upper-cases what somebody types and is not a label; the team screen's
+  one-time password keeps a monospace face, because it is read aloud.
+
 ## Design system
 
 `design_guidelines.json` describes what ships: light by default, navy headings
@@ -6092,7 +6139,7 @@ outside `routes.jsx`, and any import of the module from outside the console.
 - The control is a two-button segmented pill with `aria-pressed`, in the
   console header, admin-only and only on a density surface, hidden below `sm`.
 
-Typography is **Fraunces** (`font-serif`, headings) and **Inter Tight** (body),
+On the public site, typography is **Fraunces** (`font-serif`, headings) and **Inter Tight** (body) — the signed-in app is Manrope, see "The app's look" —
 defined in `tailwind.config.js` and `src/index.css`. `design_guidelines.json` now
 matches; if the two ever disagree again, the code wins. The fonts are
 self-hosted and declared once, by `@font-face` at the top of `src/index.css`;

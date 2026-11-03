@@ -107,7 +107,7 @@ export default function AdminAccountMenu({ user, theme, onThemeChange, onLogout 
                 aria-expanded={open}
                 aria-label="Your account"
                 onClick={() => setOpen((v) => !v)}
-                className="grid h-10 w-10 place-items-center rounded-full border border-border bg-card text-meta tracking-wide text-muted-foreground transition-colors duration-150 hover:border-primary/50 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                className="grid h-10 w-10 place-items-center rounded-full border border-border bg-card text-meta text-muted-foreground transition-colors duration-150 hover:border-primary/50 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             >
                 {initials(user?.name)}
             </button>

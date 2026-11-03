@@ -129,7 +129,7 @@ function IssuedPassword({ account, password, onDismiss }) {
                     type="button"
                     onClick={onDismiss}
                     data-testid={MANAGER_IDS.dismiss}
-                    className={`${TEXT.meta} min-h-[2.75rem] px-2 uppercase tracking-[0.15em] text-muted-foreground transition-colors duration-150 hover:text-foreground`}
+                    className={`${TEXT.meta} text-label min-h-[2.75rem] px-2 text-muted-foreground transition-colors duration-150 hover:text-foreground`}
                 >
                     Done
                 </button>

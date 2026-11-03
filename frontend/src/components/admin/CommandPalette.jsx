@@ -138,7 +138,7 @@ export function CommandPalette() {
                 <span className="min-w-0 flex-1 truncate text-left">
                     Search everything
                 </span>
-                <kbd className="hidden flex-none rounded border border-border px-1.5 py-0.5 font-sans text-eyebrow tracking-wider text-muted-foreground md:inline">
+                <kbd className="hidden flex-none rounded border border-border px-1.5 py-0.5 font-sans text-label text-muted-foreground md:inline">
                     ⌘K
                 </kbd>
             </button>
@@ -195,7 +195,7 @@ export function CommandPalette() {
                                 const Icon = GROUP_ICON[g.key] || Search;
                                 return (
                                     <div key={g.key} data-testid={IDS.group(g.key)}>
-                                        <p className="sticky top-0 bg-card/95 px-4 py-2 text-eyebrow uppercase tracking-eyebrow text-muted-foreground backdrop-blur-sm">
+                                        <p className="sticky top-0 bg-card/95 px-4 py-2 text-label text-muted-foreground backdrop-blur-sm">
                                             {g.label}
                                             <span className="ml-2 text-primary-ink">
                                                 {g.items.length}
@@ -236,7 +236,7 @@ export function CommandPalette() {
                                                                     {/* The name somebody types to
                                                                         get back here. */}
                                                                     {item.reference && (
-                                                                        <span className="flex-none font-mono text-eyebrow tracking-wider text-muted-foreground/70">
+                                                                        <span className="flex-none text-label text-muted-foreground/70">
                                                                             {item.reference}
                                                                         </span>
                                                                     )}
@@ -248,7 +248,7 @@ export function CommandPalette() {
                                                                 )}
                                                             </span>
                                                             {item.badge && (
-                                                                <span className="flex-none rounded-full border border-border px-2 py-0.5 text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                                                                <span className="flex-none rounded-full border border-border px-2 py-0.5 text-label text-muted-foreground">
                                                                     {item.badge}
                                                                 </span>
                                                             )}
@@ -266,7 +266,7 @@ export function CommandPalette() {
                         )}
                     </div>
 
-                    <div className="flex items-center gap-4 border-t border-border px-4 py-2.5 text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                    <div className="flex items-center gap-4 border-t border-border px-4 py-2.5 text-label text-muted-foreground">
                         <span>↑↓ move</span>
                         <span>⏎ open</span>
                         <span>esc close</span>

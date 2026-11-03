@@ -135,7 +135,7 @@ export default function AdminDormant() {
                         onClick={() => setKind(k.value)}
                         data-testid={IDS.tab(k.value)}
                         className={
-                            `rounded border px-3 py-1.5 ${TEXT.meta} uppercase tracking-[0.14em] ${CALM} ` +
+                            `rounded border px-3 py-1.5 ${TEXT.meta} text-label ${CALM} ` +
                             (kind === k.value
                                 ? "border-primary/40 bg-primary/10 text-primary-ink"
                                 : "border-border text-muted-foreground hover:text-foreground")

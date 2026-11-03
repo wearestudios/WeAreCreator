@@ -43,7 +43,7 @@ export default function BroadcastSheet({ open, onClose, recipients, onSend, busy
             >
                 {report ? (
                     <>
-                        <SheetTitle className="font-serif text-h3 leading-tight">
+                        <SheetTitle className="font-bold text-h3 leading-tight">
                             Sent
                         </SheetTitle>
                         <SheetDescription className="mt-2 text-meta text-muted-foreground">
@@ -86,7 +86,7 @@ export default function BroadcastSheet({ open, onClose, recipients, onSend, busy
                     </>
                 ) : reviewing ? (
                     <>
-                        <SheetTitle className="font-serif text-h3 leading-tight">
+                        <SheetTitle className="font-bold text-h3 leading-tight">
                             Send to {count} {count === 1 ? "creator" : "creators"}?
                         </SheetTitle>
                         <SheetDescription className="mt-2 text-body leading-relaxed text-muted-foreground">
@@ -103,7 +103,7 @@ export default function BroadcastSheet({ open, onClose, recipients, onSend, busy
 
                         <p
                             data-testid={IDS.count}
-                            className="mt-4 inline-flex items-center gap-2 text-eyebrow uppercase tracking-eyebrow text-muted-foreground"
+                            className="mt-4 inline-flex items-center gap-2 text-label text-muted-foreground"
                         >
                             <Users className="h-3.5 w-3.5" />
                             {count} confirmed {count === 1 ? "creator" : "creators"}
@@ -133,7 +133,7 @@ export default function BroadcastSheet({ open, onClose, recipients, onSend, busy
                     </>
                 ) : (
                     <>
-                        <SheetTitle className="font-serif text-h3 leading-tight">
+                        <SheetTitle className="font-bold text-h3 leading-tight">
                             Message everyone
                         </SheetTitle>
                         <SheetDescription className="mt-2 text-meta text-muted-foreground">

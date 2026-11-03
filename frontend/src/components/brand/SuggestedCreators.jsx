@@ -71,7 +71,7 @@ function ScoreBreakdown({ row }) {
                 type="button"
                 onClick={() => setOpen((v) => !v)}
                 aria-expanded={open}
-                className="-my-2 inline-flex min-h-[2.75rem] items-center gap-1 py-2 text-eyebrow uppercase tracking-eyebrow text-muted-foreground transition-colors duration-200 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background md:my-0 md:min-h-0 md:py-0"
+                className="-my-2 inline-flex min-h-[2.75rem] items-center gap-1 py-2 text-label text-muted-foreground transition-colors duration-200 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background md:my-0 md:min-h-0 md:py-0"
             >
                 Why this score
                 <ChevronDown
@@ -201,12 +201,12 @@ export function SuggestedCreators({ campaignId, canInvite = false }) {
         >
             <div className="flex flex-wrap items-end justify-between gap-4">
                 <div>
-                    <div className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                    <div className="text-label text-muted-foreground">
                         Go and ask
                     </div>
                     <h2
                         data-testid={T.heading}
-                        className="mt-2 font-serif text-h1 tracking-tight"
+                        className="mt-2 font-bold text-h2"
                     >
                         Suggested creators
                     </h2>
@@ -225,7 +225,7 @@ export function SuggestedCreators({ campaignId, canInvite = false }) {
                         data-testid={T.tier}
                         className="rounded-md border border-border bg-background/40 px-4 py-3 text-meta text-muted-foreground"
                     >
-                        <div className="text-eyebrow uppercase tracking-eyebrow">
+                        <div className="text-label">
                             {/* Whether the brand told us, or we read it off
                                 the fee. One of those is worth arguing with;
                                 the other is worth correcting on the profile,
@@ -268,7 +268,7 @@ export function SuggestedCreators({ campaignId, canInvite = false }) {
                 className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5"
             >
                 <div className="flex flex-col gap-1.5">
-                    <Label htmlFor="sc-city" className="text-eyebrow uppercase tracking-eyebrow">
+                    <Label htmlFor="sc-city" className="text-label">
                         City
                     </Label>
                     <Input
@@ -280,7 +280,7 @@ export function SuggestedCreators({ campaignId, canInvite = false }) {
                     />
                 </div>
                 <div className="flex flex-col gap-1.5">
-                    <Label htmlFor="sc-niche" className="text-eyebrow uppercase tracking-eyebrow">
+                    <Label htmlFor="sc-niche" className="text-label">
                         Niche
                     </Label>
                     <Input
@@ -296,7 +296,7 @@ export function SuggestedCreators({ campaignId, canInvite = false }) {
                     labelled micro / mid / macro. A brand that told us "micro"
                     in onboarding had to work out which numbers meant that. */}
                 <div className="flex flex-col gap-1.5">
-                    <Label htmlFor="sc-tier" className="text-eyebrow uppercase tracking-eyebrow">
+                    <Label htmlFor="sc-tier" className="text-label">
                         Audience size
                     </Label>
                     <Select
@@ -405,7 +405,7 @@ export function SuggestedCreators({ campaignId, canInvite = false }) {
                                             <span className="h-11 w-11 flex-none rounded-full border border-border bg-muted" />
                                         )}
                                         <div className="min-w-0 flex-1">
-                                            <div className="font-serif text-h3 leading-tight">
+                                            <div className="font-bold text-h3 leading-tight">
                                                 {row.name || "Creator"}
                                             </div>
                                             <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-meta text-muted-foreground">
@@ -451,7 +451,7 @@ export function SuggestedCreators({ campaignId, canInvite = false }) {
                                             className="flex-none text-right"
                                             title="Match score out of 100"
                                         >
-                                            <div className="inline-flex items-baseline gap-0.5 font-serif text-h3 text-primary">
+                                            <div className="inline-flex items-baseline gap-0.5 font-bold text-h3 text-primary">
                                                 <Sparkles className="h-3.5 w-3.5" />
                                                 {Math.round(row.match_score)}
                                             </div>

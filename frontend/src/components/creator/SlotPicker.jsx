@@ -212,10 +212,10 @@ export default function SlotPicker({ open, onOpenChange, collab, onBooked }) {
                 className="max-h-[90vh] max-w-lg overflow-y-auto rounded-md border border-border bg-card grain-surface"
             >
                 <DialogHeader className="text-left">
-                    <p className="text-eyebrow uppercase tracking-eyebrow text-primary">
+                    <p className="text-label text-primary">
                         {reviewing ? "Check and confirm" : "Pick your slot"}
                     </p>
-                    <DialogTitle className="mt-3 font-serif text-h3 leading-tight">
+                    <DialogTitle className="mt-3 font-bold text-h3 leading-tight">
                         {collab?.campaign_title || data?.campaign_title || "Your slot"}
                     </DialogTitle>
                     <DialogDescription className="mt-2 text-body leading-relaxed text-muted-foreground">
@@ -267,7 +267,7 @@ export default function SlotPicker({ open, onOpenChange, collab, onBooked }) {
                         {picksOwnTime && (
                             <p
                                 data-testid={IDS.window}
-                                className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground"
+                                className="text-label text-muted-foreground"
                             >
                                 Windows open on this campaign
                             </p>
@@ -325,7 +325,7 @@ export default function SlotPicker({ open, onOpenChange, collab, onBooked }) {
 
                         {picksOwnTime && chosen && days.length > 1 && (
                             <div>
-                                <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                                <p className="text-label text-muted-foreground">
                                     Which day?
                                 </p>
                                 <div
@@ -349,7 +349,7 @@ export default function SlotPicker({ open, onOpenChange, collab, onBooked }) {
 
                         {picksOwnTime && chosen && day && (
                             <div>
-                                <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                                <p className="text-label text-muted-foreground">
                                     What time on {formatDay(day.toISOString())}?
                                 </p>
                                 {times.length === 0 ? (
@@ -398,10 +398,10 @@ export default function SlotPicker({ open, onOpenChange, collab, onBooked }) {
                             className="space-y-4 rounded-md border border-border bg-background/60 p-5"
                         >
                             <div>
-                                <dt className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                                <dt className="text-label text-muted-foreground">
                                     When
                                 </dt>
-                                <dd className="mt-2 inline-flex items-center gap-2 font-serif text-h3 leading-tight">
+                                <dd className="mt-2 inline-flex items-center gap-2 font-bold text-h3 leading-tight">
                                     <CalendarClock className="h-4 w-4 text-primary" />
                                     {formatDay(when?.toISOString())} ·{" "}
                                     {formatTime(when?.toISOString())}
@@ -409,7 +409,7 @@ export default function SlotPicker({ open, onOpenChange, collab, onBooked }) {
                             </div>
                             {collab?.venue?.address && (
                                 <div>
-                                    <dt className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                                    <dt className="text-label text-muted-foreground">
                                         Where
                                     </dt>
                                     <dd className="mt-2 text-body leading-relaxed">
@@ -418,7 +418,7 @@ export default function SlotPicker({ open, onOpenChange, collab, onBooked }) {
                                 </div>
                             )}
                             <div>
-                                <dt className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                                <dt className="text-label text-muted-foreground">
                                     Places left on this slot
                                 </dt>
                                 <dd className="mt-2 text-meta text-muted-foreground">

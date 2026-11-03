@@ -832,7 +832,7 @@ export default function PostCampaign() {
                     type="button"
                     onClick={() => navigate("/dashboard")}
                     data-testid="post-back-btn"
-                    className="inline-flex items-center gap-1.5 text-eyebrow uppercase tracking-eyebrow text-muted-foreground transition-colors duration-200 hover:text-primary"
+                    className="inline-flex items-center gap-1.5 text-label text-muted-foreground transition-colors duration-200 hover:text-primary"
                 >
                     <ArrowLeft className="h-3.5 w-3.5" />
                     Dashboard
@@ -867,10 +867,10 @@ export default function PostCampaign() {
                     </AlertDialogContent>
                 </AlertDialog>
 
-                <p className="mt-6 text-eyebrow uppercase tracking-eyebrow text-primary">
+                <p className="mt-6 text-label text-primary">
                     {isEditing ? "Edit campaign" : "New campaign"}
                 </p>
-                <h1 className="mt-3 font-serif text-h1 leading-none tracking-tight">
+                <h1 className="app-title mt-3">
                     {/* Not "a paid brief" any more: barter is postable here,
                         and a header saying otherwise is the page arguing
                         with the picker three sections down. */}
@@ -899,7 +899,7 @@ export default function PostCampaign() {
                     className="mt-12 space-y-8"
                 >
                     <section className="space-y-5">
-                        <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                        <p className="text-label text-muted-foreground">
                             What kind of campaign
                             <AiMark on={ai("campaign_type")} testid="pc-ai-campaign_type" />
                         </p>
@@ -968,7 +968,7 @@ export default function PostCampaign() {
                         {usesWindow ? (
                             <div className="grid gap-5 md:grid-cols-2">
                                 <div>
-                                    <Label htmlFor="pc-start" className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                                    <Label htmlFor="pc-start" className="text-label text-muted-foreground">
                                         {/* Nothing is bookable on a delivery —
                                             the window is when you post it. */}
                                         {isDelivery ? "Sending from" : "Bookable from"}
@@ -987,7 +987,7 @@ export default function PostCampaign() {
                                     </div>
                                 </div>
                                 <div>
-                                    <Label htmlFor="pc-end" className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                                    <Label htmlFor="pc-end" className="text-label text-muted-foreground">
                                         {isDelivery ? "Sent by" : "Until"}
                                         <AiMark on={ai("end_date")} testid="pc-ai-end_date" />
                                     </Label>
@@ -1008,7 +1008,7 @@ export default function PostCampaign() {
                             <div className="space-y-5">
                                 <div className="grid gap-5 md:grid-cols-3">
                                     <div>
-                                        <Label htmlFor="pc-event" className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                                        <Label htmlFor="pc-event" className="text-label text-muted-foreground">
                                             Which day
                                             <AiMark on={ai("event_date")} testid="pc-ai-event_date" />
                                         </Label>
@@ -1031,7 +1031,7 @@ export default function PostCampaign() {
                                     {campaignType === "launch" && (
                                         <>
                                             <div>
-                                                <Label htmlFor="pc-event-time" className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                                                <Label htmlFor="pc-event-time" className="text-label text-muted-foreground">
                                                     Starts at
                                                     <AiMark on={ai("event_time")} testid="pc-ai-event_time" />
                                                 </Label>
@@ -1045,7 +1045,7 @@ export default function PostCampaign() {
                                                 />
                                             </div>
                                             <div>
-                                                <Label htmlFor="pc-duration" className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                                                <Label htmlFor="pc-duration" className="text-label text-muted-foreground">
                                                     Runs for (optional)
                                                 </Label>
                                                 <Input
@@ -1073,7 +1073,7 @@ export default function PostCampaign() {
                                     to the manager after approval. */}
                                 {campaignType === "group_event" && (
                                     <div data-testid="pc-sittings">
-                                        <Label className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                                        <Label className="text-label text-muted-foreground">
                                             Sittings
                                         </Label>
                                         <div className="mt-2 space-y-2">
@@ -1112,7 +1112,7 @@ export default function PostCampaign() {
                                                             onClick={() =>
                                                                 setSittings(sittings.filter((_, j) => j !== i))
                                                             }
-                                                            className="min-h-[2.75rem] text-eyebrow uppercase tracking-eyebrow text-muted-foreground transition-colors duration-200 hover:text-foreground sm:min-h-0"
+                                                            className="min-h-[2.75rem] text-label text-muted-foreground transition-colors duration-200 hover:text-foreground sm:min-h-0"
                                                         >
                                                             Remove
                                                         </button>
@@ -1126,7 +1126,7 @@ export default function PostCampaign() {
                                             onClick={() =>
                                                 setSittings([...sittings, { time: "", capacity: "4" }])
                                             }
-                                            className="mt-2 inline-flex min-h-[2.75rem] items-center text-eyebrow uppercase tracking-eyebrow text-primary transition-colors duration-200 hover:text-primary-hover sm:min-h-0"
+                                            className="mt-2 inline-flex min-h-[2.75rem] items-center text-label text-primary transition-colors duration-200 hover:text-primary-hover sm:min-h-0"
                                         >
                                             Add a sitting
                                         </button>
@@ -1145,7 +1145,7 @@ export default function PostCampaign() {
                             <div>
                                 <Label
                                     htmlFor="pc-disclosure"
-                                    className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground"
+                                    className="text-label text-muted-foreground"
                                 >
                                     Disclosure the post must carry
                                     <AiMark on={ai("required_disclosure")} testid="pc-ai-required_disclosure" />
@@ -1172,7 +1172,7 @@ export default function PostCampaign() {
                             <div>
                                 <Label
                                     htmlFor="pc-usage"
-                                    className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground"
+                                    className="text-label text-muted-foreground"
                                 >
                                     What you may do with the content
                                 </Label>
@@ -1200,7 +1200,7 @@ export default function PostCampaign() {
                                     <div className="mt-3">
                                         <Label
                                             htmlFor="pc-usage-days"
-                                            className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground"
+                                            className="text-label text-muted-foreground"
                                         >
                                             For how many days
                                         </Label>
@@ -1239,11 +1239,11 @@ export default function PostCampaign() {
                     </section>
 
                     <section className="space-y-5">
-                        <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                        <p className="text-label text-muted-foreground">
                             The brief
                         </p>
                         <div>
-                            <Label htmlFor="pc-title" className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                            <Label htmlFor="pc-title" className="text-label text-muted-foreground">
                                 Campaign title
                                 <AiMark on={ai("title")} testid="pc-ai-title" />
                             </Label>
@@ -1258,7 +1258,7 @@ export default function PostCampaign() {
                             />
                         </div>
                         <div>
-                            <Label htmlFor="pc-brief" className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                            <Label htmlFor="pc-brief" className="text-label text-muted-foreground">
                                 Brief
                                 <AiMark on={ai("brief")} testid="pc-ai-brief" />
                             </Label>
@@ -1274,7 +1274,7 @@ export default function PostCampaign() {
                             />
                         </div>
                         <div>
-                            <Label className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                            <Label className="text-label text-muted-foreground">
                                 Deliverables
                                 <AiMark on={ai("deliverable_items")} testid="pc-ai-deliverable_items" />
                             </Label>
@@ -1351,7 +1351,7 @@ export default function PostCampaign() {
                     </section>
 
                     <section className="space-y-5">
-                        <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                        <p className="text-label text-muted-foreground">
                             Money & scope
                             <AiMark on={ai("compensation_type")} testid="pc-ai-compensation_type" />
                         </p>
@@ -1531,7 +1531,7 @@ export default function PostCampaign() {
                             both are ours, and only one of them has something
                             particular to say about why. */}
                         <div>
-                            <p className="text-eyebrow uppercase tracking-eyebrow text-primary">
+                            <p className="text-label text-primary">
                                 Who runs it
                             </p>
                             <div
@@ -1567,7 +1567,7 @@ export default function PostCampaign() {
                         </div>
 
                         <div>
-                            <Label className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                            <Label className="text-label text-muted-foreground">
                                 Who can find this brief
                             </Label>
                             <div
@@ -1622,7 +1622,7 @@ export default function PostCampaign() {
                             has an obvious default and no second story to
                             tell. */}
                         <div>
-                            <Label className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                            <Label className="text-label text-muted-foreground">
                                 Before anything is published
                             </Label>
                             <label
@@ -1664,7 +1664,7 @@ export default function PostCampaign() {
                                 <div className="mt-3 rounded-md border border-border bg-card/60 p-5">
                                     <Label
                                         htmlFor="pc-draft-review-days"
-                                        className="text-xs uppercase tracking-[0.15em] text-muted-foreground"
+                                        className="text-label text-muted-foreground"
                                     >
                                         Days to review a draft
                                     </Label>
@@ -1697,7 +1697,7 @@ export default function PostCampaign() {
                             <div className="mt-3 rounded-md border border-border bg-card/60 p-5">
                                 <Label
                                     htmlFor="pc-revisions-included"
-                                    className="text-xs uppercase tracking-[0.15em] text-muted-foreground"
+                                    className="text-label text-muted-foreground"
                                 >
                                     Rounds of changes included
                                     <AiMark on={ai("revisions_included")} testid="pc-ai-revisions_included" />
@@ -1776,7 +1776,7 @@ export default function PostCampaign() {
                               * left untouched — see buildPayload. */}
                             {!isBarter && (
                                 <div>
-                                    <Label htmlFor="pc-budget" className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                                    <Label htmlFor="pc-budget" className="text-label text-muted-foreground">
                                         {compensationType === "negotiated"
                                             ? "Budget per creator (guide)"
                                             : "Budget per creator"}
@@ -1805,7 +1805,7 @@ export default function PostCampaign() {
                                 </div>
                             )}
                             <div>
-                                <Label htmlFor="pc-needed" className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                                <Label htmlFor="pc-needed" className="text-label text-muted-foreground">
                                     Creators needed
                                     <AiMark on={ai("creators_needed")} testid="pc-ai-creators_needed" />
                                 </Label>
@@ -1837,7 +1837,7 @@ export default function PostCampaign() {
                             <div className="max-w-sm">
                                 <Label
                                     htmlFor="pc-total-budget"
-                                    className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground"
+                                    className="text-label text-muted-foreground"
                                 >
                                     Total campaign budget (optional)
                                     <AiMark on={ai("total_budget")} testid="pc-ai-total_budget" />
@@ -1868,7 +1868,7 @@ export default function PostCampaign() {
 
                         <div className="grid gap-5 md:grid-cols-2">
                             <div>
-                                <Label className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                                <Label className="text-label text-muted-foreground">
                                     Category
                                     <AiMark on={ai("category")} testid="pc-ai-category" />
                                 </Label>
@@ -1893,7 +1893,7 @@ export default function PostCampaign() {
                                 </Select>
                             </div>
                             <div>
-                                <Label className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                                <Label className="text-label text-muted-foreground">
                                     Area
                                     <AiMark on={ai("area")} testid="pc-ai-area" />
                                 </Label>
@@ -1931,7 +1931,7 @@ export default function PostCampaign() {
                                 data-testid="pc-delivery-note"
                                 className="space-y-2 border-t border-border pt-6"
                             >
-                                <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                                <p className="text-label text-muted-foreground">
                                     Where it goes
                                 </p>
                                 <p className="text-body leading-relaxed text-muted-foreground">
@@ -1942,11 +1942,11 @@ export default function PostCampaign() {
                             </div>
                         ) : (
                         <div className="space-y-5 border-t border-border pt-6">
-                            <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                            <p className="text-label text-muted-foreground">
                                 The venue (optional for now)
                             </p>
                             <div>
-                                <Label htmlFor="pc-venue" className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                                <Label htmlFor="pc-venue" className="text-label text-muted-foreground">
                                     Address
                                     <AiMark on={ai("venue_address")} testid="pc-ai-venue_address" />
                                 </Label>
@@ -1962,7 +1962,7 @@ export default function PostCampaign() {
                             </div>
                             <div className="grid gap-5 md:grid-cols-2">
                                 <div>
-                                    <Label htmlFor="pc-venue-notes" className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                                    <Label htmlFor="pc-venue-notes" className="text-label text-muted-foreground">
                                         Arrival instructions
                                     </Label>
                                     <Input
@@ -1976,7 +1976,7 @@ export default function PostCampaign() {
                                     />
                                 </div>
                                 <div>
-                                    <Label htmlFor="pc-onsite" className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                                    <Label htmlFor="pc-onsite" className="text-label text-muted-foreground">
                                         On-site contact
                                     </Label>
                                     <Input

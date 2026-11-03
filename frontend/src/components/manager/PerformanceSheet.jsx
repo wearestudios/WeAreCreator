@@ -90,7 +90,7 @@ export default function PerformanceSheet({ row, onClose, onSaved }) {
                 data-testid={IDS.sheet}
                 className="max-h-[90dvh] overflow-y-auto rounded-t-md border-t border-border bg-card grain-surface"
             >
-                <SheetTitle className="font-serif text-h3 leading-tight">
+                <SheetTitle className="font-bold text-h3 leading-tight">
                     How did {row?.name || "it"} do?
                 </SheetTitle>
                 <SheetDescription className="mt-2 text-body leading-relaxed text-muted-foreground">
@@ -102,7 +102,7 @@ export default function PerformanceSheet({ row, onClose, onSaved }) {
                 <div className="mt-5 grid grid-cols-2 gap-3">
                     {METRICS.map((m) => (
                         <label key={m.key} className="block min-w-0">
-                            <span className="block text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                            <span className="block text-label text-muted-foreground">
                                 {m.label}
                             </span>
                             <Input
@@ -119,7 +119,7 @@ export default function PerformanceSheet({ row, onClose, onSaved }) {
                 </div>
 
                 <label className="mt-4 block">
-                    <span className="block text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                    <span className="block text-label text-muted-foreground">
                         Note <span className="opacity-60">(optional)</span>
                     </span>
                     <Textarea

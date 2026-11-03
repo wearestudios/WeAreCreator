@@ -112,10 +112,10 @@ export default function SubmitContentDialog({ open, onOpenChange, collab, onSubm
                 className="max-h-[90vh] max-w-lg overflow-y-auto rounded-md border border-border bg-card grain-surface"
             >
                 <DialogHeader className="text-left">
-                    <p className="text-eyebrow uppercase tracking-eyebrow text-primary">
+                    <p className="text-label text-primary">
                         Submit content
                     </p>
-                    <DialogTitle className="mt-3 font-serif text-h3 leading-tight">
+                    <DialogTitle className="mt-3 font-bold text-h3 leading-tight">
                         {collab?.campaign_title}
                     </DialogTitle>
                     <DialogDescription className="mt-2 text-body leading-relaxed text-muted-foreground">
@@ -130,7 +130,7 @@ export default function SubmitContentDialog({ open, onOpenChange, collab, onSubm
                             <div key={i} className="space-y-1">
                                 <Label
                                     htmlFor={`sc-url-${i}`}
-                                    className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground"
+                                    className="text-label text-muted-foreground"
                                 >
                                     URL {i + 1}
                                 </Label>
@@ -177,7 +177,7 @@ export default function SubmitContentDialog({ open, onOpenChange, collab, onSubm
                         data-testid={IDS.add}
                         onClick={addRow}
                         disabled={urls.length >= 25}
-                        className="inline-flex items-center gap-1.5 rounded-full border border-border bg-transparent px-3 py-1.5 text-eyebrow uppercase tracking-eyebrow text-muted-foreground transition-colors duration-200 hover:border-primary/40 hover:text-primary disabled:opacity-40"
+                        className="inline-flex items-center gap-1.5 rounded-full border border-border bg-transparent px-3 py-1.5 text-label text-muted-foreground transition-colors duration-200 hover:border-primary/40 hover:text-primary disabled:opacity-40"
                     >
                         <PlusIcon className="h-3.5 w-3.5" />
                         Add another URL

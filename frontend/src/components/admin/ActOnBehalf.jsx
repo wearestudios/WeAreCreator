@@ -70,7 +70,7 @@ export function ActOnBehalfMenu({ actions, onPick, testidFor = {} }) {
                             {earlier && <DropdownMenuSeparator />}
                             <DropdownMenuLabel
                                 data-testid={IDS.group(side.key)}
-                                className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground"
+                                className="text-label text-muted-foreground"
                             >
                                 {side.label}
                             </DropdownMenuLabel>
@@ -206,10 +206,10 @@ export function OnBehalfActDialog({ open, onOpenChange, action, creatorName, sub
                 className="max-w-md rounded-md border border-border bg-card ![background-image:none]"
             >
                 <DialogHeader className="text-left">
-                    <p className="text-eyebrow uppercase tracking-eyebrow text-primary-ink">
+                    <p className="text-label text-primary-ink">
                         On the {action.side}'s behalf
                     </p>
-                    <DialogTitle className="mt-3 font-serif text-h3 leading-tight">
+                    <DialogTitle className="mt-3 font-bold text-h3 leading-tight">
                         {copy.title(creatorName || "the creator")}
                     </DialogTitle>
                     <DialogDescription className="mt-2 text-body leading-relaxed text-muted-foreground">
@@ -223,7 +223,7 @@ export function OnBehalfActDialog({ open, onOpenChange, action, creatorName, sub
                             <div>
                                 <Label
                                     htmlFor="on-behalf-tracking"
-                                    className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground"
+                                    className="text-label text-muted-foreground"
                                 >
                                     Tracking link showing delivered
                                 </Label>
@@ -242,7 +242,7 @@ export function OnBehalfActDialog({ open, onOpenChange, action, creatorName, sub
                             <div>
                                 <Label
                                     htmlFor="on-behalf-photo"
-                                    className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground"
+                                    className="text-label text-muted-foreground"
                                 >
                                     Or a photo of the parcel
                                 </Label>
@@ -265,7 +265,7 @@ export function OnBehalfActDialog({ open, onOpenChange, action, creatorName, sub
                         <div>
                             <Label
                                 htmlFor="on-behalf-note"
-                                className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground"
+                                className="text-label text-muted-foreground"
                             >
                                 What needs to change — the creator reads this
                             </Label>
@@ -284,7 +284,7 @@ export function OnBehalfActDialog({ open, onOpenChange, action, creatorName, sub
                     <div>
                         <Label
                             htmlFor="on-behalf-reason"
-                            className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground"
+                            className="text-label text-muted-foreground"
                         >
                             Why — {copy.reader} reads this
                         </Label>

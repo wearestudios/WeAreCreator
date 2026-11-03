@@ -112,7 +112,7 @@ export default function TakedownPanel({
                     aria-hidden="true"
                     className={`h-4 w-4 ${pending ? "text-state-pending" : "text-muted-foreground"}`}
                 />
-                <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                <p className="text-label text-muted-foreground">
                     Takedown
                 </p>
                 {takedown && (

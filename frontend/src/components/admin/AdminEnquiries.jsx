@@ -176,10 +176,10 @@ export default function AdminEnquiries({ onChanged }) {
     return (
         <section data-testid={IDS.section}>
             <div className="mb-4">
-                <p className={`${TEXT.eyebrow} uppercase tracking-[0.2em] text-muted-foreground`}>
+                <p className={`${TEXT.eyebrow} text-label text-muted-foreground`}>
                     Enquiries
                 </p>
-                <h2 className="mt-1 font-serif text-h3 leading-tight">
+                <h2 className="mt-1 font-bold text-h3 leading-tight">
                     From the contact form
                 </h2>
             </div>

@@ -173,7 +173,7 @@ export default function TagEditor({ endpoint, decide = false, title = "What you 
     return (
         <section data-testid="tag-editor" className={`space-y-5 ${className}`}>
             <div>
-                <h2 className="font-serif text-h3">{title}</h2>
+                <h2 className="font-bold text-h3">{title}</h2>
                 <p className="mt-1 text-meta text-muted-foreground">
                     Briefs are matched on these — what you post about, the languages you post in,
                     and where you shoot.
@@ -189,7 +189,7 @@ export default function TagEditor({ endpoint, decide = false, title = "What you 
                     {key === "niche" ? (
                         Object.entries(NICHES_BY_CATEGORY).map(([cat, group]) => (
                             <div key={cat} className="mt-2">
-                                <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                                <p className="text-label text-muted-foreground">
                                     {CATEGORY_NAMES[cat] || cat}
                                 </p>
                                 <div className="mt-1.5 flex flex-wrap gap-1.5">

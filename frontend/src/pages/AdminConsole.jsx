@@ -41,7 +41,7 @@ import AdminSidebar, {
 } from "@/components/admin/console/Sidebar";
 import ShortcutsOverlay from "@/components/admin/console/ShortcutsOverlay";
 import { isTyping } from "@/components/admin/console/useTableKeys";
-import { CALM, FOCUS, TEXT } from "@/components/admin/console/tokens";
+import { CALM, FOCUS } from "@/components/admin/console/tokens";
 import { DensityProvider, DensityToggle } from "@/components/admin/console/density";
 
 // Kept exported under its old name: `components/admin/routes.jsx` and the
@@ -186,7 +186,7 @@ export default function AdminConsole() {
                                 around it, and a header reading "Admin" over a
                                 list quietly missing half the platform is a
                                 header that has lied about why. */}
-                            <p className={`${TEXT.meta} truncate uppercase tracking-[0.16em] text-muted-foreground`}>
+                            <p className={`text-label truncate text-muted-foreground`}>
                                 {consoleLabel(role)}
                             </p>
                             {/* All your brands at once, with a filter — which

@@ -284,7 +284,7 @@ export function DataTable({
                                     // id keeps it: the control moved into the
                                     // header, it did not stop existing.
                                     data-testid={col.testid || IDS.header(col.key)}
-                                    className={`${DENSITY.row} ${TEXT.meta} font-medium uppercase tracking-[0.08em] text-muted-foreground ${
+                                    className={`${DENSITY.row} text-label text-muted-foreground ${
                                         col.numeric ? "text-right" : "text-left"
                                     } ${col.width || ""} ${col.hideBelow ? "hidden lg:table-cell" : ""}`}
                                 >
@@ -299,7 +299,7 @@ export function DataTable({
                                             // which won — measured as a header row
                                             // where the sortable columns read
                                             // "Followers" and the rest "NICHES".
-                                            className={`inline-flex items-center gap-1.5 rounded uppercase tracking-[0.08em] ${CALM} hover:text-foreground ${FOCUS} ${
+                                            className={`inline-flex items-center gap-1.5 rounded ${CALM} hover:text-foreground ${FOCUS} ${
                                                 col.numeric ? "flex-row-reverse" : ""
                                             }`}
                                         >
@@ -510,7 +510,7 @@ export function TableSkeleton({ columns, rows = 10, testid, wide = true, minWidt
                         {columns.map((col) => (
                             <th
                                 key={col.key}
-                                className={`${DENSITY.row} ${TEXT.meta} text-left font-medium uppercase tracking-[0.08em] text-muted-foreground ${
+                                className={`${DENSITY.row} text-left text-label text-muted-foreground ${
                                     col.hideBelow ? "hidden lg:table-cell" : ""
                                 }`}
                             >

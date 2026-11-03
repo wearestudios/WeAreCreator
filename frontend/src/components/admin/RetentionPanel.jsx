@@ -148,7 +148,7 @@ export default function RetentionPanel() {
 
                     <div className={`${PANEL} space-y-2 p-4`}>
                         <p
-                            className={`${TEXT.meta} uppercase tracking-[0.14em] text-muted-foreground`}
+                            className={`${TEXT.meta} text-label text-muted-foreground`}
                         >
                             On an erasure
                         </p>

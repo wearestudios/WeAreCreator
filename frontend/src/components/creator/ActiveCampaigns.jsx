@@ -272,7 +272,7 @@ const ActiveCard = ({ collab, onBook, onSubmit, onDraft, onRefresh }) => {
             <div className="p-6 md:p-7">
             <div className="flex flex-wrap items-start justify-between gap-4">
                 <div className="min-w-0">
-                    <p className="flex items-center gap-2 text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                    <p className="flex items-center gap-2 text-label text-muted-foreground">
                         <BrandAvatar brand={collab} size="h-6 w-6" />
                         <span className="truncate">
                             {collab.brand_name || "Brand"}
@@ -282,7 +282,7 @@ const ActiveCard = ({ collab, onBook, onSubmit, onDraft, onRefresh }) => {
                     <Link
                         to={`/campaigns/${collab.campaign_id}`}
                         data-testid={IDS.title(collab.id)}
-                        className="mt-2 block font-serif text-h3 leading-tight transition-colors duration-200 hover:text-primary"
+                        className="mt-2 block font-bold text-h3 leading-tight transition-colors duration-200 hover:text-primary"
                     >
                         {collab.campaign_title || "Untitled campaign"}
                     </Link>
@@ -298,7 +298,7 @@ const ActiveCard = ({ collab, onBook, onSubmit, onDraft, onRefresh }) => {
                 ) : (
                     <Money
                         symbolClass="h-4 w-4"
-                        className="font-serif text-h3 leading-none"
+                        className="app-figure text-h3 leading-none"
                     >
                         <span data-testid={IDS.amount(collab.id)}>{formatRupees(amount)}</span>
                     </Money>
@@ -441,7 +441,7 @@ const ActiveCard = ({ collab, onBook, onSubmit, onDraft, onRefresh }) => {
                     surface a creator has for one of their applications. */}
                 {collab.negotiation?.entries?.length > 0 && (
                     <div>
-                        <p className="mb-3 text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                        <p className="mb-3 text-label text-muted-foreground">
                             How the fee was agreed
                         </p>
                         <NegotiationHistory negotiation={collab.negotiation} compact />

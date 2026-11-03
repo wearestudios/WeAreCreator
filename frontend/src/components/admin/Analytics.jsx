@@ -302,7 +302,7 @@ export default function Analytics() {
             <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                     <p className={TEXT.eyebrow}>Analytics</p>
-                    <h2 className="mt-1 font-serif text-h3 leading-tight tracking-tight">
+                    <h2 className="mt-1 font-bold text-h3 leading-tight tracking-tight">
                         Is the business healthy?
                     </h2>
                 </div>

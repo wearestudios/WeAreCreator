@@ -46,10 +46,10 @@ const initialsOf = (name) =>
 
 const SmallStat = ({ label, children, testid }) => (
     <div className="rounded-md border border-border bg-card p-5 grain-surface">
-        <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+        <p className="text-label text-muted-foreground">
             {label}
         </p>
-        <div data-testid={testid} className="mt-3 font-serif text-h3 leading-none">
+        <div data-testid={testid} className="mt-3 app-figure text-h3 leading-none">
             {children}
         </div>
     </div>
@@ -73,7 +73,7 @@ export default function Hero({ user, profile, earnings }) {
                     a hardcoded city on the one screen that knows the real
                     answer. Absent falls back to the role alone rather than
                     guessing. */}
-                <p className="text-eyebrow uppercase tracking-eyebrow text-primary">
+                <p className="text-label text-primary">
                     {profile?.city ? `Creator · ${profile.city}` : "Creator"}
                 </p>
 
@@ -95,7 +95,7 @@ export default function Hero({ user, profile, earnings }) {
                         <span
                             data-testid={IDS.monogram}
                             aria-hidden="true"
-                            className="grid h-28 w-28 flex-none place-items-center rounded-lg border border-border bg-muted font-serif text-h1 text-muted-foreground sm:h-32 sm:w-32 md:h-40 md:w-40 md:text-h1"
+                            className="grid h-28 w-28 flex-none place-items-center rounded-lg border border-border bg-muted font-bold text-h1 text-muted-foreground sm:h-32 sm:w-32 md:h-40 md:w-40 md:text-h1"
                         >
                             {initialsOf(profile?.name || user?.name)}
                         </span>
@@ -103,14 +103,14 @@ export default function Hero({ user, profile, earnings }) {
                     <div className="min-w-0">
                         <h1
                             data-testid={IDS.name}
-                            className="font-serif text-h1 leading-none tracking-tight"
+                            className="app-title"
                         >
                             {profile?.name || user?.name}
                         </h1>
                         <span
                             data-testid={IDS.badge(status)}
                             className={
-                                "mt-3 inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-eyebrow uppercase tracking-eyebrow " +
+                                "mt-3 inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-label " +
                                 meta.tone
                             }
                         >
@@ -152,7 +152,7 @@ export default function Hero({ user, profile, earnings }) {
                                 <span
                                     data-testid={IDS.followersVerified}
                                     title="Pulled from Instagram, refreshed every 12 hours"
-                                    className="inline-flex items-center gap-1 rounded-full border border-state-approved/40 bg-state-approved-wash px-2 py-0.5 text-eyebrow uppercase tracking-eyebrow text-state-approved"
+                                    className="inline-flex items-center gap-1 rounded-full border border-state-approved/40 bg-state-approved-wash px-2 py-0.5 text-label text-state-approved"
                                 >
                                     <BadgeCheck className="h-3 w-3" />
                                     Verified
@@ -189,12 +189,12 @@ export default function Hero({ user, profile, earnings }) {
 
             <div className="md:col-span-5">
                 <div className="rounded-md border border-border bg-card p-6 md:p-7 grain-surface">
-                    <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                    <p className="text-label text-muted-foreground">
                         Earned with WeAre
                     </p>
                     <Money
                         symbolClass="h-6 w-6 md:h-7 md:w-7"
-                        className="mt-4 font-serif text-h1 leading-none tracking-tight text-data"
+                        className="mt-4 app-figure text-h1 leading-none text-data"
                     >
                         <CountUp value={lifetime} testid={IDS.lifetime} />
                     </Money>

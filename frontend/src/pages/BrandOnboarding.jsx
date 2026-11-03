@@ -162,7 +162,7 @@ function StateBanner({ state, reason, submittedAt }) {
             <div className="flex items-start gap-3">
                 <Icon className={"mt-0.5 h-4 w-4 flex-none " + p.accent} />
                 <div className="min-w-0">
-                    <p className="text-eyebrow uppercase tracking-eyebrow">{p.title}</p>
+                    <p className="text-label">{p.title}</p>
                     <p className="mt-2 text-body leading-relaxed">{p.body}</p>
                     {/* The reason we refused, quoted. "Not verified" on its own
                       * just generates a support email. */}
@@ -209,7 +209,7 @@ function Field({
         <div>
             <Label
                 htmlFor={`bv-${name}`}
-                className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground"
+                className="text-label text-muted-foreground"
             >
                 {label}
             </Label>
@@ -596,10 +596,10 @@ export default function BrandOnboarding() {
         >
             <Navbar />
             <main className="mx-auto max-w-3xl px-6 py-14 md:py-20">
-                <p className="text-eyebrow uppercase tracking-eyebrow text-primary">
+                <p className="text-label text-primary">
                     Brand · Onboarding
                 </p>
-                <h1 className="mt-4 font-serif text-h1 leading-none tracking-tight">
+                <h1 className="app-title mt-4">
                     Tell us about your brand.
                 </h1>
                 <p className="mt-6 max-w-xl text-body leading-relaxed text-muted-foreground">
@@ -649,7 +649,7 @@ export default function BrandOnboarding() {
 
                 <form onSubmit={onSave} noValidate className="mt-10 space-y-10">
                     <section className="space-y-5">
-                        <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                        <p className="text-label text-muted-foreground">
                             Basics
                         </p>
 
@@ -697,7 +697,7 @@ export default function BrandOnboarding() {
                         />
 
                         <div>
-                            <Label className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                            <Label className="text-label text-muted-foreground">
                                 Category
                             </Label>
                             <Select
@@ -728,7 +728,7 @@ export default function BrandOnboarding() {
                         <div>
                             <Label
                                 htmlFor="brand-tagline"
-                                className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground"
+                                className="text-label text-muted-foreground"
                             >
                                 In one line
                             </Label>
@@ -756,7 +756,7 @@ export default function BrandOnboarding() {
                         <div>
                             <Label
                                 htmlFor="brand-about"
-                                className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground"
+                                className="text-label text-muted-foreground"
                             >
                                 About your business
                             </Label>
@@ -777,7 +777,7 @@ export default function BrandOnboarding() {
                         </div>
 
                         <div>
-                            <Label className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                            <Label className="text-label text-muted-foreground">
                                 Home city
                             </Label>
                             {/* A closed list, the same one creators and campaigns
@@ -803,7 +803,7 @@ export default function BrandOnboarding() {
 
                     <section className="space-y-4">
                         <div className="flex flex-wrap items-baseline justify-between gap-2">
-                            <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                            <p className="text-label text-muted-foreground">
                                 Outlets
                             </p>
                             <span className="text-meta text-muted-foreground">
@@ -914,7 +914,7 @@ export default function BrandOnboarding() {
                         profile, which is the half it is about. */}
                     <section className="space-y-5">
                         <div>
-                            <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                            <p className="text-label text-muted-foreground">
                                 Being named as a customer
                             </p>
                         </div>
@@ -932,7 +932,7 @@ export default function BrandOnboarding() {
                         inferred from a budget. */}
                     <section className="space-y-5">
                         <div>
-                            <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                            <p className="text-label text-muted-foreground">
                                 What you're looking for
                             </p>
                             <p className="mt-2 text-meta leading-relaxed text-muted-foreground">
@@ -943,7 +943,7 @@ export default function BrandOnboarding() {
                         </div>
 
                         <div>
-                            <Label className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                            <Label className="text-label text-muted-foreground">
                                 Content you need
                             </Label>
                             <div className="mt-3 flex flex-wrap gap-2">
@@ -979,7 +979,7 @@ export default function BrandOnboarding() {
 
                         <div className="grid gap-5 md:grid-cols-2">
                             <div>
-                                <Label className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                                <Label className="text-label text-muted-foreground">
                                     Creator size you work with
                                 </Label>
                                 <Select value={followerTier} onValueChange={setFollowerTier}>
@@ -1007,7 +1007,7 @@ export default function BrandOnboarding() {
                             </div>
 
                             <div>
-                                <Label className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                                <Label className="text-label text-muted-foreground">
                                     Typical budget per creator
                                 </Label>
                                 <Select value={budgetBand} onValueChange={setBudgetBand}>
@@ -1042,7 +1042,7 @@ export default function BrandOnboarding() {
 
                     <section className="space-y-4">
                         <div className="flex items-baseline justify-between">
-                            <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                            <p className="text-label text-muted-foreground">
                                 Cities &amp; areas you operate in
                             </p>
                             <span className="text-meta text-muted-foreground">
@@ -1058,7 +1058,7 @@ export default function BrandOnboarding() {
                                     <span
                                         key={a}
                                         data-testid={`brand-onb-area-chip-${a}`}
-                                        className="group inline-flex items-center gap-1.5 rounded-full bg-primary/15 px-3 py-1 text-eyebrow uppercase tracking-eyebrow text-primary"
+                                        className="group inline-flex items-center gap-1.5 rounded-full bg-primary/15 px-3 py-1 text-label text-primary"
                                     >
                                         <MapPin className="h-3 w-3" />
                                         {a}
@@ -1108,7 +1108,7 @@ export default function BrandOnboarding() {
                                         type="button"
                                         onClick={() => addArea(s)}
                                         data-testid={`brand-onb-area-suggest-${s.replace(/\s+/g, "-")}`}
-                                        className="rounded-full border border-border bg-transparent px-3 py-1 text-eyebrow uppercase tracking-eyebrow text-muted-foreground transition-colors duration-200 hover:border-primary/40 hover:text-primary"
+                                        className="rounded-full border border-border bg-transparent px-3 py-1 text-label text-muted-foreground transition-colors duration-200 hover:border-primary/40 hover:text-primary"
                                     >
                                         + {s}
                                     </button>
@@ -1119,7 +1119,7 @@ export default function BrandOnboarding() {
 
                     <section className="space-y-5 border-t border-border pt-10">
                         <div>
-                            <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                            <p className="text-label text-muted-foreground">
                                 The business
                             </p>
                             <p className="mt-2 max-w-xl text-meta leading-relaxed text-muted-foreground">
@@ -1141,7 +1141,7 @@ export default function BrandOnboarding() {
                         />
 
                         <div>
-                            <Label className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                            <Label className="text-label text-muted-foreground">
                                 Business type
                             </Label>
                             <Select
@@ -1206,7 +1206,7 @@ export default function BrandOnboarding() {
 
                     <section className="space-y-5 border-t border-border pt-10">
                         <div>
-                            <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                            <p className="text-label text-muted-foreground">
                                 Who's asking
                             </p>
                             <p className="mt-2 max-w-xl text-meta leading-relaxed text-muted-foreground">
@@ -1311,7 +1311,7 @@ export default function BrandOnboarding() {
 
                 {!isVerified && (
                     <div className="mt-10 border-t border-border pt-10">
-                        <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                        <p className="text-label text-muted-foreground">
                             {isPending ? "Already with us" : "Send it to us"}
                         </p>
 
@@ -1323,7 +1323,7 @@ export default function BrandOnboarding() {
                                 data-testid={IDS.missingList}
                                 className="mt-4 rounded-md border border-state-pending/30 bg-state-pending-wash p-4"
                             >
-                                <p className="text-eyebrow uppercase tracking-eyebrow text-state-pending">
+                                <p className="text-label text-state-pending">
                                     Still needed before we can check you
                                 </p>
                                 <ul className="mt-3 space-y-1.5">

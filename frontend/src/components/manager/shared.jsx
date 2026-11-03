@@ -86,7 +86,7 @@ export const Pill = ({ meta, value, testid, className = "" }) => {
         <span
             data-testid={testid}
             className={
-                "inline-flex items-center rounded-full border px-2.5 py-1 text-eyebrow font-medium uppercase tracking-eyebrow " +
+                "inline-flex items-center rounded-full border px-2.5 py-1 text-label " +
                 m.tone +
                 " " +
                 className
@@ -124,10 +124,10 @@ export const ManagerHeader = ({ kicker, title, sub, onRefresh, refreshTestId, ch
     <header className="flex flex-col gap-4">
         <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
-                <p className="text-eyebrow uppercase tracking-eyebrow text-primary">
+                <p className="text-label text-primary">
                     {kicker}
                 </p>
-                <h1 className="mt-2 font-serif text-h1 leading-none tracking-tight">
+                <h1 className="app-title mt-2">
                     {title}
                 </h1>
                 {sub && (

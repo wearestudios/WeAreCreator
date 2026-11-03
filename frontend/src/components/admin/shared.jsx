@@ -187,7 +187,7 @@ export const Pill = ({ meta, value, testid }) => {
         <span
             data-testid={testid}
             className={
-                "inline-flex items-center rounded-full border px-2.5 py-1 text-eyebrow font-medium uppercase tracking-eyebrow " +
+                "inline-flex items-center rounded-full border px-2.5 py-1 text-label " +
                 m.tone
             }
         >
@@ -229,7 +229,7 @@ export const CreatorAvatar = ({ creator, size = "h-12 w-12", testids = {} }) => 
         <span
             aria-hidden="true"
             data-testid={testids.monogram}
-            className={`${size} grid flex-none place-items-center rounded-md border border-border bg-primary/10 font-serif text-body-lg text-primary-ink`}
+            className={`${size} grid flex-none place-items-center rounded-md border border-border bg-primary/10 font-semibold text-body-lg text-primary-ink`}
         >
             {monogram}
         </span>
@@ -240,8 +240,8 @@ export const SectionHeader = ({ kicker, title, blurb, onRefresh, refreshTestId, 
     <div className="flex flex-col gap-4">
         <div className="flex items-baseline justify-between gap-6">
             <div>
-                <p className="text-eyebrow uppercase tracking-eyebrow text-primary-ink">{kicker}</p>
-                <h2 className="mt-3 font-serif text-h1 leading-none tracking-tight">
+                <p className="text-label text-primary-ink">{kicker}</p>
+                <h2 className="app-title mt-3">
                     {title}
                 </h2>
             </div>
@@ -250,7 +250,7 @@ export const SectionHeader = ({ kicker, title, blurb, onRefresh, refreshTestId, 
                     type="button"
                     onClick={onRefresh}
                     data-testid={refreshTestId}
-                    className="-my-2 min-h-[2.75rem] py-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background md:my-0 md:min-h-0 md:py-0 inline-flex flex-none items-center gap-1.5 text-eyebrow uppercase tracking-eyebrow text-muted-foreground transition-colors duration-150 hover:text-primary-ink"
+                    className="-my-2 min-h-[2.75rem] py-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background md:my-0 md:min-h-0 md:py-0 inline-flex flex-none items-center gap-1.5 text-label text-muted-foreground transition-colors duration-150 hover:text-primary-ink"
                 >
                     <RotateCw className="h-3.5 w-3.5" />
                     Refresh
@@ -373,7 +373,7 @@ export const DateFilter = ({ value, onChange, label, testid, dense = false }) =>
                             onChange(null);
                             setOpen(false);
                         }}
-                        className="w-full border-t border-border px-3 py-2 text-eyebrow uppercase tracking-eyebrow text-muted-foreground transition-colors duration-150 hover:text-primary-ink"
+                        className="w-full border-t border-border px-3 py-2 text-label text-muted-foreground transition-colors duration-150 hover:text-primary-ink"
                     >
                         Clear
                     </button>

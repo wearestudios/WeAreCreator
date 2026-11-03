@@ -178,7 +178,7 @@ export const StatePill = ({ state, testid }) => {
         <span
             data-testid={testid || `state-pill-${state}`}
             className={
-                "inline-flex flex-none items-center rounded-full border px-2.5 py-1 text-eyebrow font-medium uppercase tracking-eyebrow " +
+                "inline-flex flex-none items-center rounded-full border px-2.5 py-1 text-label " +
                 meta.tone
             }
         >
@@ -277,8 +277,8 @@ export const Money = ({ children, symbolClass = "h-4 w-4", className = "" }) => 
 export const SectionHead = ({ kicker, title, aside, className = "" }) => (
     <div className={"flex flex-wrap items-end justify-between gap-3 " + className}>
         <div className="min-w-0">
-            <p className="text-eyebrow uppercase tracking-eyebrow text-primary">{kicker}</p>
-            <h2 className="mt-3 font-serif text-h2 leading-none tracking-tight">
+            <p className="text-label text-primary">{kicker}</p>
+            <h2 className="mt-3 font-bold text-h2 leading-none tracking-tight">
                 {title}
             </h2>
         </div>
@@ -292,7 +292,7 @@ export const EmptyState = ({ Icon, title, children, testid, action }) => (
         className="flex flex-col items-center gap-3 rounded-md border border-border bg-card px-6 py-14 text-center grain-surface"
     >
         {Icon && <Icon className="h-6 w-6 text-primary" />}
-        {title && <p className="font-serif text-h3 leading-tight">{title}</p>}
+        {title && <p className="font-bold text-h3 leading-tight">{title}</p>}
         <p className="max-w-sm text-body leading-relaxed text-muted-foreground">{children}</p>
         {action}
     </div>

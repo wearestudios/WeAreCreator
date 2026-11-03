@@ -21,7 +21,7 @@ function Points({ title, items }) {
     if (!items?.length) return null;
     return (
         <div>
-            <h3 className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">{title}</h3>
+            <h3 className="text-label text-muted-foreground">{title}</h3>
             <ul className="mt-1.5 space-y-1.5">
                 {items.map((p, i) => (
                     <li key={i} className="text-body leading-relaxed">{p.text}</li>

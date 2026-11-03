@@ -167,7 +167,7 @@ export default function CreatorDetailPage() {
                             testid={DIDS.stat("verification")}
                         />
                         {suspended && (
-                            <span className="rounded-full border border-state-rejected/25 bg-state-rejected-wash px-2.5 py-1 text-eyebrow uppercase tracking-eyebrow text-state-rejected">
+                            <span className="rounded-full border border-state-rejected/25 bg-state-rejected-wash px-2.5 py-1 text-label text-state-rejected">
                                 Suspended
                             </span>
                         )}
@@ -271,7 +271,7 @@ export default function CreatorDetailPage() {
                                 <div className="flex items-start gap-5">
                                     <CreatorAvatar creator={creator} size="h-16 w-16" />
                                     <div className="min-w-0">
-                                        <p className="font-serif text-h3">{creator.name}</p>
+                                        <p className="font-bold text-h3">{creator.name}</p>
                                         {team ? (
                                             <p
                                                 data-testid={IDS.scopedNote}
@@ -345,7 +345,7 @@ export default function CreatorDetailPage() {
                                                 target="_blank"
                                                 rel="noreferrer"
                                                 data-testid={ADDRESS.openInMaps}
-                                                className="mt-1.5 inline-flex min-h-[2.75rem] items-center gap-1.5 text-eyebrow uppercase tracking-eyebrow text-primary-ink transition-colors duration-150 hover:text-primary-ink md:min-h-0"
+                                                className="mt-1.5 inline-flex min-h-[2.75rem] items-center gap-1.5 text-label text-primary-ink transition-colors duration-150 hover:text-primary-ink md:min-h-0"
                                             >
                                                 <MapPin className="h-3.5 w-3.5" />
                                                 {creator.location_lat != null
@@ -406,7 +406,7 @@ export default function CreatorDetailPage() {
                         <Section id="channels" title="Channels">
                             <div className="space-y-4">
                                 <Panel data-testid={IDS.instagram}>
-                                    <p className="inline-flex items-center gap-2 text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                                    <p className="inline-flex items-center gap-2 text-label text-muted-foreground">
                                         <Instagram className="h-3.5 w-3.5" />
                                         Instagram
                                     </p>
@@ -447,7 +447,7 @@ export default function CreatorDetailPage() {
                                 </Panel>
 
                                 <Panel data-testid={IDS.youtube}>
-                                    <p className="inline-flex items-center gap-2 text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                                    <p className="inline-flex items-center gap-2 text-label text-muted-foreground">
                                         <Youtube className="h-3.5 w-3.5" />
                                         YouTube
                                     </p>
@@ -539,7 +539,7 @@ export default function CreatorDetailPage() {
                                 (g) => (data.collaborations[g.key] || []).length > 0,
                             ).map((g) => (
                                 <div key={g.key} data-testid={IDS.collabGroup(g.key)}>
-                                    <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                                    <p className="text-label text-muted-foreground">
                                         {g.label}
                                         <span className="ml-2 text-primary-ink">
                                             {data.collaborations[g.key].length}
@@ -561,7 +561,7 @@ export default function CreatorDetailPage() {
                                                         {c.brand_name}
                                                         <CollaborationLink
                                                             id={c.id}
-                                                            className="ml-2 uppercase tracking-[0.15em]"
+                                                            className="text-label ml-2"
                                                         >
                                                             application
                                                         </CollaborationLink>

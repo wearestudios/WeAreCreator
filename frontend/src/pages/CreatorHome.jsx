@@ -425,11 +425,11 @@ export default function CreatorHome({ user, justOnboarded }) {
                                                 key={t.value}
                                                 value={t.value}
                                                 data-testid={IDS.tab(t.value)}
-                                                className="min-h-[2.5rem] flex-none rounded-full px-4 text-eyebrow uppercase tracking-eyebrow text-muted-foreground transition-colors duration-200 data-[state=active]:bg-primary/15 data-[state=active]:text-primary"
+                                                className="min-h-[2.5rem] flex-none rounded-full px-4 text-label text-muted-foreground transition-colors duration-200 data-[state=active]:bg-primary/15 data-[state=active]:text-primary"
                                             >
                                                 {t.label}
                                                 {t.count > 0 && (
-                                                    <span className="ml-2 rounded-full bg-muted px-1.5 py-0.5 text-eyebrow tabular-nums text-foreground/70">
+                                                    <span className="ml-2 rounded-full bg-muted px-1.5 py-0.5 text-label tabular-nums text-foreground/70">
                                                         {t.count}
                                                     </span>
                                                 )}
@@ -498,7 +498,7 @@ export default function CreatorHome({ user, justOnboarded }) {
                                 <span className="text-foreground">Signed in as</span>{" "}
                                 {/* Accounts created over WhatsApp have no email. */}
                                 {data.profile?.email || user.phone || user.name} ·{" "}
-                                <span className="uppercase tracking-[0.15em] text-primary">
+                                <span className="text-label text-primary">
                                     {user.role}
                                 </span>
                             </p>
@@ -507,7 +507,7 @@ export default function CreatorHome({ user, justOnboarded }) {
                                 onClick={load}
                                 disabled={refreshing}
                                 data-testid={IDS.refresh}
-                                className="inline-flex min-h-[2.75rem] items-center gap-2 rounded-full border border-border px-4 text-eyebrow uppercase tracking-eyebrow transition-colors duration-200 hover:border-primary/40 hover:text-primary disabled:opacity-50"
+                                className="inline-flex min-h-[2.75rem] items-center gap-2 rounded-full border border-border px-4 text-label transition-colors duration-200 hover:border-primary/40 hover:text-primary disabled:opacity-50"
                             >
                                 <RotateCw
                                     className={"h-3.5 w-3.5 " + (refreshing ? "animate-spin" : "")}

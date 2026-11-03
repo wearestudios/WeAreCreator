@@ -47,12 +47,12 @@ export default function Earnings({ payments, inPaymentCollabs, earnings }) {
                     rows.length > 0 && (
                         <div className="flex gap-6 text-right">
                             <div>
-                                <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                                <p className="text-label text-muted-foreground">
                                     Paid
                                 </p>
                                 <Money
                                     symbolClass="h-3.5 w-3.5"
-                                    className="mt-1 font-serif text-h3 leading-none"
+                                    className="mt-1 app-figure text-h3 leading-none"
                                 >
                                     <span data-testid={IDS.paidTotal}>
                                         {formatRupees(earnings?.lifetime_earned ?? 0)}
@@ -60,12 +60,12 @@ export default function Earnings({ payments, inPaymentCollabs, earnings }) {
                                 </Money>
                             </div>
                             <div>
-                                <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                                <p className="text-label text-muted-foreground">
                                     Pending
                                 </p>
                                 <Money
                                     symbolClass="h-3.5 w-3.5"
-                                    className="mt-1 font-serif text-h3 leading-none"
+                                    className="mt-1 app-figure text-h3 leading-none"
                                 >
                                     <span data-testid={IDS.pendingTotal}>
                                         {formatRupees(earnings?.pending_earnings ?? 0)}
@@ -95,10 +95,10 @@ export default function Earnings({ payments, inPaymentCollabs, earnings }) {
                                 className="flex flex-col gap-3 px-5 py-5 sm:flex-row sm:items-center sm:gap-6 sm:px-6"
                             >
                                 <div className="min-w-0 flex-1">
-                                    <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                                    <p className="text-label text-muted-foreground">
                                         {p.brand_name || "Brand"}
                                     </p>
-                                    <p className="mt-1 truncate font-serif text-body-lg leading-tight">
+                                    <p className="mt-1 truncate font-bold text-body-lg leading-tight">
                                         {p.campaign_title || "—"}
                                     </p>
                                     {p.paid_at && (
@@ -110,7 +110,7 @@ export default function Earnings({ payments, inPaymentCollabs, earnings }) {
                                 <div className="flex items-center justify-between gap-3 sm:flex-col sm:items-end">
                                     <Money
                                         symbolClass="h-3.5 w-3.5"
-                                        className="font-serif text-h3 leading-none"
+                                        className="app-figure text-h3 leading-none"
                                     >
                                         <span data-testid={IDS.rowAmount(p.id)}>
                                             {formatRupees(p.amount)}

@@ -74,7 +74,7 @@ export default function SlotAnswer({ rows, onChanged }) {
             data-testid={IDS.band}
             className="mt-6 rounded-md border border-primary/40 bg-primary/10 p-4"
         >
-            <p className="flex items-center gap-2 text-eyebrow uppercase tracking-eyebrow text-primary">
+            <p className="flex items-center gap-2 text-label text-primary">
                 <CalendarClock aria-hidden="true" className="h-3.5 w-3.5" />
                 {waiting.length === 1
                     ? "A booking is waiting on you"
@@ -175,7 +175,7 @@ function DeclineSheet({ row, busy, onClose, onSubmit }) {
                 data-testid={IDS.sheet}
                 className="rounded-t-md border-t border-border bg-card grain-surface"
             >
-                <SheetTitle className="font-serif text-h3 leading-tight">
+                <SheetTitle className="font-bold text-h3 leading-tight">
                     That time doesn't work?
                 </SheetTitle>
                 <SheetDescription className="mt-2 text-body leading-relaxed text-muted-foreground">

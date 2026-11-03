@@ -85,7 +85,7 @@ export default function InstagramCallback() {
         <div data-testid={IDS.page} className="min-h-screen bg-background grain-page">
             <Navbar />
             <main className="mx-auto max-w-xl px-5 py-16 md:px-6 md:py-24">
-                <p className="inline-flex items-center gap-2 text-eyebrow uppercase tracking-eyebrow text-primary">
+                <p className="inline-flex items-center gap-2 text-label text-primary">
                     <Instagram className="h-3.5 w-3.5" />
                     Instagram
                 </p>
@@ -93,13 +93,13 @@ export default function InstagramCallback() {
                 {state.phase === "working" && (
                     <div data-testid={IDS.working} className="mt-6 flex items-center gap-3">
                         <Loader2 className="h-5 w-5 animate-spin text-primary" />
-                        <p className="font-serif text-h3 leading-tight">Connecting your account…</p>
+                        <p className="font-bold text-h3 leading-tight">Connecting your account…</p>
                     </div>
                 )}
 
                 {state.phase === "success" && (
                     <div data-testid={IDS.success} className="mt-6">
-                        <h1 className="font-serif text-h2 leading-tight tracking-tight">
+                        <h1 className="app-title">
                             Connected.
                         </h1>
                         <p className="mt-4 inline-flex items-center gap-2 text-meta text-state-approved">
@@ -115,7 +115,7 @@ export default function InstagramCallback() {
 
                 {state.phase === "not_professional" && (
                     <div className="mt-6 space-y-6">
-                        <h1 className="font-serif text-h2 leading-tight tracking-tight">
+                        <h1 className="app-title">
                             Almost — one setting to change.
                         </h1>
                         <NotProfessionalHelp testid={IDS.notProfessional} message={state.message} />
@@ -147,7 +147,7 @@ export default function InstagramCallback() {
 
                 {state.phase === "error" && (
                     <div data-testid={IDS.error} className="mt-6 space-y-6">
-                        <h1 className="font-serif text-h2 leading-tight tracking-tight">
+                        <h1 className="app-title">
                             That didn't go through.
                         </h1>
                         <p className="flex items-start gap-2 rounded-md border border-state-rejected/25 bg-state-rejected-wash px-4 py-3 text-body leading-relaxed text-state-rejected">

@@ -51,6 +51,18 @@
     src: url("/fonts/inter-tight-latin.woff2") format("woff2");
     unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }
+/* Manrope is the signed-in app's one sans — see "The app's type" below. It
+   is declared here with the others and fetched only by a page that sets text
+   in it, which is a page inside `[data-surface="app"]`: the marketing pages,
+   the sign-in screens and the 404 never ask for the file. */
+@font-face {
+    font-family: "Manrope";
+    font-style: normal;
+    font-weight: 400 800;
+    font-display: swap;
+    src: url("/fonts/manrope-latin.woff2") format("woff2");
+    unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
 @font-face {
     font-family: "JetBrains Mono";
     font-style: normal;
@@ -69,6 +81,13 @@
     --font-sans: "Inter Tight", "Inter Tight Fallback", "Inter Tight Fallback Android", ui-sans-serif,
         system-ui, -apple-system, sans-serif;
     --font-label: "JetBrains Mono", "JetBrains Mono Fallback", ui-monospace, "SFMono-Regular", monospace;
+    /* The app's two: Manrope for every word, and Fraunces for the one title
+       a screen may carry (`.app-title`). Separate tokens rather than reuses
+       of the two above, because the app scope points `--font-serif` at
+       Manrope — the title has to name Fraunces without going through it. */
+    --font-app: "Manrope", "Manrope Fallback", "Manrope Fallback Android", ui-sans-serif, system-ui,
+        -apple-system, sans-serif;
+    --font-title: "Fraunces", "Fraunces Fallback", "Fraunces Fallback Android", ui-serif, Georgia, serif;
 }
 @media (min-width: 1024px) {
     :root {
@@ -168,6 +187,23 @@
     size-adjust: 99.98%;
     ascent-override: 102.02%;
     descent-override: 30%;
+    line-gap-override: 0%;
+}
+
+@font-face {
+    font-family: "Manrope Fallback";
+    src: local("Arial"), local("ArialMT"), local("Liberation Sans");
+    size-adjust: 102.88%;
+    ascent-override: 103.61%;
+    descent-override: 29.16%;
+    line-gap-override: 0%;
+}
+@font-face {
+    font-family: "Manrope Fallback Android";
+    src: local("Roboto"), local("Roboto-Regular");
+    size-adjust: 103.51%;
+    ascent-override: 102.99%;
+    descent-override: 28.98%;
     line-gap-override: 0%;
 }
 
@@ -442,6 +478,9 @@
          * overflows at phone width. */
         --text-eyebrow: 11px;
         --tracking-eyebrow: 0.18em;
+        /* The app's label: sentence case, Manrope 600, never tracked. What
+         * the eyebrow is inside `[data-surface="app"]`. */
+        --text-label: 12.5px;
         --text-meta: 14px;
         --text-body: 16px;
         --text-body-lg: 17px;
@@ -541,6 +580,61 @@
         line-height: 1.02;
         color: hsl(var(--heading));
     }
+
+    /* -----------------------------------------------------------------
+     * The app's type
+     *
+     * Everything a signed-in person works in — the dashboards, the console,
+     * the manager screens, onboarding — is `[data-surface="app"]`, written on
+     * `<html>` by the pre-paint script and by `applyAppScope` (so a dialog
+     * portalled into `<body>` is inside it too). The marketing pages, the
+     * sign-in screens and the 404 never carry it and keep Inter Tight and
+     * Fraunces exactly as they were.
+     *
+     * Inside it there is one sans. Every family token points at Manrope —
+     * `--font-serif` included, so a shared component's `font-serif` card
+     * title reads as Manrope here and as Fraunces on a public page — and
+     * Fraunces is reachable only through `.app-title`, the one title a
+     * screen may carry. Body 15px, meta 13.5px, labels 12.5px: nothing in
+     * the app is set below 12px or lighter than 400.
+     * `test_app_type.py` holds every rule here.
+     * ----------------------------------------------------------------- */
+    [data-surface="app"] {
+        --font-sans: var(--font-app);
+        --font-serif: var(--font-app);
+        --font-display: var(--font-app);
+        --font-label: var(--font-app);
+        --text-eyebrow: 12.5px;
+        --tracking-eyebrow: 0em;
+        --text-meta: 13.5px;
+        --text-body: 15px;
+        --text-body-lg: 16px;
+        --text-h3: 20px;
+        --text-h2: clamp(1.375rem, 1.27rem + 0.44vw, 1.625rem); /* 22 → 26px */
+        --text-h1: clamp(1.625rem, 1.47rem + 0.66vw, 2rem); /* 26 → 32px */
+    }
+    /* Inter Tight's stylistic sets mean nothing to Manrope, and the -0.005em
+     * the public site tightens its body by is Inter Tight's correction. */
+    html[data-surface="app"],
+    [data-surface="app"] body {
+        font-feature-settings: normal;
+        letter-spacing: 0;
+    }
+    /* A heading inside the app is Manrope bold. `:where` keeps this at one
+     * class of specificity, so `.app-title` and any weight utility on the
+     * element still win over it. */
+    [data-surface="app"] :where(h1, h2, h3, h4, h5) {
+        font-weight: 700;
+        letter-spacing: -0.01em;
+        line-height: 1.2;
+    }
+    /* A shared component that sits on a public page too keeps its eyebrow
+     * markup; inside the app it reads as a label. App-only files carry
+     * `text-label` and no eyebrow at all — this is the shared half. */
+    [data-surface="app"] .text-eyebrow {
+        font-weight: 600;
+        text-transform: none;
+    }
     ::selection {
         background: hsl(var(--accent-wash));
         color: hsl(var(--heading));
@@ -585,6 +679,27 @@
 }
 
 @layer components {
+    /* **The one Fraunces on an app screen**: the page's or the campaign's
+     * own title, at 28px or more, weight 600. Its size is set here rather
+     * than by a utility so the floor is structural — an element carrying
+     * `app-title` carries no `text-*` size, and a test holds that. */
+    /* A figure somebody reads as a number — a stat, a fee, a count. Manrope
+     * 800, -0.02em, tabular. The size is the caller's. */
+    .app-figure {
+        font-weight: 800;
+        letter-spacing: -0.02em;
+        font-variant-numeric: tabular-nums;
+    }
+    .app-title {
+        font-family: var(--font-title);
+        font-size: clamp(1.75rem, 1.53rem + 0.98vw, 2.375rem); /* 28 → 38px */
+        font-weight: 600;
+        line-height: 1.08;
+        letter-spacing: -0.02em;
+        font-optical-sizing: auto;
+        font-variation-settings: "opsz" 144, "WONK" 0;
+    }
+
     .mkt-display,
     .mkt-h1,
     .mkt-h2,

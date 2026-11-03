@@ -143,10 +143,10 @@ export default function InviteCreatorsDialog({ campaign, open, onOpenChange, onS
                 className="flex max-h-[85vh] max-w-lg flex-col rounded-md border border-border bg-card"
             >
                 <DialogHeader className="text-left">
-                    <p className="text-eyebrow uppercase tracking-eyebrow text-primary-ink">
+                    <p className="text-label text-primary-ink">
                         Invite creators
                     </p>
-                    <DialogTitle className="mt-3 font-serif text-h3 leading-tight">
+                    <DialogTitle className="mt-3 font-bold text-h3 leading-tight">
                         {campaign?.title}
                     </DialogTitle>
                     <DialogDescription className="mt-2 text-meta text-muted-foreground">
@@ -283,7 +283,7 @@ export default function InviteCreatorsDialog({ campaign, open, onOpenChange, onS
                         <div>
                             <Label
                                 htmlFor="invite-note"
-                                className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground"
+                                className="text-label text-muted-foreground"
                             >
                                 Note (internal)
                             </Label>
@@ -315,7 +315,7 @@ export default function InviteCreatorsDialog({ campaign, open, onOpenChange, onS
                         <>
                             <span
                                 data-testid={IDS.selectedCount}
-                                className="mr-auto self-center text-eyebrow uppercase tracking-eyebrow text-muted-foreground"
+                                className="mr-auto self-center text-label text-muted-foreground"
                             >
                                 {selected.length} selected
                             </span>

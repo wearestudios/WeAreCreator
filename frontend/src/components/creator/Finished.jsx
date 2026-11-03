@@ -47,11 +47,11 @@ export default function Finished({ rows, onChanged }) {
                                 className="flex flex-col gap-3 px-5 py-5 sm:flex-row sm:items-start sm:gap-6 sm:px-6"
                             >
                                 <Link to={`/campaigns/${row.campaign_id}`} className="group min-w-0 flex-1">
-                                    <span className="flex items-center gap-2 text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                                    <span className="flex items-center gap-2 text-label text-muted-foreground">
                                         <BrandAvatar brand={row} size="h-5 w-5" />
                                         <span className="truncate">{row.brand_name || "Brand"}</span>
                                     </span>
-                                    <span className="mt-1 block truncate font-serif text-body-lg leading-tight transition-colors duration-200 group-hover:text-primary">
+                                    <span className="mt-1 block truncate font-bold text-body-lg leading-tight transition-colors duration-200 group-hover:text-primary">
                                         {row.campaign_title || "Untitled campaign"}
                                     </span>
                                     <span className="mt-2 block text-meta text-muted-foreground">

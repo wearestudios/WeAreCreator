@@ -452,7 +452,7 @@ export function ScrollTable({ children, maxHeight = "max-h-[70vh]", className = 
 
 export const tableHeadClass =
     `${STICKY.tableHead} bg-card/95 px-5 py-3 text-left text-eyebrow font-medium ` +
-    "uppercase tracking-[0.2em] text-muted-foreground backdrop-blur-xl";
+    "uppercase tracking-eyebrow text-muted-foreground backdrop-blur-xl";
 
 /** The pinned column needs an opaque ground or the scrolled cells show through. */
 // The rule down the right edge is what makes the pin legible: without it the

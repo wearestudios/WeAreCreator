@@ -105,7 +105,7 @@ export default function NegotiationHistory({ negotiation, compact = false, class
                         {/* The admin's half: how it was recorded and by whom.
                             Present only when the server sent it. */}
                         {e.source !== undefined && (
-                            <p className="mt-2 text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                            <p className="mt-2 text-label text-muted-foreground">
                                 {SOURCE[e.source] || e.source || "Unknown source"}
                                 {e.by_user_id ? ` · user ${e.by_user_id}` : ""}
                             </p>

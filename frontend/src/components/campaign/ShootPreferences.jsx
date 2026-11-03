@@ -108,7 +108,7 @@ export default function ShootPreferences({ days, windows, onChange }) {
     return (
         <div data-testid={IDS.section} className="space-y-6">
             <div>
-                <Label className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                <Label className="text-label text-muted-foreground">
                     Days that don't work
                 </Label>
                 <div className="mt-3 flex flex-wrap gap-2">
@@ -140,7 +140,7 @@ export default function ShootPreferences({ days, windows, onChange }) {
             </div>
 
             <div>
-                <Label className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                <Label className="text-label text-muted-foreground">
                     Hours that work
                 </Label>
                 <div className="mt-3 flex flex-wrap gap-2">
@@ -192,7 +192,7 @@ export default function ShootPreferences({ days, windows, onChange }) {
                     <div className="flex-1">
                         <Label
                             htmlFor="pc-window-start"
-                            className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground"
+                            className="text-label text-muted-foreground"
                         >
                             Or a custom window — from
                         </Label>
@@ -208,7 +208,7 @@ export default function ShootPreferences({ days, windows, onChange }) {
                     <div className="flex-1">
                         <Label
                             htmlFor="pc-window-end"
-                            className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground"
+                            className="text-label text-muted-foreground"
                         >
                             to
                         </Label>

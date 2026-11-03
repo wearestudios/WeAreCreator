@@ -204,7 +204,7 @@ function ReviewQueue({ config, onChanged }) {
                             {config.primary(r)}
                         </Link>
                         {r.reference && (
-                            <span className="flex-none font-mono text-eyebrow tracking-wider text-muted-foreground/70">
+                            <span className="flex-none text-label text-muted-foreground/70">
                                 {r.reference}
                             </span>
                         )}
@@ -646,7 +646,7 @@ export function CreatorReviews({ onChanged }) {
                                 .filter(([, v]) => v)
                                 .map(([label, value]) => (
                                     <div key={label}>
-                                        <dt className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                                        <dt className="text-label text-muted-foreground">
                                             {label}
                                         </dt>
                                         <dd className="mt-1 break-words">{value}</dd>
@@ -659,7 +659,7 @@ export function CreatorReviews({ onChanged }) {
                                 {r.niches.map((n) => (
                                     <span
                                         key={n}
-                                        className="rounded-full bg-primary/10 px-2.5 py-1 text-eyebrow uppercase tracking-eyebrow text-primary-ink"
+                                        className="rounded-full bg-primary/10 px-2.5 py-1 text-label text-primary-ink"
                                     >
                                         {n}
                                     </span>
@@ -816,7 +816,7 @@ export function CampaignReviews({ onChanged }) {
                         )}
 
                         <div>
-                            <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                            <p className="text-label text-muted-foreground">
                                 The brief
                             </p>
                             <p className="mt-2 whitespace-pre-wrap leading-relaxed">
@@ -824,7 +824,7 @@ export function CampaignReviews({ onChanged }) {
                             </p>
                         </div>
                         <div>
-                            <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                            <p className="text-label text-muted-foreground">
                                 Deliverables
                             </p>
                             <DeliverableList campaign={r} className="mt-2" />
@@ -856,7 +856,7 @@ export function CampaignReviews({ onChanged }) {
                                 .filter(([, v]) => v)
                                 .map(([label, value]) => (
                                     <div key={label}>
-                                        <dt className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                                        <dt className="text-label text-muted-foreground">
                                             {label}
                                         </dt>
                                         <dd className="mt-1 capitalize">{value}</dd>
@@ -947,7 +947,7 @@ export function BrandReviews({ onChanged }) {
                                 .filter(([, v]) => v)
                                 .map(([label, value]) => (
                                     <div key={label}>
-                                        <dt className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                                        <dt className="text-label text-muted-foreground">
                                             {label}
                                         </dt>
                                         <dd className="mt-1 break-words capitalize">{value}</dd>

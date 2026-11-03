@@ -59,6 +59,9 @@ module.exports = {
             // larger size, which is the one most of the reading happens at.
             fontSize: {
                 eyebrow: ["var(--text-eyebrow)", { lineHeight: "1.4" }],
+                // The app's label (12.5px, Manrope 600, sentence case) — the
+                // eyebrow's replacement inside `[data-surface="app"]`.
+                label: ["var(--text-label)", { lineHeight: "1.4", fontWeight: "600" }],
                 meta: ["var(--text-meta)", { lineHeight: "1.45" }],
                 body: ["var(--text-body)", { lineHeight: "1.55" }],
                 "body-lg": ["var(--text-body-lg)", { lineHeight: "1.55" }],

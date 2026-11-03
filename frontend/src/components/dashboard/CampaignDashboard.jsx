@@ -115,7 +115,7 @@ function Tile({ id, label, sublabel, value, animate, index, wide = false }) {
             style={r.style}
         >
             <p className="text-meta text-muted-foreground">{label}</p>
-            <p className="mt-1 font-serif text-h2 leading-none">
+            <p className="mt-1 app-figure text-h2 leading-none">
                 <Count value={value} animate={animate} />
             </p>
             {sublabel ? <p className="mt-2 text-meta text-muted-foreground">{sublabel}</p> : null}
@@ -166,7 +166,7 @@ function PostTile({ post, index, animate }) {
                         </span>
                     ) : null}
                     {post.media_type === "carousel" && post.carousel_count ? (
-                        <span className="absolute right-2 top-2 rounded-pill bg-brand-navy/80 px-2 py-0.5 text-[11px] font-medium tabular-nums text-brand-white">
+                        <span className="absolute right-2 top-2 rounded-pill bg-brand-navy/80 px-2 py-0.5 text-xs font-medium tabular-nums text-brand-white">
                             1/{post.carousel_count}
                         </span>
                     ) : null}
@@ -177,7 +177,7 @@ function PostTile({ post, index, animate }) {
                         {formatIN(post.views)} views · {formatIN(post.shares)} shares
                     </p>
                     {post.source === "manual" ? (
-                        <p className="text-[11px] text-muted-foreground">Entered by hand</p>
+                        <p className="text-xs text-muted-foreground">Entered by hand</p>
                     ) : null}
                 </div>
             </Tag>
@@ -188,7 +188,7 @@ function PostTile({ post, index, animate }) {
 function EmptyState({ creators }) {
     return (
         <section data-testid={IDS.empty} className="rounded-lg border border-border bg-card p-card-sm md:p-card">
-            <h2 className="font-serif text-h3">Nothing is live yet</h2>
+            <h2 className="font-bold text-h3">Nothing is live yet</h2>
             <p className="mt-2 max-w-measure text-body text-muted-foreground">
                 Results appear here as each post goes live. This is where everybody is.
             </p>
@@ -292,7 +292,7 @@ export default function CampaignDashboard({ campaignId, backTo, backLabel = "Bac
                             <ArrowLeft className="h-4 w-4" /> {backLabel}
                         </Link>
                     ) : null}
-                    <h1 data-testid={IDS.title} className="font-serif text-h1 leading-tight">
+                    <h1 data-testid={IDS.title} className="app-title">
                         {campaign.title || "Campaign results"}
                     </h1>
                     <p className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-meta text-muted-foreground">
@@ -324,7 +324,7 @@ export default function CampaignDashboard({ campaignId, backTo, backLabel = "Bac
                     <div className="grid gap-5 lg:grid-cols-[2fr_1fr]">
                         <Card animate={animate} index={0}>
                             <p className="text-meta text-muted-foreground">Total views</p>
-                            <p className="mt-2 font-serif text-[clamp(3.25rem,9vw,6.5rem)] font-semibold leading-none tracking-[-0.02em]">
+                            <p className="mt-2 app-figure text-[clamp(3.25rem,9vw,6.5rem)] leading-none tracking-[-0.02em]">
                                 <Count value={totals.views} animate={animate} testid={IDS.totalViews} />
                             </p>
                             <p data-testid={IDS.across} className="mt-3 text-body text-muted-foreground">
@@ -337,7 +337,7 @@ export default function CampaignDashboard({ campaignId, backTo, backLabel = "Bac
                         <div className="grid gap-5">
                             <Card animate={animate} index={1} testid={IDS.creators}>
                                 <p className="text-meta text-muted-foreground">Creators</p>
-                                <p className="mt-1 font-serif text-h1 leading-none tabular-nums">
+                                <p className="mt-1 app-figure text-h1 leading-none tabular-nums">
                                     <Count value={creators.posted} animate={animate} />
                                 </p>
                                 <p className="mt-2 text-meta text-muted-foreground">
@@ -348,7 +348,7 @@ export default function CampaignDashboard({ campaignId, backTo, backLabel = "Bac
                             </Card>
                             <Card animate={animate} index={2} testid={IDS.engagement}>
                                 <p className="text-meta text-muted-foreground">Engagement rate</p>
-                                <p className="mt-1 font-serif text-h1 leading-none">
+                                <p className="mt-1 app-figure text-h1 leading-none">
                                     <Count value={totals.engagement_rate} format={formatPercent} animate={animate} />
                                 </p>
                                 <p className="mt-2 text-meta text-muted-foreground">interactions ÷ accounts reached</p>
@@ -388,7 +388,7 @@ export default function CampaignDashboard({ campaignId, backTo, backLabel = "Bac
                     </div>
 
                     <section>
-                        <h2 className="mb-4 font-serif text-h3">Every post</h2>
+                        <h2 className="mb-4 font-bold text-h3">Every post</h2>
                         <ul data-testid={IDS.wall} className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
                             {posts.items.map((p, i) => (
                                 <PostTile key={p.key} post={p} index={i} animate={animate} />

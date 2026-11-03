@@ -43,7 +43,7 @@ export default function BrandAvatar({
         <span
             aria-hidden="true"
             data-testid={BRAND_LOGO.monogram(id)}
-            className={`${size} grid flex-none place-items-center rounded-md border border-border bg-primary/10 font-serif text-meta text-primary-ink ${className}`}
+            className={`${size} grid flex-none place-items-center rounded-md border border-border bg-primary/10 font-semibold text-meta text-primary-ink ${className}`}
         >
             {monogram}
         </span>
