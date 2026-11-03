@@ -39,7 +39,7 @@ const NOTE = {
 function Figure({ label, value, testId, emphasis }) {
     return (
         <div>
-            <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+            <p className="text-label text-muted-foreground">
                 {label}
             </p>
             <p
@@ -65,7 +65,7 @@ export default function BudgetMeter({ budget, className = "", compact = false })
             data-testid={IDS.meter}
             className={`rounded-lg border border-border bg-card p-4 ${className}`}
         >
-            <p className="flex items-center gap-1.5 text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+            <p className="flex items-center gap-1.5 text-label text-muted-foreground">
                 <Wallet aria-hidden="true" className="h-3 w-3" />
                 Campaign budget
             </p>
@@ -120,7 +120,7 @@ export default function BudgetMeter({ budget, className = "", compact = false })
                 collaborations on it would otherwise read as underspent. Said
                 rather than hidden: the figure is right, the reason it looks
                 low is what needs explaining. */}
-            <p className="mt-2 text-eyebrow text-muted-foreground">
+            <p className="mt-2 text-label text-muted-foreground">
                 Committed counts agreed fees on creators taken on and still
                 going. A creator who cancels or withdraws releases theirs.
             </p>

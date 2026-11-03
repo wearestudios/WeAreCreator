@@ -109,7 +109,7 @@ export function WorkNotes({ collaborationId, agreedAmount, quotedRate, defaultOp
                 aria-expanded={open}
                 className="flex min-h-[2.75rem] w-full items-center justify-between gap-3 px-4 py-3 text-left transition-colors duration-200 hover:bg-wash focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary"
             >
-                <span className="inline-flex items-center gap-2 text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                <span className="inline-flex items-center gap-2 text-label text-muted-foreground">
                     <MessageSquare className="h-3.5 w-3.5" />
                     Work notes
                     {notes.length > 0 && (
@@ -128,10 +128,10 @@ export function WorkNotes({ collaborationId, agreedAmount, quotedRate, defaultOp
                         data-testid={WORK_NOTES.agreed(collaborationId)}
                         className="mb-4 flex flex-wrap items-baseline gap-x-6 gap-y-1"
                     >
-                        <span className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                        <span className="text-label text-muted-foreground">
                             {agreed != null ? "Agreed" : "They quoted"}
                         </span>
-                        <span className="inline-flex items-baseline font-serif text-h3">
+                        <span className="inline-flex items-baseline font-bold text-h3">
                             <IndianRupee className="h-4 w-4 text-primary" />
                             {formatRupees(agreed ?? quoted)}
                         </span>
@@ -173,7 +173,7 @@ export function WorkNotes({ collaborationId, agreedAmount, quotedRate, defaultOp
                                         <span className="font-medium text-foreground/90">
                                             {n.author_name || "Someone"}
                                         </span>
-                                        <span className="rounded-full bg-muted px-2 py-0.5 text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                                        <span className="rounded-full bg-muted px-2 py-0.5 text-label text-muted-foreground">
                                             {ROLE_LABEL[n.author_role] || n.author_role}
                                         </span>
                                         <span className="text-muted-foreground/70">
@@ -204,7 +204,7 @@ export function WorkNotes({ collaborationId, agreedAmount, quotedRate, defaultOp
                         />
                         <div className="flex items-center justify-between gap-3">
                             {/* Said once, plainly, rather than as a warning banner. */}
-                            <span className="text-eyebrow text-muted-foreground">
+                            <span className="text-label text-muted-foreground">
                                 Only you and the WeAre team can see these.
                             </span>
                             <Button

@@ -112,7 +112,7 @@ export default function DraftReview({
 
             {submitted && (
                 <div className="rounded-md border border-border bg-muted p-4">
-                    <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                    <p className="text-label text-muted-foreground">
                         Sent {formatWhen(draft.submitted_at)}
                         {draft.revision_count > 0 && (
                             <>

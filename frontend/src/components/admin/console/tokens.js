@@ -53,7 +53,7 @@ export const TEXT = {
     /** True metadata only — timestamps, ids, column headers, units. */
     meta: "text-meta",
     /** A panel or page heading. */
-    heading: "text-body font-medium",
+    heading: "text-body font-semibold",
 };
 
 // ---------------------------------------------------------------------------

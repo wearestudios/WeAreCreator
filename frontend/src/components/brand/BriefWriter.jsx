@@ -59,7 +59,7 @@ export default function BriefWriter({ status, hasDraft, onDraft }) {
             data-testid="brief-writer"
             className="rounded-lg border border-border bg-card p-card-sm md:p-card"
         >
-            <Label htmlFor="brief-writer-input" className="flex items-center gap-2 font-serif text-h3">
+            <Label htmlFor="brief-writer-input" className="flex items-center gap-2 font-bold text-h3">
                 <Sparkles className="h-4 w-4 text-muted-foreground" aria-hidden />
                 Describe your campaign in two lines
             </Label>

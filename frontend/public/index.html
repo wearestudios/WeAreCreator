@@ -132,6 +132,22 @@
             try { stored = localStorage.getItem("weare:console-theme"); } catch (e) {}
             if (stored === "dark") theme = "dark";
           }
+          /* The signed-in app: Manrope, and its file asked for now rather
+             than when the first word needs it. Every product path except
+             the console's own sign-in screen, which is an auth screen —
+             the same line `isAppPath` draws. A marketing route never sees
+             either, so it never fetches the file. */
+          var bareApp = path.length > 1 ? path.replace(/\/+$/, "") : path;
+          if (isProduct && bareApp !== "/admin/login") {
+            document.documentElement.setAttribute("data-surface", "app");
+            var font = document.createElement("link");
+            font.rel = "preload";
+            font.as = "font";
+            font.type = "font/woff2";
+            font.crossOrigin = "anonymous";
+            font.href = "/fonts/manrope-latin.woff2";
+            document.head.appendChild(font);
+          }
           if (theme === "dark") {
             document.documentElement.setAttribute("data-theme", "dark");
             document.documentElement.style.colorScheme = "dark";

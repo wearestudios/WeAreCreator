@@ -45,7 +45,7 @@ export default function BriefPanel({ campaign }) {
             {/* The ask first, because it is the thing being checked against on
                 the day. The paragraph is context; the counts are the job. */}
             <div className="rounded-md border border-border bg-card p-5 grain-surface">
-                <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                <p className="text-label text-muted-foreground">
                     Each creator delivers
                 </p>
                 <div className="mt-3" data-testid={IDS.deliverables}>
@@ -91,7 +91,7 @@ export default function BriefPanel({ campaign }) {
 
             {brief && (
                 <div className="rounded-md border border-border bg-card p-5 grain-surface">
-                    <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                    <p className="text-label text-muted-foreground">
                         The brief
                     </p>
                     {/* `whitespace-pre-wrap`: a brand writes these with line

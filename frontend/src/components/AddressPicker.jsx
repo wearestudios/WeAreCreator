@@ -224,7 +224,7 @@ export default function AddressPicker({
                             type="button"
                             data-testid={ADDRESS.clearPin}
                             onClick={() => setPin({ lat: null, lng: null, placeId: null })}
-                            className="inline-flex min-h-[2.75rem] items-center gap-1 text-eyebrow uppercase tracking-eyebrow text-muted-foreground transition-colors duration-200 hover:text-state-rejected md:min-h-0"
+                            className="inline-flex min-h-[2.75rem] items-center gap-1 text-label text-muted-foreground transition-colors duration-200 hover:text-state-rejected md:min-h-0"
                         >
                             <X className="h-3 w-3" />
                             Remove pin

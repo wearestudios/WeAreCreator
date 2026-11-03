@@ -367,7 +367,7 @@ export function AdminNavSheet({ open, onOpenChange, counts, role }) {
                     className="fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-border bg-card text-foreground md:hidden"
                 >
                     <div className="flex items-center justify-between border-b border-border px-3 py-2.5">
-                        <Dialog.Title className={`${TEXT.meta} uppercase tracking-[0.16em] text-muted-foreground`}>
+                        <Dialog.Title className={`text-label text-muted-foreground`}>
                             Sections
                         </Dialog.Title>
                         <Dialog.Close

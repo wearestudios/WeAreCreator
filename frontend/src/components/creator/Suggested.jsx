@@ -73,13 +73,13 @@ export default function Suggested({ campaigns }) {
                                     className="border-0 border-b"
                                 />
                                 <div className="flex flex-1 flex-col p-6">
-                                <p className="flex items-center gap-2 text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                                <p className="flex items-center gap-2 text-label text-muted-foreground">
                                     <BrandAvatar brand={c} size="h-5 w-5" />
                                     <span className="truncate">{c.brand_name || "Brand"}</span>
                                 </p>
                                 <Link
                                     to={`/campaigns/${c.id}`}
-                                    className="mt-2 font-serif text-h3 leading-tight transition-colors duration-200 hover:text-primary"
+                                    className="mt-2 font-bold text-h3 leading-tight transition-colors duration-200 hover:text-primary"
                                 >
                                     {c.title}
                                 </Link>
@@ -105,7 +105,7 @@ export default function Suggested({ campaigns }) {
                                         </span>
                                     )}
                                     {c.category && (
-                                        <span className="rounded-full bg-muted px-2.5 py-0.5 uppercase tracking-[0.15em]">
+                                        <span className="text-label rounded-full bg-muted px-2.5 py-0.5">
                                             {CAT_LABEL[c.category] || c.category}
                                         </span>
                                     )}
@@ -119,14 +119,14 @@ export default function Suggested({ campaigns }) {
                                     {isBarter(c) ? (
                                         <span
                                             data-testid={IDS.budget(c.id)}
-                                            className="font-serif text-h3 leading-none"
+                                            className="app-figure text-h3 leading-none"
                                         >
                                             Barter
                                         </span>
                                     ) : (
                                         <Money
                                             symbolClass="h-4 w-4"
-                                            className="font-serif text-h3 leading-none"
+                                            className="app-figure text-h3 leading-none"
                                         >
                                             <span data-testid={IDS.budget(c.id)}>
                                                 {formatRupees(c.budget_per_creator)}

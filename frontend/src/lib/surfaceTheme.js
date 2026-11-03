@@ -140,6 +140,36 @@ export function rememberTheme(theme) {
     }
 }
 
+/**
+ * **The signed-in app, as opposed to the light surface.** Every product path
+ * is light, but the console's own sign-in screen is an auth screen and keeps
+ * the public site's type, so it is the one product path outside the app.
+ * Inside it Manrope is the one sans and Fraunces is reachable only through
+ * `.app-title` — see "The app's type" in index.css.
+ *
+ * **This must agree with the pre-paint script in `public/index.html`**, the
+ * same arrangement `isProductPath` keeps; `test_app_type.py` holds both.
+ */
+export const APP_SURFACE = "app";
+export const APP_EXCLUDED_PATHS = ["/admin/login"];
+
+export function isAppPath(pathname) {
+    const path = String(pathname || "/");
+    const bare = path.length > 1 ? path.replace(/\/+$/, "") : path;
+    if (APP_EXCLUDED_PATHS.includes(bare)) return false;
+    return isProductPath(path);
+}
+
+/** Write the app scope onto the document — on `<html>`, so a dialog Radix
+ * portals into `<body>` is inside it too. The only writer besides the
+ * pre-paint script, and it never touches a `data-surface` it did not set. */
+export function applyAppScope(pathname) {
+    const root = document?.documentElement;
+    if (!root) return;
+    if (isAppPath(pathname)) root.setAttribute("data-surface", APP_SURFACE);
+    else if (root.getAttribute("data-surface") === APP_SURFACE) root.removeAttribute("data-surface");
+}
+
 /** Write it onto the document. The only place the attribute is set. */
 export function applyTheme(theme) {
     const root = document?.documentElement;

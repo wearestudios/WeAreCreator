@@ -250,7 +250,7 @@ export function DisclosureChecks({ disclosure }) {
                     className="flex flex-wrap items-center gap-x-2 text-meta text-muted-foreground"
                 >
                     <Check aria-hidden="true" className="h-3.5 w-3.5 text-state-approved" />
-                    <span className="uppercase tracking-[0.15em]">{label}</span>
+                    <span className="text-eyebrow uppercase tracking-eyebrow">{label}</span>
                     <span className="text-foreground/80">
                         {row.label} confirmed by {row.confirmed_by_name || "a reviewer"}
                         {row.confirmed_at ? ` on ${formatDate(row.confirmed_at)}` : ""}

@@ -38,7 +38,7 @@ function Row({ q }) {
                         : "border-primary/25 bg-primary/10")
                 }
             >
-                <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                <p className="text-label text-muted-foreground">
                     {q.author_name || (theirs ? "Creator" : "Team")}
                     {" · "}
                     {formatWhen(q.created_at)}

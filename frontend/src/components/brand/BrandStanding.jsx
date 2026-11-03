@@ -37,7 +37,7 @@ export function StandingPill({ verification, block }) {
         <span
             data-testid={IDS.pill}
             data-state={block?.code || state}
-            className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-eyebrow font-medium uppercase tracking-eyebrow ${meta.tone}`}
+            className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-label ${meta.tone}`}
         >
             <Icon className="h-3.5 w-3.5" aria-hidden="true" />
             {meta.label}

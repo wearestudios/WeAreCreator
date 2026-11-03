@@ -82,7 +82,7 @@ function EntryRow({ entry }) {
                 to={entry.href}
                 className="flex items-start gap-3 rounded-md border border-border bg-card/60 p-4 transition-colors duration-200 hover:border-primary/40"
             >
-                <span className="w-16 flex-none font-serif text-meta leading-tight text-primary">
+                <span className="w-16 flex-none font-bold text-meta leading-tight text-primary">
                     {timeOf(entry.starts_at)}
                 </span>
                 <span className="min-w-0 flex-1">
@@ -101,7 +101,7 @@ function EntryRow({ entry }) {
                 {meta.label && (
                     <span
                         className={
-                            "flex-none rounded-full border px-2 py-0.5 text-eyebrow uppercase tracking-eyebrow " +
+                            "flex-none rounded-full border px-2 py-0.5 text-label " +
                             (meta.tone || "border-input text-muted-foreground")
                         }
                     >
@@ -177,10 +177,10 @@ export default function ShootCalendar() {
             <main className="mx-auto max-w-6xl px-6 py-12 md:py-16">
                 <header className="flex flex-wrap items-end justify-between gap-4">
                     <div>
-                        <p className="text-eyebrow uppercase tracking-eyebrow text-primary">
+                        <p className="text-label text-primary">
                             Calendar
                         </p>
-                        <h1 className="mt-3 font-serif text-h1 leading-none tracking-tight">
+                        <h1 className="app-title mt-3">
                             Every shoot on the books.
                         </h1>
                     </div>
@@ -198,7 +198,7 @@ export default function ShootCalendar() {
                         </button>
                         <span
                             data-testid={IDS.monthLabel}
-                            className="min-w-[9rem] text-center font-serif text-body-lg"
+                            className="min-w-[9rem] text-center font-bold text-body-lg"
                         >
                             {monthLabel}
                         </span>
@@ -273,7 +273,7 @@ export default function ShootCalendar() {
                                 {WEEKDAY_HEADS.map((d) => (
                                     <div
                                         key={d}
-                                        className="bg-background px-3 py-2 text-eyebrow uppercase tracking-eyebrow text-muted-foreground"
+                                        className="bg-background px-3 py-2 text-label text-muted-foreground"
                                     >
                                         {d}
                                     </div>
@@ -301,7 +301,7 @@ export default function ShootCalendar() {
                                                 {rows.length > 0 && (
                                                     <span
                                                         data-testid={IDS.dayCount(key)}
-                                                        className="rounded-full bg-primary/15 px-1.5 text-eyebrow text-primary"
+                                                        className="rounded-full bg-primary/15 px-1.5 text-label text-primary"
                                                     >
                                                         {rows.length}
                                                     </span>
@@ -312,7 +312,7 @@ export default function ShootCalendar() {
                                                     <li key={e.id}>
                                                         <Link
                                                             to={e.href}
-                                                            className="block truncate rounded-sm bg-muted px-1.5 py-1 text-eyebrow leading-tight transition-colors duration-200 hover:bg-primary/15 hover:text-primary"
+                                                            className="block truncate rounded-sm bg-muted px-1.5 py-1 text-label leading-tight transition-colors duration-200 hover:bg-primary/15 hover:text-primary"
                                                         >
                                                             {timeOf(e.starts_at)}{" "}
                                                             {e.creator_name}
@@ -320,7 +320,7 @@ export default function ShootCalendar() {
                                                     </li>
                                                 ))}
                                                 {rows.length > 3 && (
-                                                    <li className="px-1.5 text-eyebrow text-muted-foreground">
+                                                    <li className="px-1.5 text-label text-muted-foreground">
                                                         +{rows.length - 3} more
                                                     </li>
                                                 )}
@@ -351,7 +351,7 @@ export default function ShootCalendar() {
                                     <section key={key} data-testid={IDS.agendaDay(key)}>
                                         <p
                                             className={
-                                                "text-eyebrow uppercase tracking-eyebrow " +
+                                                "text-label " +
                                                 (key === todayKey
                                                     ? "text-primary"
                                                     : "text-muted-foreground")

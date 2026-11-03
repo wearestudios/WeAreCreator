@@ -56,7 +56,7 @@ const Stage = ({ stage, index }) => (
         data-state={stage.current ? "current" : stage.done ? "done" : "todo"}
         aria-current={stage.current ? "step" : undefined}
         className={
-            "flex flex-1 flex-none items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-eyebrow uppercase tracking-eyebrow transition-colors duration-150 " +
+            "flex flex-1 flex-none items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-label transition-colors duration-150 " +
             (stage.current
                 ? "border-primary/40 bg-primary/15 text-primary"
                 : stage.done
@@ -116,7 +116,7 @@ export default function ProcessFlow({ process, className = "" }) {
                         className="flex min-h-[2.75rem] w-full items-center gap-3 rounded-md border border-primary/40 bg-primary/15 px-4 py-2 text-left transition-colors duration-150"
                     >
                         <span className="min-w-0 flex-1">
-                            <span className="block text-eyebrow uppercase tracking-eyebrow text-primary/80">
+                            <span className="block text-label text-primary/80">
                                 {number ? `Stage ${number} of ${count}` : "Not on the line"}
                             </span>
                             <span className="mt-0.5 block truncate text-meta text-primary">
@@ -173,14 +173,14 @@ export default function ProcessFlow({ process, className = "" }) {
                     data-testid={APPLICATION.processNext}
                     className="mt-3 flex flex-col gap-2 rounded-md border border-border bg-card px-4 py-3 grain-surface sm:flex-row sm:items-center sm:gap-3"
                 >
-                    <span className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                    <span className="text-label text-muted-foreground">
                         Next
                     </span>
                     {owner && (
                         <span
                             data-testid={APPLICATION.processOwner}
                             className={
-                                "inline-flex w-fit flex-none items-center rounded-full border px-2.5 py-1 text-eyebrow font-medium uppercase tracking-eyebrow " +
+                                "inline-flex w-fit flex-none items-center rounded-full border px-2.5 py-1 text-label " +
                                 owner.tone
                             }
                         >

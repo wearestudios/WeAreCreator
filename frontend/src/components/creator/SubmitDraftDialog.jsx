@@ -97,10 +97,10 @@ export default function SubmitDraftDialog({ open, onOpenChange, collab, onSubmit
                 className="max-h-[90vh] max-w-lg overflow-y-auto rounded-md border border-border bg-card grain-surface"
             >
                 <DialogHeader className="text-left">
-                    <p className="text-eyebrow uppercase tracking-eyebrow text-primary">
+                    <p className="text-label text-primary">
                         Draft for review
                     </p>
-                    <DialogTitle className="mt-3 font-serif text-h3 leading-tight">
+                    <DialogTitle className="mt-3 font-bold text-h3 leading-tight">
                         {collab?.campaign_title}
                     </DialogTitle>
                     <DialogDescription className="mt-2 text-body leading-relaxed text-muted-foreground">
@@ -147,7 +147,7 @@ export default function SubmitDraftDialog({ open, onOpenChange, collab, onSubmit
                         <div className="space-y-1">
                             <Label
                                 htmlFor="draft-file"
-                                className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground"
+                                className="text-label text-muted-foreground"
                             >
                                 Video or image
                             </Label>
@@ -167,7 +167,7 @@ export default function SubmitDraftDialog({ open, onOpenChange, collab, onSubmit
                         <div className="space-y-1">
                             <Label
                                 htmlFor="draft-url"
-                                className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground"
+                                className="text-label text-muted-foreground"
                             >
                                 Unlisted link
                             </Label>
@@ -193,7 +193,7 @@ export default function SubmitDraftDialog({ open, onOpenChange, collab, onSubmit
                     <div className="space-y-1">
                         <Label
                             htmlFor="draft-note"
-                            className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground"
+                            className="text-label text-muted-foreground"
                         >
                             Anything to flag (optional)
                         </Label>

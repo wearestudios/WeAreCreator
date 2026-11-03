@@ -120,7 +120,7 @@ export default function DeleteAccount() {
                 data-testid={IDS.deletionPending}
                 className="rounded-md border border-state-pending/30 bg-state-pending-wash p-5"
             >
-                <p className="text-eyebrow uppercase tracking-eyebrow text-state-pending">
+                <p className="text-label text-state-pending">
                     Deletion requested
                 </p>
                 <p className="mt-3 text-body leading-relaxed text-state-pending/90">
@@ -146,7 +146,7 @@ export default function DeleteAccount() {
             data-testid={IDS.deletionSection}
             className="rounded-md border border-border bg-card p-5 grain-surface"
         >
-            <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+            <p className="text-label text-muted-foreground">
                 Delete your account
             </p>
             <p className="mt-3 text-body leading-relaxed text-muted-foreground">
@@ -214,7 +214,7 @@ export default function DeleteAccount() {
                     </ul>
 
                     <label className="block">
-                        <span className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                        <span className="text-label text-muted-foreground">
                             Anything you'd like to tell us{" "}
                             <span className="opacity-60">(optional)</span>
                         </span>

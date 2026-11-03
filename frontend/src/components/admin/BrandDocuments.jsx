@@ -153,7 +153,7 @@ function DocumentRow({ brandId, doc, onReviewed }) {
 
                 <span
                     data-testid={IDS.status(doc.id)}
-                    className={`flex-none ${TEXT.meta} uppercase tracking-[0.18em] ${
+                    className={`flex-none text-label ${
                         STATUS_TONE[doc.status] || "text-muted-foreground"
                     }`}
                 >
@@ -219,7 +219,7 @@ function DocumentRow({ brandId, doc, onReviewed }) {
                                 href={blobUrl}
                                 download={doc.original_name || "document"}
                                 data-testid={IDS.download(doc.id)}
-                                className={`inline-flex items-center gap-1.5 rounded border border-border px-3 py-2 ${TEXT.meta} uppercase tracking-[0.18em] text-muted-foreground transition-colors duration-150 hover:text-primary-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring`}
+                                className={`inline-flex items-center gap-1.5 rounded border border-border px-3 py-2 text-label text-muted-foreground transition-colors duration-150 hover:text-primary-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring`}
                             >
                                 <Download className="h-3.5 w-3.5" />
                                 Download

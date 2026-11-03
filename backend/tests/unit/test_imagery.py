@@ -479,8 +479,9 @@ def test_the_brand_avatar_mirrors_the_creator_one():
 
     # Tokens rather than raw colours. The hairline is `border-border` now —
     # the light app's #E3DED6 — and the two avatars still have to be spelled
-    # the same way as each other.
-    for shared in ("rounded-md border border-border", "bg-primary/10", "font-serif"):
+    # the same way as each other. The initial is the sans at 600, not
+    # Fraunces: inside the app Fraunces is the page title and nothing else.
+    for shared in ("rounded-md border border-border", "bg-primary/10", "font-semibold"):
         assert shared in brand, f"BrandAvatar has dropped {shared}"
         assert shared in creator
 

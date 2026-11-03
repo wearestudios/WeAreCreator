@@ -112,7 +112,7 @@ export default function PartialDeliveryDialog({
 
                 {!barter && (
                     <label className="block">
-                        <span className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                        <span className="text-label text-muted-foreground">
                             Agreed for this
                         </span>
                         <Input
@@ -139,7 +139,7 @@ export default function PartialDeliveryDialog({
                 )}
 
                 <label className="block">
-                    <span className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                    <span className="text-label text-muted-foreground">
                         Why
                     </span>
                     {/* Required. "Accepted partial" with no reason is a

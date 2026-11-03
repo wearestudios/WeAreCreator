@@ -78,7 +78,7 @@ export function HealthPanel() {
                 data.critical > 0 && (
                     <span
                         data-testid={IDS.total}
-                        className="inline-flex items-center gap-1.5 rounded-full border border-destructive/30 bg-destructive/10 px-2.5 py-1 text-eyebrow uppercase tracking-eyebrow text-destructive"
+                        className="inline-flex items-center gap-1.5 rounded-full border border-destructive/30 bg-destructive/10 px-2.5 py-1 text-label text-destructive"
                     >
                         <AlertTriangle className="h-3 w-3" />
                         {data.critical} urgent
@@ -121,7 +121,7 @@ function HealthCheck({ check }) {
         <Panel data-testid={IDS.check(check.key)} className="min-w-0 overflow-hidden p-0">
             <div className="flex items-start justify-between gap-4 border-b border-border px-5 py-4">
                 <div className="min-w-0">
-                    <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                    <p className="text-label text-muted-foreground">
                         {check.label}
                         <span
                             data-testid={IDS.checkCount(check.key)}
@@ -222,7 +222,7 @@ function HealthCheck({ check }) {
                     type="button"
                     onClick={() => setExpanded(true)}
                     data-testid={IDS.more(check.key)}
-                    className="min-h-[2.75rem] w-full border-t border-border px-5 py-3 text-left text-eyebrow uppercase tracking-eyebrow text-muted-foreground transition-colors duration-150 hover:text-primary-ink md:min-h-0"
+                    className="min-h-[2.75rem] w-full border-t border-border px-5 py-3 text-left text-label text-muted-foreground transition-colors duration-150 hover:text-primary-ink md:min-h-0"
                 >
                     {hidden} more
                 </button>
@@ -351,7 +351,7 @@ function SplitBar({ a, b, labelA, labelB }) {
 
 const Card = ({ title, sub, testid, children }) => (
     <Panel data-testid={testid}>
-        <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">{title}</p>
+        <p className="text-label text-muted-foreground">{title}</p>
         {children}
         {sub && <p className="mt-2 text-body leading-relaxed text-muted-foreground">{sub}</p>}
     </Panel>
@@ -508,7 +508,7 @@ export function ExportsPanel({ allAccess = false }) {
                                 setTo(null);
                             }}
                             data-testid={EXPORT_IDS.clearDates}
-                            className="min-h-[2.75rem] text-eyebrow uppercase tracking-eyebrow text-muted-foreground transition-colors duration-150 hover:text-primary-ink md:min-h-0"
+                            className="min-h-[2.75rem] text-label text-muted-foreground transition-colors duration-150 hover:text-primary-ink md:min-h-0"
                         >
                             Clear dates
                         </button>

@@ -227,10 +227,10 @@ export default function DayOfMode({ roster, slots, loading, onChanged }) {
                 className="rounded-md border border-border bg-card p-5 grain-surface"
             >
                 <div className="flex items-baseline justify-between">
-                    <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                    <p className="text-label text-muted-foreground">
                         Checked in
                     </p>
-                    <p className="font-serif text-h3 leading-none">
+                    <p className="app-figure text-h3 leading-none">
                         {done}
                         <span className="text-muted-foreground">/{total}</span>
                     </p>
@@ -265,7 +265,7 @@ export default function DayOfMode({ roster, slots, loading, onChanged }) {
                             onClick={() => setFilter(f.key)}
                             data-testid={IDS.filter(f.key)}
                             className={
-                                "flex-1 rounded-md border px-3 py-3 text-eyebrow uppercase tracking-eyebrow transition-colors duration-200 " +
+                                "flex-1 rounded-md border px-3 py-3 text-label transition-colors duration-200 " +
                                 (on
                                     ? "border-primary bg-primary/10 text-primary"
                                     : "border-border text-muted-foreground")
@@ -304,7 +304,7 @@ export default function DayOfMode({ roster, slots, loading, onChanged }) {
                                 <div className="flex items-stretch gap-3 p-4">
                                     <div className="flex min-w-0 flex-1 flex-col justify-center">
                                         <div className="flex items-center gap-2">
-                                            <span className="font-serif text-body-lg leading-none">
+                                            <span className="app-figure text-body-lg leading-none">
                                                 {formatTime(row.slot_time)}
                                             </span>
                                             {settled && (
@@ -317,7 +317,7 @@ export default function DayOfMode({ roster, slots, loading, onChanged }) {
                                             {row._queued && (
                                                 <span
                                                     data-testid={IDS.queued(row.collaboration_id)}
-                                                    className="inline-flex items-center gap-1 rounded-full border border-state-pending/30 bg-state-pending-wash px-2 py-0.5 text-eyebrow uppercase tracking-eyebrow text-state-pending"
+                                                    className="inline-flex items-center gap-1 rounded-full border border-state-pending/30 bg-state-pending-wash px-2 py-0.5 text-label text-state-pending"
                                                 >
                                                     <UploadCloud className="h-3 w-3" />
                                                     Waiting
@@ -369,7 +369,7 @@ export default function DayOfMode({ roster, slots, loading, onChanged }) {
                                             type="button"
                                             aria-expanded={open}
                                             onClick={() => setOpenId(open ? null : row.collaboration_id)}
-                                            className="flex w-full items-center justify-center gap-1.5 border-t border-border py-3 text-eyebrow uppercase tracking-eyebrow text-muted-foreground transition-colors duration-200 hover:text-foreground"
+                                            className="flex w-full items-center justify-center gap-1.5 border-t border-border py-3 text-label text-muted-foreground transition-colors duration-200 hover:text-foreground"
                                         >
                                             More
                                             <ChevronDown
@@ -479,7 +479,7 @@ function NoShowSheet({ row, busy, onClose, onSubmit }) {
                 data-testid={NO_SHOW_IDS.sheet}
                 className="rounded-t-md border-t border-border bg-card grain-surface"
             >
-                <SheetTitle className="font-serif text-h3 leading-tight">
+                <SheetTitle className="font-bold text-h3 leading-tight">
                     {row?.name} didn't turn up?
                 </SheetTitle>
                 <SheetDescription className="mt-2 text-body leading-relaxed text-muted-foreground">
@@ -550,7 +550,7 @@ function RescheduleSheet({ row, slots, busy, onClose, onSubmit }) {
                 data-testid={RESCHEDULE_IDS.sheet}
                 className="max-h-[85vh] overflow-y-auto rounded-t-md border-t border-border bg-card grain-surface"
             >
-                <SheetTitle className="font-serif text-h3 leading-tight">
+                <SheetTitle className="font-bold text-h3 leading-tight">
                     Move {row?.name}
                 </SheetTitle>
                 <SheetDescription className="mt-2 text-meta text-muted-foreground">
@@ -585,7 +585,7 @@ function RescheduleSheet({ row, slots, busy, onClose, onSubmit }) {
                                                 : "border-border hover:border-tint/30")
                                         }
                                     >
-                                        <span className="font-serif text-body-lg">
+                                        <span className="font-bold text-body-lg">
                                             {formatTime(s.starts_at)}
                                         </span>
                                         <span className="text-meta text-muted-foreground">

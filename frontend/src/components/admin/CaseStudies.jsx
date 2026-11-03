@@ -71,7 +71,7 @@ const field =
 function Row({ label, hint, children }) {
     return (
         <div className="grid gap-1.5">
-            <Label className={`${TEXT.meta} uppercase tracking-[0.15em] text-muted-foreground`}>
+            <Label className={`${TEXT.meta} text-label text-muted-foreground`}>
                 {label}
             </Label>
             {children}
@@ -139,7 +139,7 @@ function GalleryEditor({ gallery, onChange }) {
                                 data-testid={IDS.galleryRemove(i)}
                                 // 150ms, not the app's 200: the console's own
                                 // rule, and a test holds it.
-                                className="min-h-[2.75rem] text-xs uppercase tracking-[0.15em] text-muted-foreground transition-colors duration-150 hover:text-state-rejected"
+                                className="min-h-[2.75rem] text-label text-muted-foreground transition-colors duration-150 hover:text-state-rejected"
                             >
                                 Remove
                             </button>
@@ -758,7 +758,7 @@ export default function CaseStudies() {
     return (
         <div className="grid gap-4" data-testid={IDS.section}>
             <div className="flex flex-wrap items-center gap-3">
-                <h1 className="font-serif text-h3 leading-tight">Case studies</h1>
+                <h1 className="font-bold text-h3 leading-tight">Case studies</h1>
                 <div className="ml-auto flex gap-2">
                     {/* The primary action, and the whole argument for the
                         feature: a closed campaign already knows nine tenths

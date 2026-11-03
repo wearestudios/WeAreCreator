@@ -186,7 +186,7 @@ export default function ImageUploadField({
 
             <div className={shape === "square" ? "min-w-0" : "mt-3"}>
                 {label && (
-                    <Label className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                    <Label className="text-label text-muted-foreground">
                         {label}
                     </Label>
                 )}
@@ -226,7 +226,7 @@ export default function ImageUploadField({
                             disabled={disabled || busy}
                             onClick={remove}
                             data-testid={testids.remove}
-                            className="min-h-[2.75rem] px-2 text-eyebrow uppercase tracking-eyebrow text-muted-foreground transition-colors duration-200 hover:text-state-rejected disabled:opacity-40"
+                            className="min-h-[2.75rem] px-2 text-label text-muted-foreground transition-colors duration-200 hover:text-state-rejected disabled:opacity-40"
                         >
                             Remove
                         </button>

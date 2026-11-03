@@ -205,7 +205,7 @@ const StatePill = ({ state }) => {
         <span
             data-testid={`applicant-state-${state}`}
             className={
-                "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-eyebrow font-medium uppercase tracking-eyebrow " +
+                "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-label " +
                 meta.tone
             }
         >
@@ -262,10 +262,10 @@ function AcceptDialog({ open, onOpenChange, applicant, budget, budgetBlock, onCo
                 className="max-w-md rounded-md border border-border bg-card grain-surface"
             >
                 <DialogHeader className="text-left">
-                    <p className="text-eyebrow uppercase tracking-eyebrow text-primary">
+                    <p className="text-label text-primary">
                         Accept creator
                     </p>
-                    <DialogTitle className="mt-3 font-serif text-h3 leading-tight">
+                    <DialogTitle className="mt-3 font-bold text-h3 leading-tight">
                         {applicant?.creator?.name}
                     </DialogTitle>
                     <DialogDescription className="mt-2 text-meta text-muted-foreground">
@@ -278,7 +278,7 @@ function AcceptDialog({ open, onOpenChange, applicant, budget, budgetBlock, onCo
                     <div>
                         <Label
                             htmlFor="accept-amount"
-                            className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground"
+                            className="text-label text-muted-foreground"
                         >
                             Fee you're accepting at
                         </Label>
@@ -309,7 +309,7 @@ function AcceptDialog({ open, onOpenChange, applicant, budget, budgetBlock, onCo
                     <div>
                         <Label
                             htmlFor="accept-note"
-                            className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground"
+                            className="text-label text-muted-foreground"
                         >
                             Note (optional)
                         </Label>
@@ -433,10 +433,10 @@ function ReasonDialog({
                 className="max-w-md rounded-md border border-border bg-card grain-surface"
             >
                 <DialogHeader className="text-left">
-                    <p className="text-eyebrow uppercase tracking-eyebrow text-primary">
+                    <p className="text-label text-primary">
                         {kicker}
                     </p>
-                    <DialogTitle className="mt-3 font-serif text-h3 leading-tight">
+                    <DialogTitle className="mt-3 font-bold text-h3 leading-tight">
                         {title}
                     </DialogTitle>
                     <DialogDescription className="mt-2 text-meta text-muted-foreground">
@@ -448,7 +448,7 @@ function ReasonDialog({
                     <div>
                         <Label
                             htmlFor="reason-input"
-                            className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground"
+                            className="text-label text-muted-foreground"
                         >
                             {label}
                         </Label>
@@ -561,7 +561,7 @@ const ApplicantCard = ({
                         <Link
                             to={`/brand/applications/${a.id}`}
                             data-testid={`applicant-open-${a.id}`}
-                            className="font-serif text-h3 leading-tight transition-colors duration-200 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                            className="font-bold text-h3 leading-tight transition-colors duration-200 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                         >
                             {c.name || "Creator"}
                         </Link>
@@ -569,7 +569,7 @@ const ApplicantCard = ({
                         {a.reference && (
                             <span
                                 data-testid={`applicant-reference-${a.id}`}
-                                className="rounded-md border border-border px-2 py-0.5 font-mono text-eyebrow tracking-wider text-muted-foreground"
+                                className="rounded-md border border-border px-2 py-0.5 text-label tabular-nums text-muted-foreground"
                             >
                                 {a.reference}
                             </span>
@@ -671,7 +671,7 @@ const ApplicantCard = ({
                             {c.niches.map((n) => (
                                 <span
                                     key={n}
-                                    className="rounded-full bg-primary/10 px-2.5 py-1 text-eyebrow uppercase tracking-eyebrow text-primary"
+                                    className="rounded-full bg-primary/10 px-2.5 py-1 text-label text-primary"
                                 >
                                     {n}
                                 </span>
@@ -682,17 +682,17 @@ const ApplicantCard = ({
 
                 <div className="flex flex-row items-end gap-6 md:flex-col md:items-end md:gap-2">
                     <div className="md:text-right">
-                        <div className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                        <div className="text-label text-muted-foreground">
                             {a.agreed_amount != null ? "Agreed" : "They quoted"}
                         </div>
-                        <div className="mt-1 flex items-baseline font-serif text-h2">
+                        <div className="mt-1 flex items-baseline font-bold text-h2">
                             <IndianRupee className="h-5 w-5 text-primary" />
                             {formatRupees(a.agreed_amount ?? a.quoted_rate)}
                         </div>
                         {overBudget && a.agreed_amount == null && (
                             <div
                                 data-testid={`applicant-over-budget-${a.id}`}
-                                className="mt-1 text-eyebrow text-state-pending"
+                                className="mt-1 text-label text-state-pending"
                             >
                                 ₹{formatRupees(a.quoted_rate - budget)} over budget
                             </div>
@@ -736,7 +736,7 @@ const ApplicantCard = ({
 
             {a.content_urls?.length > 0 && (
                 <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                    <span className="text-label text-muted-foreground">
                         Submitted
                     </span>
                     {a.content_urls.map((u, i) => (
@@ -746,7 +746,7 @@ const ApplicantCard = ({
                             target="_blank"
                             rel="noreferrer"
                             data-testid={`applicant-content-${a.id}-${i}`}
-                            className="inline-flex items-center gap-1 rounded-full border border-border bg-background/60 px-2.5 py-1 text-eyebrow uppercase tracking-eyebrow text-primary transition-colors duration-200 hover:border-primary/40"
+                            className="inline-flex items-center gap-1 rounded-full border border-border bg-background/60 px-2.5 py-1 text-label text-primary transition-colors duration-200 hover:border-primary/40"
                         >
                             <LinkIcon className="h-3 w-3" />
                             Post {i + 1}
@@ -761,7 +761,7 @@ const ApplicantCard = ({
                     data-testid={`applicant-revision-${a.id}`}
                     className="rounded-md border border-state-pending/25 bg-state-pending-wash px-4 py-3 text-meta text-state-pending"
                 >
-                    <span className="uppercase tracking-eyebrow text-eyebrow">
+                    <span className="text-label">
                         You asked for
                     </span>
                     <br />
@@ -910,7 +910,7 @@ const InvitedStrip = ({ invited }) => {
 
     return (
         <section data-testid="applicants-invited" className="mt-10">
-            <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+            <p className="text-label text-muted-foreground">
                 Invited, waiting to hear back
                 <span className="ml-2 text-primary">{rows.length}</span>
             </p>
@@ -1072,7 +1072,7 @@ export default function BrandCampaignApplicants() {
             <div className="min-h-screen bg-background grain-page">
                 <Navbar />
                 <div className="mx-auto max-w-2xl px-6 py-24 text-center">
-                    <p className="font-serif text-h2">Campaign not found</p>
+                    <p className="font-bold text-h2">Campaign not found</p>
                     <p className="mt-4 text-meta text-muted-foreground">{error}</p>
                     <Button
                         onClick={() => navigate("/dashboard")}
@@ -1098,18 +1098,18 @@ export default function BrandCampaignApplicants() {
                 <Link
                     to="/dashboard"
                     data-testid="applicants-back-link"
-                    className="-my-2 inline-flex min-h-[2.75rem] items-center gap-1.5 py-2 text-eyebrow uppercase tracking-eyebrow text-muted-foreground transition-colors duration-200 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background md:my-0 md:min-h-0 md:py-0"
+                    className="-my-2 inline-flex min-h-[2.75rem] items-center gap-1.5 py-2 text-label text-muted-foreground transition-colors duration-200 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background md:my-0 md:min-h-0 md:py-0"
                 >
                     <ArrowLeft className="h-3.5 w-3.5" />
                     Your campaigns
                 </Link>
 
-                <p className="mt-6 text-eyebrow uppercase tracking-eyebrow text-primary">
+                <p className="mt-6 text-label text-primary">
                     Applicants
                 </p>
                 <h1
                     data-testid="applicants-campaign-title"
-                    className="mt-3 max-w-3xl font-serif text-h1 leading-none tracking-tight"
+                    className="app-title mt-3 max-w-3xl"
                 >
                     {campaign.title}
                 </h1>
@@ -1189,14 +1189,14 @@ export default function BrandCampaignApplicants() {
                                 data-testid={`applicants-filter-${f.key}`}
                                 onClick={() => setFilter(f.key)}
                                 className={
-                                    "inline-flex min-h-[2.75rem] items-center rounded-full border px-4 py-1.5 text-eyebrow uppercase tracking-eyebrow transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background md:min-h-0 " +
+                                    "inline-flex min-h-[2.75rem] items-center rounded-full border px-4 py-1.5 text-label transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background md:min-h-0 " +
                                     (active
                                         ? "border-primary bg-primary/10 text-primary"
                                         : "border-border bg-transparent text-muted-foreground hover:border-tint/30 hover:text-foreground")
                                 }
                             >
                                 {f.label}
-                                <span className="ml-2 text-eyebrow opacity-70">{n}</span>
+                                <span className="ml-2 text-label opacity-70">{n}</span>
                             </button>
                         );
                     })}

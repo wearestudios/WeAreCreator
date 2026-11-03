@@ -240,7 +240,7 @@ function StoredDocument({ doc, onRemoved, disabled }) {
                             onClick={remove}
                             disabled={removing}
                             data-testid={IDS.documentConfirmRemove(doc.id)}
-                            className="rounded-full px-3 py-1.5 text-eyebrow uppercase tracking-eyebrow text-destructive transition-colors duration-200 hover:bg-destructive/10 disabled:opacity-60"
+                            className="rounded-full px-3 py-1.5 text-label text-destructive transition-colors duration-200 hover:bg-destructive/10 disabled:opacity-60"
                         >
                             {removing ? "Removing…" : "Remove"}
                         </button>
@@ -249,7 +249,7 @@ function StoredDocument({ doc, onRemoved, disabled }) {
                             onClick={() => setConfirming(false)}
                             disabled={removing}
                             data-testid={IDS.documentCancelRemove(doc.id)}
-                            className="rounded-full px-3 py-1.5 text-eyebrow uppercase tracking-eyebrow text-muted-foreground transition-colors duration-200 hover:text-foreground"
+                            className="rounded-full px-3 py-1.5 text-label text-muted-foreground transition-colors duration-200 hover:text-foreground"
                         >
                             Keep
                         </button>
@@ -448,7 +448,7 @@ export default function VerificationDocuments({
     return (
         <section data-testid={IDS.documentsSection} className="space-y-5">
             <div className="flex flex-wrap items-baseline justify-between gap-2">
-                <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                <p className="text-label text-muted-foreground">
                     Proof of business
                 </p>
                 {/* **A count, not a target.** "1 of 12 uploaded" reads as
@@ -481,7 +481,7 @@ export default function VerificationDocuments({
             {!readOnly && (
                 <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
                     <div>
-                        <Label className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                        <Label className="text-label text-muted-foreground">
                             What is this document?
                         </Label>
                         <Select value={docType} onValueChange={setDocType}>

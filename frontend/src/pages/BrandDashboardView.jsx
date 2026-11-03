@@ -123,7 +123,7 @@ const StatusPill = ({ status }) => {
         <span
             data-testid={`brand-campaign-status-${status}`}
             className={
-                "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-eyebrow font-medium uppercase tracking-eyebrow " +
+                "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-label " +
                 meta.tone
             }
         >
@@ -158,14 +158,14 @@ const StatTile = ({ label, value, Icon, highlight }) => (
         }
     >
         <div className="flex items-center justify-between">
-            <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+            <p className="text-label text-muted-foreground">
                 {label}
             </p>
             {Icon && <Icon className="h-4 w-4 text-primary" />}
         </div>
         <div
             className={
-                "mt-4 font-serif text-h2 md:text-h1 " +
+                "mt-4 app-figure text-h2 md:text-h1 " +
                 (highlight ? "text-primary" : "")
             }
         >
@@ -380,14 +380,14 @@ export default function BrandDashboardView({ user, justOnboarded = false }) {
                                     creator's header follows: a hardcoded one
                                     is wrong for everybody it is not about, and
                                     this screen already knows the answer. */}
-                                <p className="text-eyebrow uppercase tracking-eyebrow text-primary">
+                                <p className="text-label text-primary">
                                     {data?.profile?.city
                                         ? `Brand · ${data.profile.city}`
                                         : "Brand"}
                                 </p>
                                 <h1
                                     data-testid="brand-name-heading"
-                                    className="mt-3 font-serif text-h1 leading-none tracking-tight"
+                                    className="app-title mt-3"
                                 >
                                     {businessName}
                                 </h1>
@@ -449,7 +449,7 @@ export default function BrandDashboardView({ user, justOnboarded = false }) {
                                 data-testid="brand-what-happens-next"
                                 className="mt-8 rounded-md border border-primary/30 bg-primary/10 p-5 md:p-6"
                             >
-                                <p className="flex items-center gap-2 text-eyebrow uppercase tracking-eyebrow text-primary">
+                                <p className="flex items-center gap-2 text-label text-primary">
                                     <Sparkles className="h-4 w-4" />
                                     What happens next
                                 </p>
@@ -545,10 +545,10 @@ export default function BrandDashboardView({ user, justOnboarded = false }) {
                         <section data-testid="brand-campaigns-section" className="mt-14">
                             <div className="flex items-baseline justify-between">
                                 <div>
-                                    <p className="text-eyebrow uppercase tracking-eyebrow text-primary">
+                                    <p className="text-label text-primary">
                                         Your campaigns
                                     </p>
-                                    <h2 className="mt-3 font-serif text-h1 leading-none tracking-tight">
+                                    <h2 className="mt-3 font-bold text-h2">
                                         Every brief you've posted.
                                     </h2>
                                 </div>
@@ -587,7 +587,7 @@ export default function BrandDashboardView({ user, justOnboarded = false }) {
                                             data-testid={EXECUTION.filterOption(opt.value)}
                                             onClick={() => setExecution(opt.value)}
                                             className={
-                                                "min-h-[2.75rem] rounded-full border px-4 text-eyebrow uppercase tracking-eyebrow transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background md:min-h-0 md:py-1.5 " +
+                                                "min-h-[2.75rem] rounded-full border px-4 text-label transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background md:min-h-0 md:py-1.5 " +
                                                 (on
                                                     ? "border-primary bg-primary/10 text-primary"
                                                     : "border-border text-muted-foreground hover:border-tint/30")
@@ -612,7 +612,7 @@ export default function BrandDashboardView({ user, justOnboarded = false }) {
                                         <button
                                             type="button"
                                             onClick={() => setExecution("all")}
-                                            className="mt-3 min-h-[2.75rem] text-eyebrow uppercase tracking-eyebrow text-primary transition-colors duration-200 hover:text-primary-hover md:min-h-0"
+                                            className="mt-3 min-h-[2.75rem] text-label text-primary transition-colors duration-200 hover:text-primary-hover md:min-h-0"
                                         >
                                             Show all campaigns
                                         </button>
@@ -623,7 +623,7 @@ export default function BrandDashboardView({ user, justOnboarded = false }) {
                                         className="flex flex-col items-center gap-3 px-6 py-16 text-center"
                                     >
                                         <Compass className="h-6 w-6 text-primary" />
-                                        <p className="font-serif text-h3">
+                                        <p className="font-bold text-h3">
                                             No campaigns yet.
                                         </p>
                                         <p className="max-w-md text-meta text-muted-foreground">
@@ -665,7 +665,7 @@ export default function BrandDashboardView({ user, justOnboarded = false }) {
                                                             className="w-24 flex-none"
                                                         />
                                                         <div className="min-w-0 flex-1">
-                                                            <div className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                                                            <div className="text-label text-muted-foreground">
                                                                 {CAT_LABEL[c.category] || c.category || "—"}
                                                                 {c.area ? ` · ${c.area}` : ""}
                                                                 {c.start_date
@@ -676,7 +676,7 @@ export default function BrandDashboardView({ user, justOnboarded = false }) {
                                                                       }`
                                                                     : ""}
                                                             </div>
-                                                            <div className="mt-1.5 truncate font-serif text-h3 leading-tight text-foreground">
+                                                            <div className="mt-1.5 truncate font-bold text-h3 leading-tight text-foreground">
                                                                 {c.title}
                                                             </div>
                                                             <div className="mt-2 flex flex-wrap items-center gap-3 text-meta text-muted-foreground">
@@ -687,7 +687,7 @@ export default function BrandDashboardView({ user, justOnboarded = false }) {
                                                                 <span
                                                                     data-testid={VISIBILITY.badge(c.id)}
                                                                     className={
-                                                                        "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-eyebrow uppercase tracking-eyebrow " +
+                                                                        "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-label " +
                                                                         (isPrivate(c)
                                                                             ? "border-primary/40 bg-primary/10 text-primary"
                                                                             : "border-border text-muted-foreground")
@@ -783,11 +783,11 @@ export default function BrandDashboardView({ user, justOnboarded = false }) {
                                                             >
                                                                 <div
                                                                     data-testid={`brand-campaign-applicants-${c.id}`}
-                                                                    className="font-serif text-h3 leading-none"
+                                                                    className="app-figure text-h3 leading-none"
                                                                 >
                                                                     {c.applicant_count}
                                                                 </div>
-                                                                <div className="mt-1 text-eyebrow uppercase tracking-eyebrow text-muted-foreground group-hover:text-primary">
+                                                                <div className="mt-1 text-label text-muted-foreground group-hover:text-primary">
                                                                     {c.applicant_count === 1
                                                                         ? "applicant"
                                                                         : "applicants"}
@@ -799,7 +799,7 @@ export default function BrandDashboardView({ user, justOnboarded = false }) {
                                                                 {c.awaiting_decision > 0 && (
                                                                     <span
                                                                         data-testid={`brand-campaign-awaiting-${c.id}`}
-                                                                        className="inline-flex items-center gap-1.5 rounded-full border border-primary/40 bg-primary/10 px-2.5 py-1 text-eyebrow font-medium uppercase tracking-eyebrow text-primary"
+                                                                        className="inline-flex items-center gap-1.5 rounded-full border border-primary/40 bg-primary/10 px-2.5 py-1 text-label text-primary"
                                                                     >
                                                                         {c.awaiting_decision} waiting on you
                                                                     </span>
@@ -1002,7 +1002,7 @@ export default function BrandDashboardView({ user, justOnboarded = false }) {
                             <span className="text-foreground">Signed in as</span>{" "}
                             {/* Accounts created over WhatsApp have no email. */}
                             {user.email || user.phone || user.name} ·{" "}
-                            <span className="uppercase tracking-[0.15em] text-primary">
+                            <span className="text-label text-primary">
                                 {user.role}
                             </span>
                         </div>
@@ -1019,7 +1019,7 @@ export default function BrandDashboardView({ user, justOnboarded = false }) {
                     className="rounded-md border border-border bg-card grain-surface"
                 >
                     <DialogHeader>
-                        <DialogTitle className="font-serif text-h3">
+                        <DialogTitle className="font-bold text-h3">
                             Pause this campaign?
                         </DialogTitle>
                         <DialogDescription className="text-body leading-relaxed text-muted-foreground">
@@ -1039,7 +1039,7 @@ export default function BrandDashboardView({ user, justOnboarded = false }) {
                             data-testid={BRAND_CAMPAIGN_CONTROLS.pauseReason}
                             aria-label="Why you're pausing"
                         />
-                        <span className="text-eyebrow text-muted-foreground">
+                        <span className="text-label text-muted-foreground">
                             A line for your own records and ours — it isn't shown to creators.
                         </span>
                     </div>
@@ -1077,7 +1077,7 @@ export default function BrandDashboardView({ user, justOnboarded = false }) {
                     className="rounded-md border border-border bg-card grain-surface"
                 >
                     <AlertDialogHeader>
-                        <AlertDialogTitle className="font-serif text-h3">
+                        <AlertDialogTitle className="font-bold text-h3">
                             {confirm.kind === "delete"
                                 ? "Delete this draft?"
                                 : "Close this campaign?"}

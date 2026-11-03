@@ -98,7 +98,7 @@ export default function CreatorLists({ campaignId, onInvited }) {
         <section data-testid={IDS.panel} className="space-y-4">
             <div className="flex flex-wrap items-center gap-2">
                 <Users className="h-4 w-4 text-muted-foreground" />
-                <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                <p className="text-label text-muted-foreground">
                     Saved lists
                 </p>
             </div>

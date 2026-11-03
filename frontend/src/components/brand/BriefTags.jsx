@@ -73,7 +73,7 @@ export default function BriefTags({ campaignId }) {
         <section data-testid="brief-tags" className="rounded-lg border border-border bg-card p-card-sm md:p-card">
             <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                    <h2 className="font-serif text-h3">Tags creators are matched on</h2>
+                    <h2 className="font-bold text-h3">Tags creators are matched on</h2>
                     <p className="mt-1 max-w-measure text-meta text-muted-foreground">
                         Suggestions are dashed. Tick the ones that fit and confirm — nothing applies until you do.
                     </p>

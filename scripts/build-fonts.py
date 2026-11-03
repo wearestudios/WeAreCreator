@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the self-hosted public-site fonts and print their fallback metrics.
+"""Build the self-hosted fonts and print their fallback metrics.
 
 Inputs are the latin woff2 files this repository serves, as fetched once from
 their upstreams (see `frontend/public/fonts/README.md` for the exact URLs):
@@ -8,13 +8,18 @@ their upstreams (see `frontend/public/fonts/README.md` for the exact URLs):
              leaves SOFT out, so the file has no SOFT axis at all
   Inter Tight  @fontsource-variable/inter-tight (wght)
   JetBrains Mono  @fontsource/jetbrains-mono (400, static)
+  Manrope    @fontsource-variable/manrope (wght) — the signed-in app's sans,
+             and only the app's: the public site never sets it, so a visitor
+             who never signs in never downloads it
 
 Two jobs:
 
 1. **Narrow the weight axis to what the site uses.** Fraunces ships 100–900
    and Inter Tight 100–900; the site sets Fraunces at 400–700 and Inter Tight
-   at 400–600, and a test bans the weights outside them. Pinning the range is
-   lossless inside it and drops the deltas outside it.
+   at 400–600, and a test bans the weights outside them. Manrope ships
+   200–800 and the app sets it at 400–800 — nothing in the app is lighter than
+   400, which is the whole of the "thin type" complaint it answers. Pinning
+   the range is lossless inside it and drops the deltas outside it.
 
 2. **Print `@font-face` descriptors for a metric-matched fallback**, so the
    swap from the local face to the webfont moves nothing. The fallback is the
@@ -76,6 +81,7 @@ BUILDS = [
     ("fraunces-latin-italic.woff2", "fraunces-latin-italic.woff2", (400, 700)),
     ("inter-tight-latin-wght-normal.woff2", "inter-tight-latin.woff2", (400, 600)),
     ("jetbrains-mono-latin-400-normal.woff2", "jetbrains-mono-latin-400.woff2", None),
+    ("manrope-latin-wght-normal.woff2", "manrope-latin.woff2", (400, 800)),
 ]
 
 
@@ -131,6 +137,9 @@ def main(src: Path, out: Path) -> None:
     display_large = static_at(fr, {"opsz": 100, "wght": 400, "WONK": 1})
     inter = static_at(out / "inter-tight-latin.woff2", {"wght": 400})
     mono = TTFont(out / "jetbrains-mono-latin-400.woff2")
+    # The app's body is Manrope 400 at 15px; matched at the weight most of
+    # its words are set in, the way Inter Tight is.
+    manrope = static_at(out / "manrope-latin.woff2", {"wght": 400})
     rows = {
         "Fraunces Fallback": descriptors(body, fb["serif"], SAMPLE),
         "Fraunces Fallback Android": descriptors(body, fb["serif-android"], SAMPLE),
@@ -151,6 +160,8 @@ def main(src: Path, out: Path) -> None:
         "Inter Tight Fallback": descriptors(inter, fb["sans"], SAMPLE),
         "Inter Tight Fallback Android": descriptors(inter, fb["sans-android"], SAMPLE),
         "JetBrains Mono Fallback": descriptors(mono, fb["mono"], SAMPLE.upper()),
+        "Manrope Fallback": descriptors(manrope, fb["sans"], SAMPLE),
+        "Manrope Fallback Android": descriptors(manrope, fb["sans-android"], SAMPLE),
     }
     for family, d in rows.items():
         print(family, " ".join(f"{k}: {v};" for k, v in d.items()))

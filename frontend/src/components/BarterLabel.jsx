@@ -18,7 +18,7 @@ export default function BarterLabel({ campaign, id, className = "" }) {
     return (
         <span
             data-testid={BARTER.label(id ?? campaign?.id)}
-            className={`inline-flex items-center gap-1.5 rounded-full border border-state-pending/40 bg-state-pending-wash px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.18em] text-state-pending ${className}`}
+            className={`inline-flex items-center gap-1.5 rounded-full border border-state-pending/40 bg-state-pending-wash px-2.5 py-1 text-eyebrow font-medium uppercase tracking-eyebrow text-state-pending ${className}`}
         >
             <Gift className="h-3 w-3" aria-hidden="true" />
             Barter

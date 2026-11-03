@@ -166,10 +166,10 @@ export function PerformancePanel({ collaborationId, performance, delivered, onSa
                         <dl className="grid gap-5 sm:grid-cols-3 lg:grid-cols-6">
                             {METRICS.map((m) => (
                                 <div key={m.key}>
-                                    <dt className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                                    <dt className="text-label text-muted-foreground">
                                         {m.label}
                                     </dt>
-                                    <dd className="mt-1.5 font-serif text-h3">
+                                    <dd className="mt-1.5 font-bold text-h3">
                                         {num(performance[m.key])}
                                     </dd>
                                 </div>
@@ -296,10 +296,10 @@ function PerformanceDialog({ open, onOpenChange, collaborationId, performance, o
                 className="max-w-lg rounded-md border border-border bg-card"
             >
                 <DialogHeader className="text-left">
-                    <p className="text-eyebrow uppercase tracking-eyebrow text-primary-ink">
+                    <p className="text-label text-primary-ink">
                         Performance
                     </p>
-                    <DialogTitle className="mt-3 font-serif text-h3 leading-tight">
+                    <DialogTitle className="mt-3 font-bold text-h3 leading-tight">
                         What did the post do?
                     </DialogTitle>
                     <DialogDescription className="mt-2 text-body leading-relaxed text-muted-foreground">
@@ -315,7 +315,7 @@ function PerformanceDialog({ open, onOpenChange, collaborationId, performance, o
                             <div key={m.key}>
                                 <Label
                                     htmlFor={`perf-${m.key}`}
-                                    className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground"
+                                    className="text-label text-muted-foreground"
                                 >
                                     {m.label}
                                 </Label>

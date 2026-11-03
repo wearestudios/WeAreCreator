@@ -219,7 +219,7 @@ export default function ManagerCampaign() {
                 <Link
                     to="/manager"
                     data-testid={IDS.back}
-                    className="-my-2 min-h-[2.75rem] py-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background md:my-0 md:min-h-0 md:py-0 inline-flex items-center gap-1.5 text-eyebrow uppercase tracking-eyebrow text-muted-foreground transition-colors duration-200 hover:text-primary"
+                    className="-my-2 min-h-[2.75rem] py-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background md:my-0 md:min-h-0 md:py-0 inline-flex items-center gap-1.5 text-label text-muted-foreground transition-colors duration-200 hover:text-primary"
                 >
                     <ChevronLeft className="h-3.5 w-3.5" />
                     All campaigns
@@ -245,7 +245,7 @@ export default function ManagerCampaign() {
                                     />
                                     <span
                                         data-testid={ROSTER_IDS.counts}
-                                        className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground"
+                                        className="text-label text-muted-foreground"
                                     >
                                         {roster.attended} in · {roster.expected} expected
                                         {roster.no_shows > 0 ? ` · ${roster.no_shows} no-show` : ""}
@@ -266,7 +266,7 @@ export default function ManagerCampaign() {
                             aria-pressed={dayOf}
                             data-testid={IDS.dayOfToggle}
                             className={
-                                "mt-7 flex w-full items-center justify-center gap-2 rounded-md border text-meta uppercase tracking-[0.15em] transition-colors duration-200 " +
+                                "text-label mt-7 flex w-full items-center justify-center gap-2 rounded-md border text-meta transition-colors duration-200 " +
                                 TOUCH +
                                 " " +
                                 (dayOf
@@ -309,7 +309,7 @@ export default function ManagerCampaign() {
                                                 onClick={() => setTab(t.key)}
                                                 data-testid={IDS.tab(t.key)}
                                                 className={
-                                                    "min-h-[3rem] flex-1 rounded-md border px-3 py-3 text-eyebrow uppercase tracking-eyebrow transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background " +
+                                                    "min-h-[3rem] flex-1 rounded-md border px-3 py-3 text-label transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background " +
                                                     (on
                                                         ? "border-primary bg-primary/10 text-primary"
                                                         : "border-border text-muted-foreground")
@@ -434,7 +434,7 @@ function RosterList({ rows, onRecord }) {
                         <div className="flex flex-wrap items-center gap-2">
                             <span
                                 data-testid={ROSTER_IDS.rowTime(r.collaboration_id)}
-                                className="font-serif text-body-lg leading-none"
+                                className="app-figure text-body-lg leading-none"
                             >
                                 {r.slot_time ? formatTime(r.slot_time) : "No slot"}
                             </span>
@@ -449,7 +449,7 @@ function RosterList({ rows, onRecord }) {
                             {r.slot_pending && (
                                 <span
                                     data-testid={ROSTER_IDS.rowPending(r.collaboration_id)}
-                                    className="rounded border border-primary/40 bg-primary/10 px-1.5 py-0.5 text-eyebrow uppercase tracking-eyebrow text-primary"
+                                    className="rounded border border-primary/40 bg-primary/10 px-1.5 py-0.5 text-label text-primary"
                                 >
                                     Waiting on you
                                 </span>
@@ -468,7 +468,7 @@ function RosterList({ rows, onRecord }) {
                                             ? `${r.on_behalf.slot_booked.by_name || "WeAre"}: ${r.on_behalf.slot_booked.reason}`
                                             : undefined
                                     }
-                                    className="rounded border border-state-pending/40 bg-state-pending/10 px-1.5 py-0.5 text-[10px] uppercase tracking-[0.14em] text-state-pending"
+                                    className="rounded border border-state-pending/40 bg-state-pending/10 px-1.5 py-0.5 text-label text-state-pending"
                                 >
                                     Booked by WeAre on their behalf
                                 </span>
@@ -564,7 +564,7 @@ function SlotList({ slots, rules, busy, onAdd, onEdit, onDelete }) {
                                 className="flex items-center gap-3 rounded-md border border-border bg-card p-5 grain-surface"
                             >
                                 <div className="min-w-0 flex-1">
-                                    <p className="font-serif text-body-lg leading-none">
+                                    <p className="app-figure text-body-lg leading-none">
                                         {formatTime(s.starts_at)}
                                         {s.ends_at ? ` – ${formatTime(s.ends_at)}` : ""}
                                     </p>
@@ -658,7 +658,7 @@ function VenuePanel({ campaign }) {
         <section data-testid={VENUE_IDS.section} className="space-y-4">
             {campaign.venue_address && (
                 <div className="rounded-md border border-border bg-card p-5 grain-surface">
-                    <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                    <p className="text-label text-muted-foreground">
                         Address
                     </p>
                     <p data-testid={VENUE_IDS.address} className="mt-3 text-body leading-relaxed">
@@ -679,7 +679,7 @@ function VenuePanel({ campaign }) {
 
             {campaign.venue_instructions && (
                 <div className="rounded-md border border-border bg-card p-5 grain-surface">
-                    <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                    <p className="text-label text-muted-foreground">
                         On arrival
                     </p>
                     <p
@@ -693,7 +693,7 @@ function VenuePanel({ campaign }) {
 
             {campaign.on_site_contact && (
                 <div className="rounded-md border border-border bg-card p-5 grain-surface">
-                    <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                    <p className="text-label text-muted-foreground">
                         On-site contact
                     </p>
                     <p data-testid={VENUE_IDS.contact} className="mt-3 text-meta">

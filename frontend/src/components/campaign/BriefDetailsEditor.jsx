@@ -91,7 +91,7 @@ function LineList({ field, rows, onChange }) {
         <div>
             <Label
                 htmlFor={`brief-${field}`}
-                className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground"
+                className="text-label text-muted-foreground"
             >
                 {BRIEF_LIST_FIELDS[field]}
             </Label>
@@ -145,7 +145,7 @@ function LineList({ field, rows, onChange }) {
                     data-testid={IDS.add(field)}
                     onClick={add}
                     disabled={full || !draft.trim()}
-                    className="inline-flex min-h-[2.75rem] items-center gap-1.5 rounded-full border border-border px-4 text-eyebrow uppercase tracking-eyebrow text-muted-foreground transition-colors duration-150 hover:border-primary/40 hover:text-primary disabled:opacity-40"
+                    className="inline-flex min-h-[2.75rem] items-center gap-1.5 rounded-full border border-border px-4 text-label text-muted-foreground transition-colors duration-150 hover:border-primary/40 hover:text-primary disabled:opacity-40"
                 >
                     <Plus aria-hidden="true" className="h-3.5 w-3.5" />
                     Add
@@ -174,7 +174,7 @@ export default function BriefDetailsEditor({ value, onChange }) {
                 className="flex min-h-[2.75rem] w-full items-center justify-between gap-3 rounded-md border border-border bg-card/60 px-4 text-left transition-colors duration-150 hover:border-primary/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
             >
                 <span>
-                    <span className="block text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                    <span className="block text-label text-muted-foreground">
                         Rules and tags (optional)
                     </span>
                     <span className="block text-meta text-muted-foreground">
@@ -214,7 +214,7 @@ export default function BriefDetailsEditor({ value, onChange }) {
                     <div>
                         <Label
                             htmlFor="brief-caption"
-                            className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground"
+                            className="text-label text-muted-foreground"
                         >
                             Caption guidance
                         </Label>
@@ -234,7 +234,7 @@ export default function BriefDetailsEditor({ value, onChange }) {
                     </div>
 
                     <div data-testid={IDS.assets}>
-                        <Label className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                        <Label className="text-label text-muted-foreground">
                             Brand assets
                         </Label>
                         <p className="mt-1 text-meta text-muted-foreground">
@@ -299,7 +299,7 @@ export default function BriefDetailsEditor({ value, onChange }) {
                             onClick={() =>
                                 set({ brand_assets: [...assets, { label: "", url: "" }] })
                             }
-                            className="mt-2 inline-flex min-h-[2.75rem] items-center gap-1.5 rounded-full border border-border px-4 text-eyebrow uppercase tracking-eyebrow text-muted-foreground transition-colors duration-150 hover:border-primary/40 hover:text-primary disabled:opacity-40"
+                            className="mt-2 inline-flex min-h-[2.75rem] items-center gap-1.5 rounded-full border border-border px-4 text-label text-muted-foreground transition-colors duration-150 hover:border-primary/40 hover:text-primary disabled:opacity-40"
                         >
                             <Plus aria-hidden="true" className="h-3.5 w-3.5" />
                             Add a link

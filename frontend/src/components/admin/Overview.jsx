@@ -367,7 +367,7 @@ export default function Overview({ onChanged }) {
                                 }
                             >
                                 <div className="flex items-center justify-between gap-2">
-                                    <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                                    <p className="text-label text-muted-foreground">
                                         {card.label}
                                     </p>
                                     <card.Icon
@@ -379,7 +379,7 @@ export default function Overview({ onChanged }) {
                                 </div>
                                 <p
                                     className={
-                                        "mt-3 flex items-baseline font-serif text-h3 leading-none " +
+                                        "mt-3 flex items-baseline app-figure text-h3 leading-none " +
                                         (on ? "text-primary-ink" : "")
                                     }
                                 >
@@ -430,7 +430,7 @@ export default function Overview({ onChanged }) {
                         type="button"
                         onClick={clearFilters}
                         data-testid={IDS.filterClear}
-                        className="inline-flex items-center gap-1.5 text-eyebrow uppercase tracking-eyebrow text-muted-foreground transition-colors duration-150 hover:text-primary-ink"
+                        className="inline-flex items-center gap-1.5 text-label text-muted-foreground transition-colors duration-150 hover:text-primary-ink"
                     >
                         <X className="h-3.5 w-3.5" />
                         Clear
@@ -471,7 +471,7 @@ export default function Overview({ onChanged }) {
             {data && rows.length > 0 && (
                 <p
                     data-testid={IDS.count}
-                    className="mt-4 text-eyebrow uppercase tracking-eyebrow text-muted-foreground"
+                    className="mt-4 text-label text-muted-foreground"
                 >
                     {rows.length} of {data.campaign_summary.length} campaigns
                     {data.summary_truncated ? " · list capped at 200" : ""}
@@ -579,7 +579,7 @@ function CampaignDetail({ campaignId, onBack, onChanged }) {
                 type="button"
                 onClick={onBack}
                 data-testid={DETAIL_IDS.back}
-                className="inline-flex items-center gap-1.5 text-eyebrow uppercase tracking-eyebrow text-muted-foreground transition-colors duration-150 hover:text-primary-ink"
+                className="inline-flex items-center gap-1.5 text-label text-muted-foreground transition-colors duration-150 hover:text-primary-ink"
             >
                 <ArrowLeft className="h-3.5 w-3.5" />
                 All campaigns
@@ -605,14 +605,14 @@ function CampaignDetail({ campaignId, onBack, onChanged }) {
                                 label={CAMPAIGN_STATUS_META[data.campaign.status]?.label}
                                 chip
                             />
-                            <span className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                            <span className="text-label text-muted-foreground">
                                 {(data.campaign.campaign_type || "").replace(/_/g, " ")} ·{" "}
                                 {campaignWhen(data.campaign)}
                             </span>
                         </div>
                         <h2
                             data-testid={DETAIL_IDS.title}
-                            className="mt-3 font-serif text-h1 leading-none tracking-tight"
+                            className="mt-3 font-bold text-h1 leading-none tracking-tight"
                         >
                             {data.campaign.title}
                         </h2>
@@ -633,12 +633,12 @@ function CampaignDetail({ campaignId, onBack, onChanged }) {
                                     className="rounded-md border border-border bg-card"
                                 >
                                     <div className="flex items-baseline justify-between border-b border-border px-5 py-4">
-                                        <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                                        <p className="text-label text-muted-foreground">
                                             {col.label}
                                         </p>
                                         <span
                                             data-testid={DETAIL_IDS.columnCount(col.key)}
-                                            className="font-serif text-body-lg leading-none"
+                                            className="app-figure text-body-lg leading-none"
                                         >
                                             {entries.length}
                                         </span>

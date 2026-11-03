@@ -113,7 +113,7 @@ export default function RateCollaboration({ collabId }) {
             data-testid={IDS.panel}
             className="rounded-md border border-border bg-card p-5 grain-surface"
         >
-            <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+            <p className="text-label text-muted-foreground">
                 {copy.title}
             </p>
             <p className="mt-2 text-body leading-relaxed text-muted-foreground">{copy.blurb}</p>

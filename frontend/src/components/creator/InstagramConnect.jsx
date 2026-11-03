@@ -56,8 +56,8 @@ export const NotProfessionalHelp = ({ testid, message }) => (
 
 const Stat = ({ label, value, testid }) => (
     <div>
-        <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">{label}</p>
-        <p data-testid={testid} className="mt-1 font-serif text-h3 leading-none">
+        <p className="text-label text-muted-foreground">{label}</p>
+        <p data-testid={testid} className="mt-1 app-figure text-h3 leading-none">
             {typeof value === "number" ? formatCompact(value) : "—"}
         </p>
     </div>
@@ -146,11 +146,11 @@ export default function InstagramConnect({ onChanged }) {
         <div data-testid={IDS.card} className="rounded-md border border-border bg-card p-6 grain-surface">
             <div className="flex flex-wrap items-start justify-between gap-4">
                 <div className="min-w-0">
-                    <p className="inline-flex items-center gap-2 text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                    <p className="inline-flex items-center gap-2 text-label text-muted-foreground">
                         <Instagram className="h-3.5 w-3.5" />
                         Instagram stats
                     </p>
-                    <p data-testid={IDS.status} className="mt-3 font-serif text-h3 leading-tight">
+                    <p data-testid={IDS.status} className="mt-3 font-bold text-h3 leading-tight">
                         {connected
                             ? "Connected — your numbers are verified."
                             : stale
@@ -161,7 +161,7 @@ export default function InstagramConnect({ onChanged }) {
                 {connected && (
                     <span
                         data-testid={IDS.badge}
-                        className="inline-flex flex-none items-center gap-1.5 rounded-full border border-state-approved/40 bg-state-approved-wash px-2.5 py-1 text-eyebrow uppercase tracking-eyebrow text-state-approved"
+                        className="inline-flex flex-none items-center gap-1.5 rounded-full border border-state-approved/40 bg-state-approved-wash px-2.5 py-1 text-label text-state-approved"
                     >
                         <BadgeCheck className="h-3.5 w-3.5" />
                         Verified

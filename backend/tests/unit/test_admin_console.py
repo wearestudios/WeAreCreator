@@ -160,7 +160,9 @@ def test_one_row_height_and_the_two_forms_of_it_agree():
 
 def test_text_xs_in_the_console_is_only_ever_metadata():
     """158 uses of `text-xs` was a console set in 12px. It is `text-sm` now,
-    except for the uppercase eyebrows, which really are metadata."""
+    and the uppercase eyebrows that kept it became `text-label` — sentence
+    case, Manrope 600, 12.5px — when the app's type changed (see
+    `test_app_type.py`). So no line here may carry it at all."""
     offenders = []
     for path in admin_sources():
         # `tokens.js` is where the metadata step is defined; it is the one
@@ -168,7 +170,7 @@ def test_text_xs_in_the_console_is_only_ever_metadata():
         if path.name == "tokens.js":
             continue
         for i, line in enumerate(code_of(path).splitlines(), 1):
-            if "text-xs" in line and "uppercase" not in line:
+            if "text-xs" in line:
                 offenders.append(f"{path.name}:{i}")
     assert not offenders, f"text-xs on non-metadata: {offenders[:10]}"
 

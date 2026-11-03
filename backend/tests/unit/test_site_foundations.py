@@ -231,10 +231,23 @@ class TestFonts:
     def test_no_weight_is_asked_for_that_is_not_loaded(self):
         """Inter Tight is loaded at 400–600 and Fraunces at 400–700. A
         `font-bold` or `font-light` would be synthesised by the browser — the
-        fake-weight version of the fake-italic problem this fixes."""
+        fake-weight version of the fake-italic problem this fixes.
+
+        **The app's own files are the exception, and only for 700 and 800.**
+        A file that renders nowhere but inside `[data-surface="app"]` sets
+        Manrope, which is loaded at 400–800 — so bold and extrabold are real
+        weights there. Nothing lighter than 400 and nothing at 900 is loaded
+        anywhere, so those stay banned everywhere. `app_surface.APP_ONLY` is
+        walked from the router; a shared file renders on a public page too and
+        is held to the public rule."""
+        from app_surface import APP_ONLY
+
+        app_only = set(APP_ONLY)
         banned = re.compile(r"\bfont-(?:thin|extralight|light|bold|extrabold|black)\b")
+        never = re.compile(r"\bfont-(?:thin|extralight|light|black)\b")
         offenders = [
-            str(p.relative_to(SRC)) for p in _src_files() if banned.search(_code(p.read_text()))
+            str(p.relative_to(SRC)) for p in _src_files()
+            if (never if p in app_only else banned).search(_code(p.read_text()))
         ]
         assert not offenders, offenders
 

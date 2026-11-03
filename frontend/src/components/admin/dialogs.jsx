@@ -134,13 +134,13 @@ export function ConfirmDialog({
             >
                 <DialogHeader className="text-left">
                     {kicker && (
-                        <p className="text-eyebrow uppercase tracking-eyebrow text-primary-ink">
+                        <p className="text-label text-primary-ink">
                             {kicker}
                         </p>
                     )}
                     <DialogTitle
                         data-testid={ADMIN_CONFIRM.title}
-                        className="mt-3 font-serif text-h3 leading-tight"
+                        className="mt-3 font-bold text-h3 leading-tight"
                     >
                         {title}
                     </DialogTitle>
@@ -156,12 +156,12 @@ export function ConfirmDialog({
                         <div key={f.name}>
                             <Label
                                 htmlFor={`admin-confirm-extra-${f.name}`}
-                                className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground"
+                                className="text-label text-muted-foreground"
                             >
                                 {f.label}
                             </Label>
                             {f.hint && (
-                                <p className="mt-1 text-eyebrow leading-snug text-muted-foreground/70">
+                                <p className="mt-1 text-label leading-snug text-muted-foreground/70">
                                     {f.hint}
                                 </p>
                             )}
@@ -188,7 +188,7 @@ export function ConfirmDialog({
                     <div>
                         <Label
                             htmlFor="admin-confirm-reason"
-                            className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground"
+                            className="text-label text-muted-foreground"
                         >
                             {reasonLabel}
                         </Label>
@@ -362,10 +362,10 @@ export function AdvanceDialog({
                 className="max-w-md rounded-md border border-border bg-card ![background-image:none]"
             >
                 <DialogHeader className="text-left">
-                    <p className="text-eyebrow uppercase tracking-eyebrow text-primary-ink">
+                    <p className="text-label text-primary-ink">
                         Collaboration transition
                     </p>
-                    <DialogTitle className="mt-3 font-serif text-h3 leading-tight">
+                    <DialogTitle className="mt-3 font-bold text-h3 leading-tight">
                         {title}
                     </DialogTitle>
                     <DialogDescription className="mt-2 text-meta text-muted-foreground">
@@ -378,7 +378,7 @@ export function AdvanceDialog({
                         <div>
                             <Label
                                 htmlFor="ad-amt"
-                                className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground"
+                                className="text-label text-muted-foreground"
                             >
                                 Final agreed amount
                             </Label>
@@ -405,7 +405,7 @@ export function AdvanceDialog({
                             <div>
                                 <Label
                                     htmlFor="ad-slot"
-                                    className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground"
+                                    className="text-label text-muted-foreground"
                                 >
                                     Date and time of the shoot
                                 </Label>
@@ -421,7 +421,7 @@ export function AdvanceDialog({
                             <div>
                                 <Label
                                     htmlFor="ad-loc"
-                                    className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground"
+                                    className="text-label text-muted-foreground"
                                 >
                                     Where (optional)
                                 </Label>
@@ -651,10 +651,10 @@ export function CampaignEditDialog({ campaign, open, onOpenChange, onSubmit, sub
                 className="max-w-md rounded-md border border-border bg-card ![background-image:none]"
             >
                 <DialogHeader className="text-left">
-                    <p className="text-eyebrow uppercase tracking-eyebrow text-primary-ink">
+                    <p className="text-label text-primary-ink">
                         Edit campaign
                     </p>
-                    <DialogTitle className="mt-3 font-serif text-h3 leading-tight">
+                    <DialogTitle className="mt-3 font-bold text-h3 leading-tight">
                         {campaign?.title}
                     </DialogTitle>
                     <DialogDescription className="mt-2 text-meta text-muted-foreground">
@@ -665,7 +665,7 @@ export function CampaignEditDialog({ campaign, open, onOpenChange, onSubmit, sub
 
                 <form onSubmit={submit} noValidate className="mt-4 space-y-5">
                     <div>
-                        <Label htmlFor="ce-title" className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                        <Label htmlFor="ce-title" className="text-label text-muted-foreground">
                             Title
                         </Label>
                         <Input
@@ -678,7 +678,7 @@ export function CampaignEditDialog({ campaign, open, onOpenChange, onSubmit, sub
                         />
                     </div>
                     <div>
-                        <Label className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                        <Label className="text-label text-muted-foreground">
                             Deliverables
                         </Label>
                         <div className="mt-2">
@@ -690,7 +690,7 @@ export function CampaignEditDialog({ campaign, open, onOpenChange, onSubmit, sub
                         </div>
                     </div>
                     <div>
-                        <Label className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                        <Label className="text-label text-muted-foreground">
                             What it pays
                         </Label>
                         <div
@@ -735,7 +735,7 @@ export function CampaignEditDialog({ campaign, open, onOpenChange, onSubmit, sub
                           * is left as it was so switching back isn't lossy. */}
                         {compensation !== "barter" && (
                             <div>
-                                <Label htmlFor="ce-budget" className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                                <Label htmlFor="ce-budget" className="text-label text-muted-foreground">
                                     {compensation === "negotiated"
                                         ? "Budget per creator (guide)"
                                         : "Budget per creator"}
@@ -754,7 +754,7 @@ export function CampaignEditDialog({ campaign, open, onOpenChange, onSubmit, sub
                             </div>
                         )}
                         <div>
-                            <Label htmlFor="ce-needed" className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                            <Label htmlFor="ce-needed" className="text-label text-muted-foreground">
                                 Creators needed
                             </Label>
                             <Input
@@ -778,7 +778,7 @@ export function CampaignEditDialog({ campaign, open, onOpenChange, onSubmit, sub
                         with no draft stage is a setting nothing reads. */}
                     {campaign?.requires_draft_approval && (
                         <div>
-                            <Label htmlFor="ce-review-days" className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                            <Label htmlFor="ce-review-days" className="text-label text-muted-foreground">
                                 Days to review a draft
                             </Label>
                             <Input
@@ -809,7 +809,7 @@ export function CampaignEditDialog({ campaign, open, onOpenChange, onSubmit, sub
                         <div className="max-w-xs">
                             <Label
                                 htmlFor="ce-total-budget"
-                                className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground"
+                                className="text-label text-muted-foreground"
                             >
                                 Total campaign budget
                             </Label>
@@ -840,7 +840,7 @@ export function CampaignEditDialog({ campaign, open, onOpenChange, onSubmit, sub
                             <div key={field}>
                                 <Label
                                     htmlFor={`ce-${field}`}
-                                    className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground"
+                                    className="text-label text-muted-foreground"
                                 >
                                     {SCHEDULING_DATE_LABELS[field]}
                                 </Label>
@@ -980,10 +980,10 @@ export function OnBehalfSlotDialog({
                 className="max-w-md rounded-md border border-tint/10 bg-card ![background-image:none]"
             >
                 <DialogHeader className="text-left">
-                    <p className="text-xs uppercase tracking-[0.2em] text-primary-ink">
+                    <p className="text-label text-primary-ink">
                         On the creator's behalf
                     </p>
-                    <DialogTitle className="mt-3 font-serif text-2xl leading-tight">
+                    <DialogTitle className="mt-3 font-bold text-2xl leading-tight">
                         Book a slot for {collab?.creator?.name || "the creator"}
                     </DialogTitle>
                     <DialogDescription className="mt-2 text-sm leading-relaxed text-muted-foreground">
@@ -995,7 +995,7 @@ export function OnBehalfSlotDialog({
 
                 <form onSubmit={submit} noValidate className="mt-4 space-y-5">
                     <div>
-                        <Label className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                        <Label className="text-label text-muted-foreground">
                             Slot
                         </Label>
                         {slots === null && !err ? (
@@ -1049,7 +1049,7 @@ export function OnBehalfSlotDialog({
                         <div>
                             <Label
                                 htmlFor="on-behalf-time"
-                                className="text-xs uppercase tracking-[0.15em] text-muted-foreground"
+                                className="text-label text-muted-foreground"
                             >
                                 Time inside the window (IST)
                             </Label>
@@ -1069,7 +1069,7 @@ export function OnBehalfSlotDialog({
                     <div>
                         <Label
                             htmlFor="on-behalf-reason"
-                            className="text-xs uppercase tracking-[0.15em] text-muted-foreground"
+                            className="text-label text-muted-foreground"
                         >
                             Why — the creator reads this
                         </Label>

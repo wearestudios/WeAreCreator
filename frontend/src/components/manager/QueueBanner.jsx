@@ -87,7 +87,7 @@ export default function QueueBanner({ className = "" }) {
                         onClick={retry}
                         disabled={syncing}
                         data-testid={IDS.retry}
-                        className="mt-3 inline-flex min-h-[2.75rem] items-center gap-2 rounded-full border border-current/30 px-4 text-eyebrow uppercase tracking-eyebrow opacity-90 transition-opacity duration-200 hover:opacity-100 disabled:opacity-60"
+                        className="mt-3 inline-flex min-h-[2.75rem] items-center gap-2 rounded-full border border-current/30 px-4 text-label opacity-90 transition-opacity duration-200 hover:opacity-100 disabled:opacity-60"
                     >
                         <RefreshCw className={"h-3.5 w-3.5 " + (syncing ? "animate-spin" : "")} />
                         {syncing ? "Syncing…" : "Try now"}

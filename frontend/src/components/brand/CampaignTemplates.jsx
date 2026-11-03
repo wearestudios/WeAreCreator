@@ -79,7 +79,7 @@ export default function CampaignTemplates({ onUse }) {
 
     return (
         <section data-testid={IDS.picker} className="rounded-md border border-border bg-card p-5">
-            <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+            <p className="text-label text-muted-foreground">
                 Start from a template
             </p>
             <p className="mt-2 text-meta text-muted-foreground">

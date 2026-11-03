@@ -36,7 +36,7 @@ import { ADDRESS, CREATOR_PROFILE as IDS } from "@/constants/testIds";
 import { formatInr } from "@/lib/compensation";
 const Row = ({ label, children, testid }) => (
     <div>
-        <dt className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+        <dt className="text-label text-muted-foreground">
             {label}
         </dt>
         <dd data-testid={testid} className="mt-1.5 text-meta text-foreground/90">
@@ -51,7 +51,7 @@ const Chips = ({ values, testid }) =>
             {values.map((v) => (
                 <span
                     key={v}
-                    className="inline-flex items-center rounded-full border border-border px-3 py-1 text-eyebrow uppercase tracking-eyebrow text-muted-foreground"
+                    className="inline-flex items-center rounded-full border border-border px-3 py-1 text-label text-muted-foreground"
                 >
                     {v}
                 </span>
@@ -63,7 +63,7 @@ const Chips = ({ values, testid }) =>
 
 const Section = ({ title, children, testid }) => (
     <section data-testid={testid} className="mt-10">
-        <p className="text-eyebrow uppercase tracking-eyebrow text-primary">{title}</p>
+        <p className="text-label text-primary">{title}</p>
         <div className="mt-4 rounded-md border border-border bg-card p-6 grain-surface">
             {children}
         </div>
@@ -203,12 +203,12 @@ export default function CreatorProfile() {
                                     )}
                                 </div>
                                 <div className="min-w-0">
-                                    <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                                    <p className="text-label text-muted-foreground">
                                         Your profile
                                     </p>
                                     <h1
                                         data-testid={IDS.name}
-                                        className="mt-2 font-serif text-h1 leading-none tracking-tight"
+                                        className="app-title mt-2"
                                     >
                                         {profile.name || "Your name"}
                                     </h1>

@@ -94,7 +94,7 @@ export default function SlotEditor({ open, slot, campaign, onClose, onSubmit, bu
                 data-testid={IDS.dialog}
                 className="max-h-[90vh] overflow-y-auto rounded-t-md border-t border-border bg-card grain-surface"
             >
-                <SheetTitle className="font-serif text-h3 leading-tight">
+                <SheetTitle className="font-bold text-h3 leading-tight">
                     {editing ? "Edit slot" : "Add a slot"}
                 </SheetTitle>
                 <SheetDescription className="mt-2 text-body leading-relaxed text-muted-foreground">
@@ -110,7 +110,7 @@ export default function SlotEditor({ open, slot, campaign, onClose, onSubmit, bu
                         <div>
                             <Label
                                 htmlFor="slot-date"
-                                className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground"
+                                className="text-label text-muted-foreground"
                             >
                                 Date
                             </Label>
@@ -129,7 +129,7 @@ export default function SlotEditor({ open, slot, campaign, onClose, onSubmit, bu
                         <div>
                             <Label
                                 htmlFor="slot-start"
-                                className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground"
+                                className="text-label text-muted-foreground"
                             >
                                 {isEvent ? "Time" : "From"}
                             </Label>
@@ -146,7 +146,7 @@ export default function SlotEditor({ open, slot, campaign, onClose, onSubmit, bu
                             <div>
                                 <Label
                                     htmlFor="slot-end"
-                                    className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground"
+                                    className="text-label text-muted-foreground"
                                 >
                                     To
                                 </Label>
@@ -163,7 +163,7 @@ export default function SlotEditor({ open, slot, campaign, onClose, onSubmit, bu
                     </div>
 
                     <div>
-                        <Label className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                        <Label className="text-label text-muted-foreground">
                             Places
                         </Label>
                         {/* Steppers rather than a keyboard: this gets changed
@@ -184,7 +184,7 @@ export default function SlotEditor({ open, slot, campaign, onClose, onSubmit, bu
                                 value={capacity}
                                 onChange={(e) => setCapacity(e.target.value)}
                                 data-testid={IDS.capacity}
-                                className={`rounded-md border-border bg-background/60 text-center font-serif text-h3 focus-visible:ring-primary ${TOUCH}`}
+                                className={`rounded-md border-border bg-background/60 text-center font-bold text-h3 focus-visible:ring-primary ${TOUCH}`}
                             />
                             <button
                                 type="button"

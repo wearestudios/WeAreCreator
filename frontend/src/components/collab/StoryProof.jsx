@@ -173,7 +173,7 @@ export function StoryProofUpload({ collabId, proof, onChanged }) {
     return (
         <div data-testid={IDS.panel} className="space-y-3">
             <div>
-                <p className="flex items-center gap-1.5 text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                <p className="flex items-center gap-1.5 text-label text-muted-foreground">
                     <Camera aria-hidden="true" className="h-3 w-3" />
                     Story screenshots
                 </p>
@@ -215,7 +215,7 @@ export function StoryProofUpload({ collabId, proof, onChanged }) {
                 htmlFor={`proof-${collabId}`}
                 data-testid={IDS.pick}
                 aria-disabled={busy || full}
-                className={`inline-flex min-h-[2.75rem] cursor-pointer items-center gap-1.5 rounded-full border border-border px-4 text-eyebrow uppercase tracking-eyebrow transition-colors duration-150 ${
+                className={`inline-flex min-h-[2.75rem] cursor-pointer items-center gap-1.5 rounded-full border border-border px-4 text-label transition-colors duration-150 ${
                     busy || full
                         ? "pointer-events-none opacity-40"
                         : "text-muted-foreground hover:border-primary/40 hover:text-primary"
@@ -254,7 +254,7 @@ export function StoryProofReview({ collabId, proof }) {
     if (!proof?.required && items.length === 0) return null;
     return (
         <div data-testid={IDS.panel} className="space-y-2">
-            <p className="flex items-center gap-1.5 text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+            <p className="flex items-center gap-1.5 text-label text-muted-foreground">
                 <Camera aria-hidden="true" className="h-3 w-3" />
                 Story screenshots
             </p>

@@ -56,7 +56,7 @@ export default function CheckInQr({ slotId }) {
             data-testid={IDS.panel}
             className="rounded-md border border-border bg-card p-6 text-center grain-surface"
         >
-            <p className="text-eyebrow uppercase tracking-eyebrow text-primary">
+            <p className="text-label text-primary">
                 Scan to check in
             </p>
 

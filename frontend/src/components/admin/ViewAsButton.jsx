@@ -66,10 +66,10 @@ export function ViewAsButton({ userId, name, role, disabled }) {
             <AlertDialog open={open} onOpenChange={setOpen}>
                 <AlertDialogContent className="rounded-md border border-border bg-card">
                     <AlertDialogHeader>
-                        <p className="text-eyebrow uppercase tracking-eyebrow text-primary-ink">
+                        <p className="text-label text-primary-ink">
                             View as
                         </p>
-                        <AlertDialogTitle className="mt-3 font-serif text-h3 leading-tight">
+                        <AlertDialogTitle className="mt-3 font-bold text-h3 leading-tight">
                             {name || "This user"}
                         </AlertDialogTitle>
                         <AlertDialogDescription className="mt-2 space-y-3 text-body leading-relaxed text-muted-foreground">

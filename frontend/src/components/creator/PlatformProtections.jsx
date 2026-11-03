@@ -27,11 +27,11 @@ export default function PlatformProtections({ protections }) {
 
     return (
         <section data-testid={IDS.protections}>
-            <p className="flex items-center gap-1.5 text-eyebrow uppercase tracking-eyebrow text-primary">
+            <p className="flex items-center gap-1.5 text-label text-primary">
                 <ShieldCheck aria-hidden="true" className="h-3.5 w-3.5" />
                 What you get here
             </p>
-            <h2 className="mt-3 font-serif text-h3 leading-tight">
+            <h2 className="mt-3 font-bold text-h3 leading-tight">
                 Every brief on this platform comes with the same five things
             </h2>
 

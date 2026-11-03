@@ -82,10 +82,10 @@ function RangePicker({ value, onChange }) {
 function Figure({ label, value, note }) {
     return (
         <div className="rounded-lg border border-border bg-card grain-surface p-5">
-            <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+            <p className="text-label text-muted-foreground">
                 {label}
             </p>
-            <p className="mt-2 font-serif text-h3 leading-none tracking-tight">
+            <p className="mt-2 app-figure text-h3 leading-none">
                 {value}
             </p>
             {note && <p className="mt-1.5 text-meta text-muted-foreground">{note}</p>}
@@ -139,7 +139,7 @@ export function VersusHistory({ comparison, heading = "Against your last campaig
             data-testid="brand-analytics-comparison"
             className="rounded-lg border border-primary/30 bg-primary/[0.06] p-6"
         >
-            <p className="text-eyebrow uppercase tracking-eyebrow text-primary-ink">
+            <p className="text-label text-primary-ink">
                 {heading}
             </p>
             <p className="mt-2 text-meta text-muted-foreground">
@@ -238,7 +238,7 @@ export default function CampaignAnalytics({
 
             {d.counted && (
                 <section data-testid="brand-analytics-deliverables">
-                    <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                    <p className="text-label text-muted-foreground">
                         Promised against delivered
                     </p>
                     <div className="mt-3 space-y-2">
@@ -273,7 +273,7 @@ export default function CampaignAnalytics({
             {data.creators.length > 0 && (
                 <section data-testid="brand-analytics-creators">
                     <div className="flex items-baseline justify-between">
-                        <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                        <p className="text-label text-muted-foreground">
                             Who performed
                         </p>
                         <Button
@@ -293,7 +293,7 @@ export default function CampaignAnalytics({
                     <div className="mt-3 overflow-x-auto">
                         <table className="w-full min-w-[34rem] text-meta">
                             <thead>
-                                <tr className="border-b border-border text-left text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                                <tr className="border-b border-border text-left text-label text-muted-foreground">
                                     <th className="py-2 pr-4 font-normal">Creator</th>
                                     <th className="py-2 pr-4 text-right font-normal">Reach</th>
                                     <th className="py-2 pr-4 text-right font-normal">Engagement</th>
@@ -368,10 +368,10 @@ export function BrandAnalyticsSummary() {
                 at 390. */}
             <div className="flex flex-wrap items-baseline justify-between gap-4">
                 <div>
-                    <p className="text-eyebrow uppercase tracking-eyebrow text-primary-ink">
+                    <p className="text-label text-primary-ink">
                         Your results
                     </p>
-                    <h2 className="mt-3 font-serif text-h1 leading-none tracking-tight">
+                    <h2 className="mt-3 font-bold text-h2">
                         Everything you've run.
                     </h2>
                 </div>

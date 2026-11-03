@@ -44,7 +44,7 @@ import { TEXT } from "@/components/admin/console/tokens";
 /** A labelled control. The console's density, not the marketing form's. */
 const Row = ({ label, hint, children, className = "" }) => (
     <label className={"block min-w-0 " + className}>
-        <span className={`${TEXT.meta} block uppercase tracking-[0.14em] text-muted-foreground`}>
+        <span className={`${TEXT.meta} text-label block text-muted-foreground`}>
             {label}
         </span>
         {hint ? (

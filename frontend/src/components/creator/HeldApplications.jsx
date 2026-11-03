@@ -36,7 +36,7 @@ function ResolvedHeld({ rows }) {
     if (!rows?.length) return null;
     return (
         <div data-testid={RESOLVED_IDS.panel} className="mt-6">
-            <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+            <p className="text-label text-muted-foreground">
                 Pitches that didn&apos;t go in
             </p>
             <ul className="mt-3 divide-y divide-divider overflow-hidden rounded-md border border-border bg-card">
@@ -49,7 +49,7 @@ function ResolvedHeld({ rows }) {
                             >
                                 {row.campaign_title || "A campaign"}
                             </Link>
-                            <span className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                            <span className="text-label text-muted-foreground">
                                 {RESOLVED_LABEL[row.state] || "Closed"}
                                 {row.resolved_at ? ` · ${formatDate(row.resolved_at)}` : ""}
                             </span>
@@ -140,7 +140,7 @@ export default function HeldApplications({ held, resolved, outstanding, onChange
                             </span>
                         </span>
 
-                        <span className="inline-flex flex-none items-center gap-1.5 text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                        <span className="inline-flex flex-none items-center gap-1.5 text-label text-muted-foreground">
                             <Clock aria-hidden="true" className="h-3.5 w-3.5" />
                             Held
                         </span>
@@ -154,7 +154,7 @@ export default function HeldApplications({ held, resolved, outstanding, onChange
                             onClick={() => cancel(row)}
                             disabled={busy === row.id}
                             data-testid={IDS.cancel(row.id)}
-                            className="inline-flex min-h-[2.75rem] flex-none items-center gap-1.5 text-eyebrow uppercase tracking-eyebrow text-muted-foreground transition-colors duration-200 hover:text-foreground disabled:opacity-50 sm:min-h-0"
+                            className="inline-flex min-h-[2.75rem] flex-none items-center gap-1.5 text-label text-muted-foreground transition-colors duration-200 hover:text-foreground disabled:opacity-50 sm:min-h-0"
                         >
                             {busy === row.id ? (
                                 <Loader2 className="h-3.5 w-3.5 animate-spin" />

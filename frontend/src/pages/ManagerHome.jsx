@@ -89,7 +89,7 @@ function AttentionRow({ campaign, item }) {
             data-testid={IDS.attentionItem(campaign.id, item.key)}
             className={"rounded-md border px-4 py-3 text-meta " + SEVERITY_TONE[item.severity]}
         >
-            <span className="block truncate text-eyebrow uppercase tracking-eyebrow opacity-80">
+            <span className="block truncate text-label opacity-80">
                 {campaign.title}
             </span>
             <span className="mt-1 block leading-snug">{item.text}</span>
@@ -132,7 +132,7 @@ function CampaignCard({ campaign: c, prominent }) {
                         {prominent && (
                             <span
                                 data-testid={IDS.cardToday(c.id)}
-                                className="inline-flex items-center gap-1.5 rounded-full bg-primary px-2.5 py-1 text-eyebrow font-medium uppercase tracking-eyebrow text-primary-foreground"
+                                className="inline-flex items-center gap-1.5 rounded-full bg-primary px-2.5 py-1 text-label text-primary-foreground"
                             >
                                 Today
                             </span>
@@ -144,7 +144,7 @@ function CampaignCard({ campaign: c, prominent }) {
                         />
                         <span
                             data-testid={IDS.cardWhen(c.id)}
-                            className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground"
+                            className="text-label text-muted-foreground"
                         >
                             {whenText(c)}
                         </span>
@@ -152,7 +152,7 @@ function CampaignCard({ campaign: c, prominent }) {
 
                     <p
                         className={
-                            "mt-3 truncate font-serif leading-tight " +
+                            "mt-3 truncate font-bold leading-tight " +
                             (prominent ? "text-h3" : "text-body-lg")
                         }
                     >
@@ -192,7 +192,7 @@ function CampaignCard({ campaign: c, prominent }) {
                         <p
                             data-testid={IDS.cardAttention(c.id)}
                             className={
-                                "mt-4 inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-eyebrow uppercase tracking-eyebrow " +
+                                "mt-4 inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-label " +
                                 SEVERITY_TONE[worst]
                             }
                         >
@@ -330,7 +330,7 @@ export default function ManagerHome() {
                         {/* What needs you, before what you have. */}
                         {attention.length > 0 && (
                             <SafeSection name="manager-attention" className="mt-8">
-                                <p className="text-eyebrow uppercase tracking-eyebrow text-state-pending">
+                                <p className="text-label text-state-pending">
                                     Needs a look
                                 </p>
                                 <ul
@@ -350,7 +350,7 @@ export default function ManagerHome() {
 
                         <SafeSection name="manager-today" className="mt-10">
                             <div className="flex items-baseline justify-between gap-3">
-                                <p className="text-eyebrow uppercase tracking-eyebrow text-primary">
+                                <p className="text-label text-primary">
                                     Today
                                 </p>
                                 <span
@@ -387,7 +387,7 @@ export default function ManagerHome() {
                         </SafeSection>
 
                         <SafeSection name="manager-upcoming" className="mt-10">
-                            <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
+                            <p className="text-label text-muted-foreground">
                                 Coming up
                             </p>
                             {groups.upcoming.length === 0 ? (
@@ -420,7 +420,7 @@ export default function ManagerHome() {
                                     aria-expanded={showPast}
                                     onClick={() => setShowPast((v) => !v)}
                                     data-testid={IDS.pastToggle}
-                                    className={`flex w-full items-center justify-between rounded-md border border-border px-5 text-left text-eyebrow uppercase tracking-eyebrow text-muted-foreground transition-colors duration-200 hover:text-foreground ${TOUCH}`}
+                                    className={`flex w-full items-center justify-between rounded-md border border-border px-5 text-left text-label text-muted-foreground transition-colors duration-200 hover:text-foreground ${TOUCH}`}
                                 >
                                     Been and gone · {groups.past.length}
                                     <ChevronDown

@@ -34,7 +34,7 @@ export function ChartCard({ title, chart, table, children, className = "", style
             style={style}
         >
             <div className="mb-4 flex items-baseline justify-between gap-3">
-                <h2 className="font-serif text-h3">{title}</h2>
+                <h2 className="font-bold text-h3">{title}</h2>
                 <TableToggle chart={chart} shown={asTable} onToggle={() => setAsTable((v) => !v)} />
             </div>
             {asTable ? table : children}
@@ -122,7 +122,7 @@ export function ViewsOverTime({ series, markers, animate }) {
                 {ticks.map((t) => (
                     <g key={t}>
                         <line x1={PAD.l} x2={W - PAD.r} y1={y(t)} y2={y(t)} className="stroke-border" strokeWidth="1" />
-                        <text x={PAD.l - 8} y={y(t) + 4} textAnchor="end" className="fill-muted-foreground text-[11px] tabular-nums">
+                        <text x={PAD.l - 8} y={y(t) + 4} textAnchor="end" className="fill-muted-foreground text-xs tabular-nums">
                             {shortIN(t)}
                         </text>
                     </g>
@@ -145,7 +145,7 @@ export function ViewsOverTime({ series, markers, animate }) {
                     <g key={`${m.date}-${m.name}`} className={animate ? "dash-after-line" : undefined}>
                         <line x1={x(m.i)} x2={x(m.i)} y1={H - PAD.b} y2={16 + m.row * 13}
                               className="stroke-border" strokeDasharray="2 3" />
-                        <text x={x(m.i) + 4} y={13 + m.row * 13} className="fill-muted-foreground text-[11px]">
+                        <text x={x(m.i) + 4} y={13 + m.row * 13} className="fill-muted-foreground text-xs">
                             {m.name}
                         </text>
                     </g>
@@ -172,8 +172,8 @@ export function ViewsOverTime({ series, markers, animate }) {
                         className="cursor-pointer focus:outline-none focus-visible:stroke-current focus-visible:[stroke-width:2]"
                     />
                 ))}
-                <text x={PAD.l} y={H - 8} className="fill-muted-foreground text-[11px]">{formatDate(series[0]?.date)}</text>
-                <text x={W - PAD.r} y={H - 8} textAnchor="end" className="fill-muted-foreground text-[11px]">
+                <text x={PAD.l} y={H - 8} className="fill-muted-foreground text-xs">{formatDate(series[0]?.date)}</text>
+                <text x={W - PAD.r} y={H - 8} textAnchor="end" className="fill-muted-foreground text-xs">
                     {formatDate(last?.date)}
                 </text>
             </svg>

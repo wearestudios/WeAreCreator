@@ -822,7 +822,7 @@ export default function AdminCampaigns({
                             </p>
                         )}
 
-                        <h3 className={`mb-1 mt-5 ${TEXT.meta} uppercase tracking-[0.12em] text-muted-foreground`}>
+                        <h3 className={`mb-1 mt-5 ${TEXT.meta} text-label text-muted-foreground`}>
                             On this brief
                         </h3>
                         {peek.creators.length === 0 ? (
