@@ -131,6 +131,9 @@ const ShootCalendar = load(() =>
 // between sections is what an admin does all afternoon, and a chunk boundary
 // there would put a fallback under the sidebar forty times an hour.
 const AdminConsole = load(() => import(/* webpackChunkName: "admin" */ "@/pages/AdminConsole"));
+// The signed-in app's layout: the navy sidebar every app page sits beside.
+// Its own chunk, because no public page needs it.
+const AppShell = load(() => import(/* webpackChunkName: "app-shell" */ "@/components/app/AppShell"));
 const adminRoute = (key) =>
     load(() =>
         import(/* webpackChunkName: "admin" */ "@/components/admin/routes").then((m) => ({
@@ -315,119 +318,6 @@ function App() {
                         <Route path="/contact" element={<Contact />} />
                         <Route path="/about" element={<About />} />
                         <Route
-                            path="/dashboard"
-                            element={
-                                <ProtectedRoute>
-                                    <Dashboard />
-                                </ProtectedRoute>
-                            }
-                        />
-                        {/* The shoot calendar. One page, three scopes — the
-                            endpoint decides what each role sees, so the route
-                            takes the union of the three rather than three
-                            near-identical routes. */}
-                        <Route
-                            path="/calendar"
-                            element={
-                                <ProtectedRoute
-                                    roles={[...BRAND_ROLES, "campaign_manager", "admin"]}
-                                >
-                                    <ShootCalendar />
-                                </ProtectedRoute>
-                            }
-                        />
-                        {/* Opened by a camera at a venue. Creator-only: the
-                            code checks a booking, and nobody else has one. */}
-                        <Route
-                            path="/check-in"
-                            element={
-                                <ProtectedRoute roles={["creator"]}>
-                                    <SelfCheckIn />
-                                </ProtectedRoute>
-                            }
-                        />
-                        <Route
-                            path="/onboarding/creator"
-                            element={
-                                <ProtectedRoute roles={["creator"]}>
-                                    <CreatorOnboarding />
-                                </ProtectedRoute>
-                            }
-                        />
-                        {/* Where Instagram redirects back to after OAuth.
-                            Must match INSTAGRAM_REDIRECT_URI on the server. */}
-                        <Route
-                            path="/onboarding/creator/instagram"
-                            element={
-                                <ProtectedRoute roles={["creator"]}>
-                                    <InstagramCallback />
-                                </ProtectedRoute>
-                            }
-                        />
-                        <Route
-                            path="/onboarding/brand"
-                            element={
-                                <ProtectedRoute roles={BRAND_ROLES}>
-                                    <BrandOnboarding />
-                                </ProtectedRoute>
-                            }
-                        />
-                        <Route
-                            path="/campaigns/new"
-                            element={
-                                <ProtectedRoute roles={BRAND_ROLES}>
-                                    <PostCampaign />
-                                </ProtectedRoute>
-                            }
-                        />
-                        <Route
-                            path="/campaigns/:id/edit"
-                            element={
-                                <ProtectedRoute roles={BRAND_ROLES}>
-                                    <PostCampaign />
-                                </ProtectedRoute>
-                            }
-                        />
-                        <Route
-                            path="/brand/campaigns/:id/results"
-                            element={
-                                <ProtectedRoute roles={[...BRAND_ROLES, "admin"]}>
-                                    <CampaignResults />
-                                </ProtectedRoute>
-                            }
-                        />
-                        <Route
-                            path="/brand/campaigns/:id/applicants"
-                            element={
-                                <ProtectedRoute roles={[...BRAND_ROLES, "admin"]}>
-                                    <BrandCampaignApplicants />
-                                </ProtectedRoute>
-                            }
-                        />
-                        {/* Your own profile, read-only. Editing lives at
-                            /onboarding/creator and is reached from here — it
-                            used to be the only way to see your own details. */}
-                        <Route
-                            path="/profile"
-                            element={
-                                <ProtectedRoute roles={["creator"]}>
-                                    <CreatorProfile />
-                                </ProtectedRoute>
-                            }
-                        />
-                        <Route
-                            path="/brand/applications/:id"
-                            element={
-                                <ProtectedRoute roles={[...BRAND_ROLES, "admin"]}>
-                                    <ApplicationDetail
-                                        backTo="/brand/dashboard"
-                                        backLabel="Dashboard"
-                                        standalone
-                                    />
-                                </ProtectedRoute>
-                            }
-                        />
-                        <Route
                             path="/campaigns"
                             element={
                                 <ProtectedRoute roles={["creator", "admin"]}>
@@ -443,52 +333,174 @@ function App() {
                                 </ProtectedRoute>
                             }
                         />
-                        <Route
-                            path="/manager"
-                            element={
-                                <ProtectedRoute roles={["campaign_manager", "admin"]}>
-                                    <ManagerHome />
-                                </ProtectedRoute>
-                            }
-                        />
-                        <Route
-                            path="/manager/campaigns/:id"
-                            element={
-                                <ProtectedRoute roles={["campaign_manager", "admin"]}>
-                                    <ManagerCampaign />
-                                </ProtectedRoute>
-                            }
-                        />
-                        {/* One application, for the person running the shoot.
-                            The same component the admin and the brand read —
-                            and until this route existed there was no URL a
-                            campaign manager could open to see one at all,
-                            although `get_application` has always served them.
-                            That gap cost them the three things the server
-                            already lets them do: review a draft, answer a
-                            creator's question, and read the work notes.
+                        {/* **The signed-in app, inside its shell.** Every
+                            route here renders beside the navy sidebar, which
+                            stays mounted while somebody moves between them —
+                            so the navigation never re-draws under the cursor.
+                            The console is its own layout below, built from the
+                            same sidebar parts. The brief feed and a brief's
+                            page above are public pages and stay outside it. */}
+                        <Route element={<AppShell />}>
+                            <Route
+                                path="/dashboard"
+                                element={
+                                    <ProtectedRoute>
+                                        <Dashboard />
+                                    </ProtectedRoute>
+                                }
+                            />
+                            {/* The shoot calendar. One page, three scopes — the
+                                endpoint decides what each role sees, so the route
+                                takes the union of the three rather than three
+                                near-identical routes. */}
+                            <Route
+                                path="/calendar"
+                                element={
+                                    <ProtectedRoute
+                                        roles={[...BRAND_ROLES, "campaign_manager", "admin"]}
+                                    >
+                                        <ShootCalendar />
+                                    </ProtectedRoute>
+                                }
+                            />
+                            {/* Opened by a camera at a venue. Creator-only: the
+                                code checks a booking, and nobody else has one. */}
+                            <Route
+                                path="/check-in"
+                                element={
+                                    <ProtectedRoute roles={["creator"]}>
+                                        <SelfCheckIn />
+                                    </ProtectedRoute>
+                                }
+                            />
+                            <Route
+                                path="/onboarding/creator"
+                                element={
+                                    <ProtectedRoute roles={["creator"]}>
+                                        <CreatorOnboarding />
+                                    </ProtectedRoute>
+                                }
+                            />
+                            {/* Where Instagram redirects back to after OAuth.
+                                Must match INSTAGRAM_REDIRECT_URI on the server. */}
+                            <Route
+                                path="/onboarding/creator/instagram"
+                                element={
+                                    <ProtectedRoute roles={["creator"]}>
+                                        <InstagramCallback />
+                                    </ProtectedRoute>
+                                }
+                            />
+                            <Route
+                                path="/onboarding/brand"
+                                element={
+                                    <ProtectedRoute roles={BRAND_ROLES}>
+                                        <BrandOnboarding />
+                                    </ProtectedRoute>
+                                }
+                            />
+                            <Route
+                                path="/campaigns/new"
+                                element={
+                                    <ProtectedRoute roles={BRAND_ROLES}>
+                                        <PostCampaign />
+                                    </ProtectedRoute>
+                                }
+                            />
+                            <Route
+                                path="/campaigns/:id/edit"
+                                element={
+                                    <ProtectedRoute roles={BRAND_ROLES}>
+                                        <PostCampaign />
+                                    </ProtectedRoute>
+                                }
+                            />
+                            <Route
+                                path="/brand/campaigns/:id/results"
+                                element={
+                                    <ProtectedRoute roles={[...BRAND_ROLES, "admin"]}>
+                                        <CampaignResults />
+                                    </ProtectedRoute>
+                                }
+                            />
+                            <Route
+                                path="/brand/campaigns/:id/applicants"
+                                element={
+                                    <ProtectedRoute roles={[...BRAND_ROLES, "admin"]}>
+                                        <BrandCampaignApplicants />
+                                    </ProtectedRoute>
+                                }
+                            />
+                            {/* Your own profile, read-only. Editing lives at
+                                /onboarding/creator and is reached from here — it
+                                used to be the only way to see your own details. */}
+                            <Route
+                                path="/profile"
+                                element={
+                                    <ProtectedRoute roles={["creator"]}>
+                                        <CreatorProfile />
+                                    </ProtectedRoute>
+                                }
+                            />
+                            <Route
+                                path="/brand/applications/:id"
+                                element={
+                                    <ProtectedRoute roles={[...BRAND_ROLES, "admin"]}>
+                                        <ApplicationDetail
+                                            backTo="/brand/dashboard"
+                                            backLabel="Dashboard"
+                                            standalone
+                                        />
+                                    </ProtectedRoute>
+                                }
+                            />
+                            <Route
+                                path="/manager"
+                                element={
+                                    <ProtectedRoute roles={["campaign_manager", "admin"]}>
+                                        <ManagerHome />
+                                    </ProtectedRoute>
+                                }
+                            />
+                            <Route
+                                path="/manager/campaigns/:id"
+                                element={
+                                    <ProtectedRoute roles={["campaign_manager", "admin"]}>
+                                        <ManagerCampaign />
+                                    </ProtectedRoute>
+                                }
+                            />
+                            {/* One application, for the person running the shoot.
+                                The same component the admin and the brand read —
+                                and until this route existed there was no URL a
+                                campaign manager could open to see one at all,
+                                although `get_application` has always served them.
+                                That gap cost them the three things the server
+                                already lets them do: review a draft, answer a
+                                creator's question, and read the work notes.
 
-                            `slotBase` is the only thing that differs. The
-                            other actions are brand-owned transitions the
-                            server never offers a manager, so their buttons do
-                            not render here. */}
-                        <Route
-                            path="/manager/applications/:id"
-                            element={
-                                <ProtectedRoute roles={["campaign_manager", "admin"]}>
-                                    <ApplicationDetail
-                                        standalone
-                                        slotBase="/manager"
-                                        backTo="/manager"
-                                        backLabel="My campaigns"
-                                        crumbs={[
-                                            { label: "My campaigns", to: "/manager" },
-                                            { label: "Application" },
-                                        ]}
-                                    />
-                                </ProtectedRoute>
-                            }
-                        />
+                                `slotBase` is the only thing that differs. The
+                                other actions are brand-owned transitions the
+                                server never offers a manager, so their buttons do
+                                not render here. */}
+                            <Route
+                                path="/manager/applications/:id"
+                                element={
+                                    <ProtectedRoute roles={["campaign_manager", "admin"]}>
+                                        <ApplicationDetail
+                                            standalone
+                                            slotBase="/manager"
+                                            backTo="/manager"
+                                            backLabel="My campaigns"
+                                            crumbs={[
+                                                { label: "My campaigns", to: "/manager" },
+                                                { label: "Application" },
+                                            ]}
+                                        />
+                                    </ProtectedRoute>
+                                }
+                            />
+                        </Route>
                         {/* The console is a layout, and everything under it is
                             its own address. `/admin/login` is declared above
                             this block and stays a separate page — it is the

@@ -6048,6 +6048,70 @@ thirty paths and fails them if they disagree.
   upper-cases what somebody types and is not a label; the team screen's
   one-time password keeps a monospace face, because it is read aloud.
 
+### The shell
+
+**Every signed-in surface navigates from one navy sidebar**, built from one
+set of parts in `components/app/SideNav.jsx`:
+- the logo at the head;
+- items in Manrope 600 with a white-10% pill on the current one;
+- red count badges (accent-ink, white word);
+- small sentence-case group headings;
+- the account at the foot.
+
+Two assemblies use those parts. `AppShell` (a lazy layout route in `App.js`,
+chunk `app-shell`) wraps every app path except the console. The console's
+`AdminSidebar` wraps its own sections, grouped by `SECTION_GROUP`, and keeps
+its collapse and saved filter sets.
+
+- **The shared `Navbar` renders nothing inside a shell** (`useInShell`, from
+  `components/app/shellContext.js` — the one file in `components/app/` a
+  public page may import). The nineteen pages that render it keep rendering
+  it; it shows up only on the public pages it belongs to.
+- **Only real destinations.** The boards draw "Campaigns", "Applicants",
+  "Content" and "Payments" for a brand. None is a page here, so the brand's
+  column is Overview, Post a brief, Calendar and Brand profile.
+  `test_app_shell.py` fails a sidebar link that routes nowhere.
+- **The sidebar fetches nothing.** A count is published by a page that
+  already has it (`useShellBadges`) and outlives that page, because the shell
+  does.
+- **Its own Suspense around the page only**, so moving between two app pages
+  in different chunks never takes the column down. `RouteFallback` draws the
+  column on an app path (read off `data-surface`), so the first load does not
+  shift sideways.
+- **Below `md`** the column is a sheet, opened from a 4rem top bar that holds
+  the logo and the bell. **One bell per screen** (`useWide`), because each one
+  fetches the notifications on mount.
+- `--nav-h` is what everything sticky clears: 4rem by default, 0 inside the
+  app from `md`. `STICKY` in `DenseView` reads it, and the content columns are
+  `overflow-x-clip` so a sticky bar's blur bleed stops at the sidebar.
+
+### The visual system
+
+Tokens, not inline values, so the colour sweeps hold and the console's dark
+set reads through the same components:
+
+| Token | Value | What it is for |
+| --- | --- | --- |
+| `--app-ground` | #F3F0EA | The app's `--background` on the light set. Grain is off in the app. |
+| `--shadow-card` | navy hairline + soft long shadow | The card's lift, and the one shadow on something that does not float. |
+| `--state-due` / `--state-info` | amber 5.31:1 / slate 11.1:1 | Two new pill tones beside good/warn. |
+| `--wash-red` / `--wash-navy` / `--wash-cream` / `--wash-warm` | — | Action-card tints, the AI card, the ghost button. |
+| `--btn-radius` / `--btn-weight` | 12px / 700 in the app; 14px / 500 outside | Read by the one `Button`, so every app button changes and no public one does. |
+
+`components/app/ui.jsx` holds the primitives the dashboards use:
+- `AppCard` (white, 20px, no border, the shadow);
+- `CardHeading` (800 16px);
+- `Pill` (five tones);
+- `ActionCard` (red for the item whose clock is running, navy otherwise, one button);
+- `StatTile`;
+- `Sparkline` (draws once through `.dash-draw`, invents nothing between points);
+- `AiSummaryCard` (absent unless `aiLive("campaignSummary")` **and** a summary arrived).
+
+**The red button is accent-ink (#C41E27) with a white word, not the brand
+red.** White on #FF2731 is 3.76:1; on accent-ink it is 5.90:1. It is the
+`urgent` variant, at most one per card. `solid` is navy and `quiet` is the
+warm ghost.
+
 ## Design system
 
 `design_guidelines.json` describes what ships: light by default, navy headings

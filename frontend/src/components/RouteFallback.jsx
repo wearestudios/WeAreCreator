@@ -21,7 +21,40 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { LoadingAnnouncement } from "@/components/data/PageSkeleton";
 import { ROUTE_FALLBACK as IDS } from "@/constants/testIds";
 
+/** Whether this load is inside the signed-in app — read off the attribute
+ * the pre-paint script already wrote, which is the one fact about the chrome
+ * this fallback can know rather than guess. */
+const inApp = () =>
+    typeof document !== "undefined" &&
+    document.documentElement.getAttribute("data-surface") === "app";
+
 export default function RouteFallback() {
+    if (inApp()) {
+        // **The app's column, held.** A signed-in page arrives beside the
+        // navy sidebar (and under a 4rem bar on a phone); a fallback drawing
+        // the public site's bar instead would shift the page sideways the
+        // moment the shell lands. Shapes only — no links, no names.
+        return (
+            <div data-testid={IDS.root} className="flex min-h-screen bg-background text-foreground">
+                <div
+                    aria-hidden="true"
+                    data-surface="inverse"
+                    className="sticky top-0 hidden h-screen w-[244px] shrink-0 bg-card md:block"
+                />
+                <div className="min-w-0 flex-1">
+                    <div className="h-16 border-b border-border md:hidden" aria-hidden="true" />
+                    <main className="mx-auto max-w-5xl px-6 py-12 md:py-16">
+                        <div aria-hidden="true" className="space-y-6">
+                            <Skeleton className="h-3 w-28" />
+                            <Skeleton className="h-10 w-3/4 max-w-md" />
+                            <Skeleton className="h-4 w-full max-w-lg" />
+                        </div>
+                        <LoadingAnnouncement testid={IDS.announce}>Loading this section…</LoadingAnnouncement>
+                    </main>
+                </div>
+            </div>
+        );
+    }
     return (
         <div
             data-testid={IDS.root}

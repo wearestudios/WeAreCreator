@@ -328,6 +328,31 @@
          * shape — violet ink at AA on its own wash. */
         --state-done: 262 66% 45%;
         --state-done-wash: 262 60% 95.5%;
+        /* "Due soon": a clock that is running but has not run out — the
+         * payout on day five of seven. Amber, and not the pending amber: a
+         * state that needs a person soon is a different fact from one that
+         * is merely waiting. #8A5A00 on #FFF1D6 is 5.31:1. */
+        --state-due: 39.1 100% 27.1%; /* #8A5A00 */
+        --state-due-wash: 40.5 100% 92%; /* #FFF1D6 */
+        /* "Info": the neutral pill — whose move it is when it is not yours.
+         * #26344D on #EBEFF6 is 11.1:1. */
+        --state-info: 218 34% 22.5%; /* #26344D */
+        --state-info-wash: 218 38.5% 94.9%; /* #EBEFF6 */
+
+        /* The app's look (see "The app's look" in CLAUDE.md). The warm ground
+         * the app sits on, and the three tints a card can carry: red for the
+         * one item whose clock is running, navy for the others, cream for
+         * what the AI wrote. Grounds only — a word on them is foreground or
+         * a state ink. */
+        --app-ground: 40 27.3% 93.5%; /* #F3F0EA */
+        --wash-red: 0 100% 97.3%; /* #FFF1F1 */
+        --wash-navy: 223 33.3% 95.9%; /* #F1F3F8 */
+        --wash-cream: 32 100% 96.7%; /* #FFF7EE */
+        --wash-warm: 40 24.3% 92.7%; /* #F1EEE8 the ghost button, a track */
+        /* A card's lift: a hairline and a long soft shadow, both navy. The
+         * one place the app uses box-shadow on something that does not
+         * float, and it is a token so a card cannot invent its own. */
+        --shadow-card: 0 1px 0 hsl(var(--brand-navy) / 0.04), 0 10px 30px -22px hsl(var(--brand-navy) / 0.35);
 
         /* Radius. The scale the brief asked for, recorded in
          * design_guidelines.json: sm 10 · md 14 · lg 20 · xl 22 · pill. */
@@ -399,6 +424,16 @@
         --state-progress-wash: 199 89% 60% / 0.12;
         --state-done: 262 83% 68%; /* violet */
         --state-done-wash: 262 83% 68% / 0.12;
+        --state-due: 43 96% 56%;
+        --state-due-wash: 43 96% 56% / 0.12;
+        --state-info: 216 38% 85%;
+        --state-info-wash: 216 38% 95% / 0.08;
+        --app-ground: var(--background);
+        --wash-red: 357.2 100% 57.6% / 0.12;
+        --wash-navy: 216 38% 95% / 0.06;
+        --wash-cream: 32 100% 70% / 0.08;
+        --wash-warm: 217 48% 17%;
+        --shadow-card: 0 0 0 1px hsl(217 40% 22%);
 
         /* The old radius, with the old surface: the marketing pages were
          * drawn to an 8px maximum and are not being redrawn here. */
@@ -481,6 +516,15 @@
         /* The app's label: sentence case, Manrope 600, never tracked. What
          * the eyebrow is inside `[data-surface="app"]`. */
         --text-label: 12.5px;
+        /* The height of the bar above the page, which everything sticky
+         * clears. 4rem everywhere a top bar exists; the app scope sets it to
+         * 0 from `md`, where the navigation is a sidebar instead. */
+        --nav-h: 4rem;
+        /* A button's corner and weight. The public site's are the old ones;
+         * the app's are 12px and 700. Tokens rather than a fork of the
+         * component, because the same `Button` renders on both. */
+        --btn-radius: var(--radius-md);
+        --btn-weight: 500;
         --text-meta: 14px;
         --text-body: 16px;
         --text-body-lg: 17px;
@@ -612,6 +656,24 @@
         --text-h3: 20px;
         --text-h2: clamp(1.375rem, 1.27rem + 0.44vw, 1.625rem); /* 22 → 26px */
         --text-h1: clamp(1.625rem, 1.47rem + 0.66vw, 2rem); /* 26 → 32px */
+    }
+    /* The look. The warm ground on the light set (the console's dark set
+     * keeps its own), no grain — the app is a working surface, not a printed
+     * one — and the button and bar tokens above. */
+    html[data-surface="app"]:not([data-theme="dark"]) {
+        --background: var(--app-ground);
+    }
+    [data-surface="app"] {
+        --btn-radius: 12px;
+        --btn-weight: 700;
+    }
+    @media (min-width: 768px) {
+        [data-surface="app"] {
+            --nav-h: 0px;
+        }
+    }
+    [data-surface="app"] .grain-page {
+        background-image: none;
     }
     /* Inter Tight's stylistic sets mean nothing to Manrope, and the -0.005em
      * the public site tightens its body by is Inter Tight's correction. */

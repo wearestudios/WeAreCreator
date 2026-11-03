@@ -98,6 +98,15 @@ module.exports = {
                 lg: "var(--radius-lg)",
                 xl: "var(--radius-xl)",
                 pill: "9999px",
+                // The app's two in-between corners: a button (12px) and a
+                // stat tile (16px). A card is `lg` (20px).
+                button: "var(--btn-radius)",
+                tile: "16px",
+            },
+            boxShadow: {
+                // The app's card: a hairline and a long soft shadow, as a
+                // token. Nothing else in the app writes a shadow of its own.
+                card: "var(--shadow-card)",
             },
             colors: {
                 background: "hsl(var(--background))",
@@ -158,6 +167,13 @@ module.exports = {
                     foreground: "hsl(var(--inverse-foreground) / <alpha-value>)",
                     muted: "hsl(var(--inverse-muted) / <alpha-value>)",
                 },
+                // The app's grounds: red for the item whose clock is
+                // running, navy for the others, cream for what the AI wrote,
+                // warm grey for a ghost button or a track.
+                "wash-red": "hsl(var(--wash-red))",
+                "wash-navy": "hsl(var(--wash-navy))",
+                "wash-cream": "hsl(var(--wash-cream))",
+                "wash-warm": "hsl(var(--wash-warm))",
                 // For a surface that must stay one colour whichever theme is
                 // mounted: the mark, and the studio's closing band. Constants.
                 brand: {
@@ -197,6 +213,12 @@ module.exports = {
                     "progress-wash": "hsl(var(--state-progress-wash))",
                     done: "hsl(var(--state-done) / <alpha-value>)",
                     "done-wash": "hsl(var(--state-done-wash))",
+                    // "Due soon" (amber, a running clock) and the neutral
+                    // "info" pill — the app's two additions.
+                    due: "hsl(var(--state-due) / <alpha-value>)",
+                    "due-wash": "hsl(var(--state-due-wash))",
+                    info: "hsl(var(--state-info) / <alpha-value>)",
+                    "info-wash": "hsl(var(--state-info-wash))",
                 },
                 // The literal `navy` and `red` scales are gone: every use is
                 // a semantic token or one of the `brand` constants above, and

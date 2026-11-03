@@ -9,6 +9,7 @@ import CreatorAvatarMenu from "@/components/CreatorAvatarMenu";
 import AdminAccountMenu from "@/components/admin/AdminAccountMenu";
 import { api } from "@/lib/api";
 import Logo from "@/components/brand/Logo";
+import { useInShell } from "@/components/app/shellContext";
 import {
     Sheet,
     SheetClose,
@@ -106,7 +107,16 @@ const MARKETING_LINKS = [
     { to: "/contact", label: "Contact", testId: "nav-contact" },
 ];
 
-export const Navbar = () => {
+/**
+ * **Nothing at all inside the app's shell.** The signed-in app navigates from
+ * the navy sidebar (`components/app/AppShell.jsx`, and the console's own), so
+ * a page that renders `<Navbar />` and finds itself inside a shell gets
+ * nothing — which is what lets the nineteen pages that render it keep
+ * rendering it, and the bar appear only on the public pages it belongs to.
+ */
+export const Navbar = (props) => (useInShell() ? null : <SiteNavbar {...props} />);
+
+const SiteNavbar = () => {
     const { user, logout } = useAuth();
     // The creator's own photo, for the avatar. Fetched here rather than
     // threaded down because the navbar is on every page and nothing else on
