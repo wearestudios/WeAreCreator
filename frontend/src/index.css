@@ -860,25 +860,18 @@
 }
 
 /* -----------------------------------------------------------------------
- * The wipe, in two halves, which is what makes it a wipe rather than a slide.
- *
- * The outer element clips and travels in from the right; the inner travels
- * the same distance the other way, so the two cancel and **the picture holds
- * still while the window opens over it**. Animate the outer alone and the
- * photograph slides in, which reads as a carousel; animate neither and it is
- * a cut.
- *
- * `translateX` on both rather than `clip-path`, deliberately: a clip is not
- * reliably promoted to the compositor, and this is the front door on mobile
- * data. Two transforms are.
+ * The hero slider's crossfade: the incoming slide rises 12px and fades in
+ * while the outgoing one fades out, 400ms on the site's one curve (applied
+ * inline by `HeroSlider`, which reads reduced motion and skips both). Opacity
+ * and transform only, so the compositor does all of it.
  * ------------------------------------------------------------------------- */
-@keyframes heroWipeWindow {
-    from { transform: translate3d(100%, 0, 0); }
-    to   { transform: translate3d(0, 0, 0); }
+@keyframes heroSlideIn {
+    from { opacity: 0; transform: translate3d(0, 12px, 0); }
+    to   { opacity: 1; transform: translate3d(0, 0, 0); }
 }
-@keyframes heroWipeHold {
-    from { transform: translate3d(-100%, 0, 0); }
-    to   { transform: translate3d(0, 0, 0); }
+@keyframes heroSlideOut {
+    from { opacity: 1; }
+    to   { opacity: 0; }
 }
 
 /* The per-slide progress bar: the visible proof that the picture and the word
@@ -1104,10 +1097,10 @@
         transform: none !important;
         will-change: auto !important;
     }
-    /* Same backstop for the wipe and the progress bar. The end state is the
-       first paint — slide one in place, the bar full — rather than a 0.01ms
-       animation of either. */
-    [style*="heroWipe"],
+    /* Same backstop for the crossfade and the progress bar. The end state is
+       the first paint — the slide in place, the bar full — rather than a
+       0.01ms animation of either. */
+    [style*="heroSlide"],
     [style*="heroProgress"],
     [style*="heroRailSlide"] {
         animation: none !important;

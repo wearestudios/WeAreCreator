@@ -71,10 +71,12 @@ export const PRODUCT_PREFIXES = [
  * one navy band each — the inversion is what marks that band as the one that
  * matters, and it only works if the page around it is light. The rest of the
  * marketing surface (contact, the legal pages, sign-in, the 404, the brief
- * feed) keeps the navy set it was drawn for. **Exact paths, not prefixes**:
+ * feed) keeps the navy set it was drawn for. `/about` is light because it is
+ * home's "Who built it" section moved to a page of its own, drawn for the
+ * light ground it left. **Exact paths, not prefixes**:
  * `/brands/{id}` is the server-rendered brand page and is not one of these.
  */
-export const LIGHT_MARKETING_PATHS = ["/", "/for-brands", "/for-creators"];
+export const LIGHT_MARKETING_PATHS = ["/", "/for-brands", "/for-creators", "/about"];
 
 export function isLightMarketingPath(pathname) {
     const path = String(pathname || "/");

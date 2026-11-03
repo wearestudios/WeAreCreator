@@ -31,6 +31,7 @@ export const TRACKED_PATHS = [
     "/how-it-works",
     "/why-weare",
     "/contact",
+    "/about",
     "/terms",
     "/privacy",
 ];

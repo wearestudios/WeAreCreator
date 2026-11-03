@@ -1,7 +1,8 @@
-// Product UI drawn for the public pages: the shortlist a brand reads, the
-// brief a creator applies to, the report at the end and a creator's record.
-// The hero's four step screens are `heroScreens.jsx`, and they borrow `Chip`
-// from here so the two speak one vocabulary of states.
+// Product UI drawn for the public pages: the deal on the homepage's first
+// slide, the shortlist a brand reads, the brief a creator applies to, the
+// report at the end and a creator's record. The hero's other slides are
+// `heroSlides.jsx`, and they borrow `Chip` and `ExampleCard` from here so the
+// two speak one vocabulary of states.
 //
 // **Drawn in the DOM, never screenshotted.** A screenshot dates the moment
 // somebody moves a button, and a real component would drag the app's data,
@@ -10,6 +11,9 @@
 // and every name and figure is invented and supplied by
 // `content/marketing.js`. What each one *shows* the product doing is real.
 import React from "react";
+import { Check } from "lucide-react";
+
+import { RowWriter } from "@/components/marketing/Entrances";
 
 const TONE = {
     warn: "border-state-pending/30 bg-state-pending-wash text-state-pending",
@@ -32,6 +36,84 @@ const Monogram = ({ text }) => (
         {text}
     </span>
 );
+
+/** The small "Example" tag every drawn card on the homepage carries. */
+export const ExampleTag = ({ children }) => (
+    <span className="shrink-0 rounded-pill border border-border px-2 py-0.5 text-[0.75rem] text-muted-foreground">
+        {children}
+    </span>
+);
+
+/**
+ * The card a hero visual sits in: a head, the "Example" tag, and a body that
+ * takes the rest of the frame's fixed height. White on the page ground, a
+ * hairline, no shadow — it sits in the page rather than floating over it.
+ */
+export function ExampleCard({ head, sub, tag, className = "", bodyClassName = "", children, testid }) {
+    return (
+        <div data-testid={testid} className={`flex flex-col overflow-hidden rounded-lg border border-border bg-card ${className}`}>
+            <div className="flex items-start justify-between gap-3 border-b border-border px-4 py-3 sm:px-5">
+                <div className="min-w-0">
+                    <p className="truncate text-[0.9375rem] font-medium text-foreground">{head}</p>
+                    {sub ? <p className="mt-0.5 truncate text-[0.8125rem] text-muted-foreground">{sub}</p> : null}
+                </div>
+                <ExampleTag>{tag}</ExampleTag>
+            </div>
+            <div className={`flex-1 ${bodyClassName}`}>{children}</div>
+        </div>
+    );
+}
+
+/**
+ * Slide A's visual: the deal. The brief's budget, the creator's quote, and
+ * the fee agreed — **the one large figure** — written in row by row as the
+ * slide first comes into view, then the terms frozen at acceptance.
+ *
+ * In the page's own chunk, because it is on screen at first paint; the other
+ * three slides' visuals arrive after it. On a phone the note goes and the
+ * padding tightens — a smaller card, not the desktop one scaled down.
+ */
+export function DealCard({ card, rowTestid, testid }) {
+    const rows = card.rows.map((row, i) => ({
+        key: `${row.who}-${i}`,
+        final: Boolean(row.final),
+        node: (
+            <div
+                data-testid={rowTestid ? rowTestid(i) : undefined}
+                className="flex items-center justify-between gap-3 border-b border-border py-2.5 sm:py-3"
+            >
+                <span className={`text-meta ${row.final ? "font-semibold text-foreground" : "text-muted-foreground"}`}>
+                    {row.who}
+                </span>
+                {row.final ? (
+                    <span className="font-serif text-[2rem] leading-none text-heading sm:text-[2.5rem]">{row.amount}</span>
+                ) : (
+                    <span className="text-body text-foreground">{row.amount}</span>
+                )}
+            </div>
+        ),
+    }));
+    return (
+        <ExampleCard
+            testid={testid}
+            head={card.title}
+            sub={card.subline}
+            tag={card.tag}
+            className="h-full"
+            bodyClassName="flex flex-col justify-center px-4 py-2 sm:px-5"
+        >
+            <RowWriter rows={rows} />
+            <div className="flex items-center justify-between gap-3 py-3">
+                <span className="text-meta text-muted-foreground">{card.termsLabel}</span>
+                <Chip tone="good">
+                    <Check aria-hidden className="mr-1 h-3 w-3" />
+                    {card.terms}
+                </Chip>
+            </div>
+            <p className="hidden rounded-md bg-muted p-3 text-meta text-muted-foreground sm:block">{card.note}</p>
+        </ExampleCard>
+    );
+}
 
 /** Scored applicants, the match as a number, the reasons beside it. */
 export function ShortlistCard({ card, rowTestid, showWhy = false }) {

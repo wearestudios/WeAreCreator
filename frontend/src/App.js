@@ -58,6 +58,7 @@ const AdminLogin = load(() => import(/* webpackChunkName: "auth" */ "@/pages/Adm
 const ForBrands = load(() => import(/* webpackChunkName: "marketing" */ "@/pages/ForBrands"));
 const ForCreators = load(() => import(/* webpackChunkName: "marketing" */ "@/pages/ForCreators"));
 const Contact = load(() => import(/* webpackChunkName: "marketing" */ "@/pages/Contact"));
+const About = load(() => import(/* webpackChunkName: "marketing" */ "@/pages/About"));
 const NotFound = load(() => import(/* webpackChunkName: "marketing" */ "@/pages/NotFound"));
 const Terms = load(() =>
     import(/* webpackChunkName: "marketing" */ "@/pages/Legal").then((m) => ({ default: m.Terms })),
@@ -311,6 +312,7 @@ function App() {
                             <Route key={from} path={from} element={<Navigate to={to} replace />} />
                         ))}
                         <Route path="/contact" element={<Contact />} />
+                        <Route path="/about" element={<About />} />
                         <Route
                             path="/dashboard"
                             element={

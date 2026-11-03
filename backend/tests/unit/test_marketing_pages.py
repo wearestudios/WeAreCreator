@@ -71,12 +71,13 @@ PAGES = {
     "brands": ("src", "pages", "ForBrands.jsx"),
     "creators": ("src", "pages", "ForCreators.jsx"),
     "home": ("src", "pages", "Home.jsx"),
+    "about": ("src", "pages", "About.jsx"),
 }
 
 CONTENT = ("src", "content", "marketing.js")
 
 # Which export in the content module holds each page's words.
-CONTENT_EXPORT = {"home": "HOME", "brands": "BRANDS", "creators": "CREATORS"}
+CONTENT_EXPORT = {"home": "HOME", "brands": "BRANDS", "creators": "CREATORS", "about": "ABOUT"}
 
 # The two that argue to one reader. Home is both-sides with brands first; the
 # contact page argues for nothing.
@@ -99,7 +100,7 @@ def content():
     """The content module, evaluated. It imports nothing, so node can run it
     as it stands."""
     script = read(*CONTENT) + (
-        "\nconsole.log(JSON.stringify({HOME, BRANDS, CREATORS, ASK, FACTS, WHATSAPP_HREF}));"
+        "\nconsole.log(JSON.stringify({HOME, BRANDS, CREATORS, ABOUT, ASK, FACTS, WHATSAPP_HREF}));"
     )
     out = subprocess.run(
         ["node", "--input-type=module", "-e", script], capture_output=True, text=True, timeout=60
@@ -181,8 +182,9 @@ _CITIES_COPY_MUST_NOT_NAME = ("bengaluru", "bangalore", "mumbai", "delhi", "blr"
 # Its answer is not.
 _CITY_QUESTION = "Is this only for Bengaluru?"
 
-# **The second, and why it is not a claim either.** Home's "who built it"
-# sentence says where WeAre Studios has *already* worked — a record of the
+# **The second, and why it is not a claim either.** The "who built it"
+# sentence — on home until it moved to /about — says where WeAre Studios has
+# *already* worked — a record of the
 # studio, in the past tense, not a statement of where the platform reaches.
 # Exempt verbatim, so a rewording that turns it into a footprint ("for every
 # Bengaluru brand") fails the sweep again.
@@ -218,14 +220,15 @@ def test_the_city_exemption_is_one_question_and_its_answer_says_no():
 
 
 def test_the_studio_record_is_the_one_other_exemption_and_is_past_tense():
-    """The second exemption is exactly home's section 6 sentence, it is about
-    the studio, and it is in the past tense — "has run … for years" — so it
-    reads as where the work was done, not as the platform's reach."""
-    assert content()["HOME"]["clients"]["fill"] == _STUDIO_RECORD
+    """The second exemption is exactly /about's "who built it" sentence, it is
+    about the studio, and it is in the past tense — "has run … for years" — so
+    it reads as where the work was done, not as the platform's reach."""
+    assert content()["ABOUT"]["clients"]["fill"] == _STUDIO_RECORD
     assert _STUDIO_RECORD.startswith("WeAre Studios has run ")
     assert "for years" in _STUDIO_RECORD
-    # It appears nowhere but home's section 6.
-    for name in ("brands", "creators"):
+    # It appears nowhere but /about, and home no longer carries the section.
+    assert "clients" not in content()["HOME"]
+    for name in ("home", "brands", "creators"):
         assert _STUDIO_RECORD not in _page_strings(name)
 
 
@@ -399,21 +402,21 @@ def test_the_audience_pages_do_not_ask_for_the_other_audience():
     assert "role=brand" not in page_text("creators")
 
 
-def test_home_is_brands_first_with_one_door_for_creators():
-    """Replaces `test_the_two_audience_pages_do_not_route_to_each_other_mid_page`
-    and `test_the_both_sides_pages_offer_two_paths_rather_than_inventing_one_ask`.
-
-    Home used to end on `TwoPaths`, two equal doors. It is brands-first now —
-    the hero, the close and the phone's sticky bar all ask a brand to post a
-    brief, in the same words — and creators get one band of their own, with
-    one door to /for-creators. The audience pages still never route to each
+def test_home_is_brands_first_and_asks_once():
+    """Home used to end on `TwoPaths`, two equal doors, and later on a close
+    and a creator band. It is two sections now, and brands-first: the hero
+    asks a brand to post a brief (and offers WhatsApp beside it), and the
+    phone's sticky bar repeats that one ask in the same words. There is no
+    close and no creator door on home — creators reach their page from the
+    navbar and the footer — and the audience pages still never route to each
     other."""
     src = read(*PAGES["home"])
-    assert src.count("ask={ASK.postBrief}") == 3
-    assert src.count("ask={ASK.talkWhatsapp}") == 1 and src.count("ask={ASK.haveUsRunIt}") == 1
+    hero = read("src", "components", "marketing", "HeroSlider.jsx")
+    assert src.count("ask={ASK.postBrief}") == 1, "the sticky bar"
+    assert hero.count("ask={ASK.postBrief}") == 1 and hero.count("ask={ASK.talkWhatsapp}") == 1
+    assert "Closing" not in src and "closeId" not in src
+    assert "haveUsRunIt" not in content()["ASK"] and "forCreators" not in content()["ASK"]
     assert "TwoPaths" not in src
-    assert content()["ASK"]["forCreators"]["to"] == "/for-creators"
-    assert src.count("ASK.forCreators") == 1
     for name in AUDIENCE:
         assert "TwoPaths" not in read(*PAGES[name]), name
     assert "export function TwoPaths" not in read("src", "components", "marketing", "Sections.jsx")
@@ -432,7 +435,7 @@ def test_each_page_sets_its_own_title_description_and_path(name):
     assert len(meta["title"]) >= 8 and len(meta["description"]) >= 20
     assert re.search(rf"const \{{ meta[^}}]*\}} = {CONTENT_EXPORT[name]};", src), name
     assert "title={meta.title}" in src and "description={meta.description}" in src
-    path = {"home": "/", "brands": "/for-brands", "creators": "/for-creators"}[name]
+    path = {"home": "/", "brands": "/for-brands", "creators": "/for-creators", "about": "/about"}[name]
     assert f'path="{path}"' in src
 
 
@@ -456,9 +459,45 @@ def test_no_two_pages_share_a_preview_title():
     assert len(set(titles)) == len(titles), titles
 
 
+def test_about_is_reached_from_the_footer_only():
+    """/about is the studio's story rather than the product's argument, so it
+    is linked from the footer — and mirrored there by the server, which builds
+    the sitemap from both lists — and **not** from the navbar, where it would
+    send somebody weighing up the product away from it."""
+    nav = read("src", "lib", "siteNav.js")
+    cols = nav[nav.index("export const FOOTER_COLUMNS") : nav.index("export const MARKETING_LINKS")]
+    links = nav[nav.index("export const MARKETING_LINKS") : nav.index("export const MARKETING_PATHS")]
+    assert '{ label: "About", to: "/about" }' in cols
+    assert "/about" not in links
+    assert ("About", server.ABOUT_PATH) in dict(server.FOOTER_COLUMNS)["Company"]
+    assert server.ABOUT_PATH == "/about" and "/about" in server.MARKETING_PATHS
+    assert '"/about"' in nav[nav.index("export const MARKETING_PATHS") :].split("\n")[0]
+    for rel in (("src", "components", "marketing", "MarketingNavbar.jsx"), ("src", "components", "Navbar.jsx")):
+        assert '"/about"' not in read(*rel), rel
+
+
+def test_about_names_no_team_member_and_no_client():
+    """The page is about the studio, and names neither its people nor its
+    clients: the partners' names live on /contact, where somebody is choosing
+    whom to ring, and a client's name on a public page reads as an
+    endorsement nobody gave."""
+    nav = read("src", "lib", "siteNav.js")
+    people = re.findall(r'name: "([^"]+)"', nav[nav.index("export const CONTACT_PEOPLE") :])
+    assert people, "the partners' names could not be read"
+    text = page_text("about") + " " + " ".join(_page_strings("about"))
+    for person in people:
+        for part in person.split():
+            assert part not in text, part
+    for real in content()["FACTS"]["confirmedClients"]:
+        assert real not in text, real
+    about = copy_of(*PAGES["about"])
+    assert "STUDIO_URL" in about and "if (!STUDIO_URL) return STUDIO_NAME;" in about
+    assert about.count("<Cta ask=") == 1 and "<Cta ask={ASK.talkWhatsapp}" in about
+
+
 @pytest.mark.parametrize("path,element", [
     ("/", "<Home />"), ("/for-brands", "<ForBrands />"), ("/for-creators", "<ForCreators />"),
-    ("/contact", "<Contact />"),
+    ("/contact", "<Contact />"), ("/about", "<About />"),
 ])
 def test_every_marketing_page_is_a_registered_route(path, element):
     app = read("src", "App.js")
@@ -550,6 +589,9 @@ def test_each_page_wears_the_marketing_scale(name):
     borrow the product's fluid scale; they are set on the marketing scale now,
     which carries Fraunces with it, and the overline is the `mkt-label`."""
     src = read(*PAGES[name])
+    if name == "home":
+        # Home's display type is the hero slider's.
+        src += read("src", "components", "marketing", "HeroSlider.jsx")
     parts = read("src", "components", "marketing", "SiteParts.jsx")
     assert re.search(r"\bmkt-(?:display|h1)\b", src), name
     assert "mkt-h2" in parts and "mkt-label" in parts
@@ -582,6 +624,9 @@ def _slot_ids(name):
     src = read(*PAGES[name]) + read("src", "components", "marketing", "SiteParts.jsx")
     ids = set(re.findall(r'slot="([\w-]+)"', read(*PAGES[name])))
     ids |= set(re.findall(r'<PhotoSlot id="([\w-]+)"', src))
+    if name == "home":
+        # Slide C of the hero slider names its slot in the content module.
+        ids.add(content()["HOME"]["slides"]["onLocation"]["slot"])
     return ids
 
 
@@ -611,20 +656,24 @@ def test_no_image_path_is_written_in_a_page(name):
     JSX is a second place it has to be changed."""
     for rel in (PAGES[name], ("src", "components", "marketing", "SiteParts.jsx"),
                 ("src", "components", "marketing", "siteMocks.jsx"),
-                ("src", "components", "marketing", "ComparisonBand.jsx")):
+                ("src", "components", "marketing", "HeroSlider.jsx"),
+                ("src", "components", "marketing", "heroSlides.jsx")):
         code = copy_of(*rel)
         assert not re.search(r"\.(?:png|jpe?g|webp|avif|svg)\b|/img/", code), rel
 
 
 def test_every_full_bleed_band_is_the_two_to_one_slot():
-    """Each page has one full-bleed photograph at 2400×1200, under the id the
-    brief names."""
+    """Each audience page has one full-bleed photograph at 2400×1200, under
+    the id the brief names. Home's slot is the same 2:1 photograph, drawn in
+    the hero slider's "On location" slide rather than as a band of its own."""
     manifest = read("src", "content", "photoSlots.js")
-    for name, sid in (("home", "home-on-location"), ("brands", "brands-full-room"),
-                      ("creators", "creators-on-shoot")):
+    for name, sid in (("brands", "brands-full-room"), ("creators", "creators-on-shoot")):
         assert f'slot="{sid}"' in read(*PAGES[name]), name
+    for sid in ("home-on-location", "brands-full-room", "creators-on-shoot"):
         block = manifest[manifest.index(f'"{sid}"') :]
         assert "width: 2400," in block[:400] and "height: 1200," in block[:400], sid
+    assert content()["HOME"]["slides"]["onLocation"]["slot"] == "home-on-location"
+    assert "PhotoBand" not in read(*PAGES["home"])
 
 
 # --- The numbers --------------------------------------------------------------
@@ -672,37 +721,41 @@ def test_home_does_not_promise_that_every_brief_pays_money():
 # --- Home ---------------------------------------------------------------------
 
 
-def test_home_is_the_eight_sections_in_order():
-    """Replaces `test_home_keeps_only_what_routes`. Home is brands-first and
-    eight sections long: hero, the problem, a photograph, how it works, the
-    navy band, who built it, the creator door, the close — in that order, and
-    nothing else. The proof strip, the brand wall, the case studies and the
-    leaderboard are not on it; the server-backed ones stay in the tree,
-    unmounted.
+def test_home_is_the_two_sections_in_order():
+    """Was `test_home_is_the_eight_sections_in_order`. **Home is two sections
+    now**: the hero slider, then how it works — then the footer. The problem,
+    the photograph, the promises, who built it, the creator door and the close
+    were the same story told again below a spine that already walks through
+    it; the story went into the slider, one slide each, and "who built it" is
+    /about. None of the removed bands is mounted, and the components only home
+    used are deleted rather than left unmounted.
 
-    **"How it works" is the process spine now**, and it replaced the old
-    section in place rather than becoming a ninth: the four illustrated steps
-    and the scroll film beside them are gone, files and copy, and the spine
-    keeps the section's number and its `#how-it-works` anchor, which
-    `/how-it-works` redirects to. It is CSS transitions and two observers, so
-    the homepage's first paint still carries no animation library."""
+    **"How it works" is the process spine**, keeping its `#how-it-works`
+    anchor, which `/how-it-works` redirects to. It is CSS transitions and two
+    observers, so the homepage's first paint still carries no animation
+    library."""
     src = copy_of(*PAGES["home"])
     body = src[src.index("export default function Home") :]
-    # "What the AI does" sits after How it works, and only while a switch is
-    # on — see test_ai_switches and HomeAiSection.test.jsx.
-    order = ["<Hero />", "<ComparisonBand", '<PhotoBand slot="home-on-location"', "<ProcessSpine",
-             "<AiSection", "<PromiseBand", "<WhoBuiltIt", "<CreatorDoor", "<Closing"]
+    order = ["<HeroSlider", "<ProcessSpine", "<StickyCta"]
     positions = [body.index(tag) for tag in order]
     assert positions == sorted(positions), order
-    assert body.count("<ProcessSpine") == 1, "one how-it-works section, not two"
-    for gone in ("ProofStrip", "BrandWall", "CaseStudyStrip", "CreatorLeaderboard",
-                 "TwoPaths", "HandshakeBand", "HeroSlider", "KineticHeadline",
-                 "HowItWorks", "CampaignFilm"):
+    assert re.findall(r"<([A-Z]\w+)", body[body.index("<MarketingPage") :]) == [
+        "MarketingPage", "HeroSlider", "ProcessSpine", "StickyCta",
+    ], "two sections and the phone's sticky ask, nothing else"
+    assert '<ProcessSpine n={2} id="how-it-works" />' in body
+    for gone in ("ComparisonBand", "PhotoBand", "PromiseBand", "WhoBuiltIt", "CreatorDoor", "Closing",
+                 "AiSection", "BeforeAfterStrip", "ProofStrip", "BrandWall", "CaseStudyStrip",
+                 "CreatorLeaderboard", "TwoPaths", "HandshakeBand", "KineticHeadline", "CampaignFilm",
+                 "HeroDeck"):
         assert gone not in src, gone
     mkt = FRONTEND / "src" / "components" / "marketing"
-    for gone in ("CampaignFilm.jsx", "filmUI.jsx", "filmParts.jsx"):
+    for gone in ("CampaignFilm.jsx", "filmUI.jsx", "filmParts.jsx", "ComparisonBand.jsx",
+                 "BeforeAfterStrip.jsx", "HeroDeck.jsx", "heroScreens.jsx"):
         assert not (mkt / gone).exists(), gone
-    assert "film" not in content()["HOME"], "the film's copy went with it"
+    home = content()["HOME"]
+    for gone in ("film", "deck", "promises", "clients", "creatorDoor", "close"):
+        assert gone not in home, f"HOME.{gone} went with its section"
+    assert "strip" not in home["processSpine"]
     assert "framer-motion" not in read("src", "components", "marketing", "ProcessSpine.jsx")
 
 
@@ -714,17 +767,17 @@ def test_every_section_opens_on_the_numbered_rule():
     parts = copy_of("src", "components", "marketing", "SiteParts.jsx")
     rule = parts[parts.index("export function SectionRule") : parts.index("export function SectionHead")]
     assert "{sectionNumber(n)}" in rule and 'h-px flex-1 bg-border' in rule and "{label}" in rule
-    expected = {"home": [2, 4, 5, 6, 7, 8], "brands": [1, 2, 3, 5, 6, 7, 8], "creators": [1, 2, 3, 5, 6, 7]}
+    expected = {"home": [1, 2], "brands": [1, 2, 3, 5, 6, 7, 8], "creators": [1, 2, 3, 5, 6, 7],
+                "about": [1, 2, 3]}
     for name, numbers in expected.items():
         src = copy_of(*PAGES[name])
-        got = [int(n) for n in re.findall(r"\bn=\{(\d+)(?: \+ shift)?\}", src)]
-        if name == "home":
-            # The AI section is 5 when it renders, and everything after it
-            # moves up by `shift` (1 then, 0 without it). Both orders are
-            # rendered and read in HomeAiSection.test.jsx.
-            assert "<AiSection n={5}" in src and "const shift = aiCards.length ? 1 : 0;" in src
-            got.remove(5)
+        got = [int(n) for n in re.findall(r"\bn=\{(\d+)\}", src)]
         assert got == numbers, (name, got)
+    # Home's numbers do not move with the AI switches any more: the AI is a
+    # slide, not a section, so there is nothing to shift.
+    assert "shift" not in copy_of(*PAGES["home"])
+    hero = copy_of("src", "components", "marketing", "HeroSlider.jsx")
+    assert "<SectionRule n={n} label={copy.label} />" in hero
     out = subprocess.run(
         ["node", "--input-type=module", "-e", read(*CONTENT) + "\nconsole.log(sectionNumber(2));"],
         capture_output=True, text=True, timeout=60,
@@ -733,18 +786,23 @@ def test_every_section_opens_on_the_numbered_rule():
 
 
 def test_home_sends_readers_on_rather_than_telling_them_everything():
-    """A brand to signup, anybody to a person on WhatsApp, a creator to
-    /for-creators."""
-    text = page_text("home")
-    for dest in ("/signup?role=brand", "https://wa.me/", "/for-creators"):
-        assert dest in text, dest
+    """A brand to signup and anybody to a person on WhatsApp, from the hero.
+    A creator reaches /for-creators from the navbar and the footer — home no
+    longer has a creator band of its own."""
+    hero = read("src", "components", "marketing", "HeroSlider.jsx")
+    c = content()
+    for ask in ("postBrief", "talkWhatsapp"):
+        assert f"ask={{ASK.{ask}}}" in hero, ask
+    assert c["ASK"]["postBrief"]["to"] == "/signup?role=brand"
+    assert c["ASK"]["talkWhatsapp"]["href"].startswith("https://wa.me/")
+    nav = read("src", "lib", "siteNav.js")
+    assert nav.count('to: "/for-creators"') >= 2, "the navbar and the footer"
 
 
 def test_the_spine_is_five_steps_for_each_side():
     """Replaces `test_step_three_is_the_one_we_handle`, which pinned the old
     four-step section. The spine shows five steps for the brand and five for
-    the creator, switched; the hero's deck keeps its own four, and nothing
-    links to a step by anchor."""
+    the creator, switched, and nothing links to a step by anchor."""
     spine = content()["HOME"]["processSpine"]
     assert [t["key"] for t in spine["tabs"]] == ["brands", "creators"]
     assert [s["title"] for s in spine["steps"]["brands"]] == [
@@ -756,7 +814,6 @@ def test_the_spine_is_five_steps_for_each_side():
     for side in spine["steps"].values():
         for step in side:
             assert step["card"]["tag"] == "Example", step["key"]
-    assert [s["key"] for s in content()["HOME"]["deck"]["steps"]] == ["offer", "agree", "deliver", "paid"]
     assert "how" not in content()["HOME"] and "steps" not in content()["HOME"]
     src = read(*PAGES["home"])
     assert "#step-" not in src and "id={`step-" not in src
@@ -765,23 +822,26 @@ def test_the_spine_is_five_steps_for_each_side():
 def test_the_homepage_names_no_client():
     """Was `test_who_built_it_names_only_the_confirmed_clients`, which pinned
     the marquee reading `FACTS.confirmedClients`. **The marquee and the client
-    cards came off the homepage**, so this pins the other way round: home does
-    not import `Marquee` or read `confirmedClients`, no page renders a real
-    client's name, and section 6 is its rule, its heading and the one FillText
-    sentence. The list and the component are left intact for later use."""
+    cards came off the homepage, and "who built it" moved to /about**, so this
+    pins the other way round: neither page imports `Marquee` or reads
+    `confirmedClients`, no page renders a real client's name, and /about's
+    first section is its rule, its heading and the one FillText sentence. The
+    list and the component are left intact for later use."""
     clients = content()["FACTS"]["confirmedClients"]
     assert clients == ["The Brew Factory", "9889", "The Rameshwaram Cafe"]
     assert (FRONTEND / "src" / "components" / "marketing" / "Marquee.jsx").exists()
-    home = copy_of(*PAGES["home"])
-    assert "Marquee" not in home and "confirmedClients" not in home
-    for name in ("home", "brands", "creators"):
+    for name in ("home", "about"):
+        src = copy_of(*PAGES[name])
+        assert "Marquee" not in src and "confirmedClients" not in src, name
+    for name in ("home", "brands", "creators", "about"):
         text = page_text(name) + " " + " ".join(_page_strings(name))
         for real in clients:
             assert real not in text, (name, real)
-    section = home[home.index("function WhoBuiltIt") : home.index("function CreatorDoor")]
-    assert "<SectionHead" in section and "<FillText" in section
+    about = copy_of(*PAGES["about"])
+    section = about[about.index("<Band") : about.index("</Band>")]
+    assert "<SectionRule" in section and "<FillText" in section and "<h1" in section
     assert "<Card" not in section and "<ul" not in section
-    assert set(content()["HOME"]["clients"]) == {"label", "title", "fill"}
+    assert set(content()["ABOUT"]["clients"]) == {"label", "title", "fill"}
 
 
 # --- /brands: what /how-it-works and /why-weare used to argue -----------------
@@ -946,8 +1006,20 @@ def test_the_money_band_counts_once_and_names_the_amount_once():
 # the before/after strip and nine feature cards, three of them behind AI
 # switches and counted anyway. Home went from 561 to 697. Every mockup on the
 # spine is under `card`, drawn product UI, and does not count.
+#
+# **Lowered, for the first time, by what the two-section home took out.**
+# Home is the hero slider and the spine now: the problem band's heading, the
+# promises, "who built it", the creator door, the close, the before/after
+# strip and the three AI feature cards went, and the slides added two
+# headlines and two lines (the AI slide's are the old section's lead and a new
+# title). Home measures 453; the budget is that plus ten, so the next slide
+# has to argue with a number. /about is new at 160 and uses 82: "who built
+# it" moved there whole, with two short sections from claims the site
+# already makes. Slide C's headline and line are the photo slot's own, in
+# `photoSlots.js`, and are held by the slot tests rather than this count.
 BUDGET = {
-    "home": 697,
+    "home": 463,
+    "about": 160,
     "brands": 790,
     "creators": 378,
     "contact": 200,
@@ -1085,7 +1157,7 @@ def test_the_footer_links_every_marketing_page():
     """Three pages and a person, and no link to a retired path."""
     site = read("src", "lib", "siteNav.js")
     cols = site[site.index("export const FOOTER_COLUMNS") : site.index("export const MARKETING_LINKS")]
-    for path in ("/for-brands", "/for-creators", "/contact"):
+    for path in ("/for-brands", "/for-creators", "/contact", "/about"):
         assert f'"{path}"' in cols, path
     for old in RETIRED:
         assert f'"{old}"' not in cols, old
@@ -1099,7 +1171,7 @@ def test_the_sitemap_lists_every_marketing_page():
 
     src = _inspect.getsource(server.public_sitemap)
     assert "MARKETING_PATHS" in src
-    assert set(server.MARKETING_PATHS) == {"/", "/for-brands", "/for-creators", "/contact"}
+    assert set(server.MARKETING_PATHS) == {"/", "/for-brands", "/for-creators", "/contact", "/about"}
     assert not set(server.MARKETING_PATHS) & set(RETIRED)
 
 
@@ -1112,32 +1184,34 @@ def test_the_sitemap_lists_every_marketing_page():
 # contract; the docstring names what it replaced.
 
 
+HERO = ("src", "components", "marketing", "HeroSlider.jsx")
+
+
 def _h1():
-    src = read(*PAGES["home"])
+    src = read(*HERO)
     return src[src.index("<h1") : src.index("</h1>")]
 
 
-def test_the_hero_names_no_sector_and_the_slider_is_gone():
+def test_the_hero_names_no_sector_and_the_sector_slider_is_gone():
     """Replaces `test_the_headline_morphs_between_real_campaign_categories`.
 
     **Inverted on purpose.** That test pinned the hero's phrases to
     `CATEGORY_OPTIONS`. The hero does not rotate sectors: the h1 is static and
     one word is drawn once, so nothing in it reads the category list, and the
-    sector slider, its phrases, its drifts and its eight drawings are deleted
-    rather than left unmounted. The card beside it cycles the four *steps*
-    (restored from #39) — the stage of the job, which is what a visitor came
-    to find out, never the sector they already know."""
+    sector slider's phrases, drifts and eight drawings are deleted rather than
+    left unmounted. **`HeroSlider.jsx` is a different component under the old
+    name**: it slides the story — the deal, the problem, the shoot, the AI —
+    never the sector a visitor already knows, and reads no category list."""
     home = copy_of(*PAGES["home"])
     assert "CATEGORY_OPTIONS" not in home and "categories" not in home
     marketing = FRONTEND / "src" / "components" / "marketing"
-    for gone in ("HeroSlider.jsx", "KineticHeadline.jsx", "sectorCycle.jsx"):
+    for gone in ("KineticHeadline.jsx", "sectorCycle.jsx", "HeroDeck.jsx", "heroScreens.jsx"):
         assert not (marketing / gone).exists(), gone
-    # The card cycles again — the four steps, never a sector. The deck that
-    # does it reads no category list and never will.
-    for rel in (marketing / "HeroDeck.jsx", marketing / "heroScreens.jsx",
+    for rel in (marketing / "HeroSlider.jsx", marketing / "heroSlides.jsx",
                 FRONTEND / "src" / "lib" / "heroDeck.js"):
         code = _code(*rel.relative_to(FRONTEND).parts)
         assert "CATEGORY_OPTIONS" not in code and "categories" not in code, rel.name
+        assert "heroDrift" not in code, rel.name
     illus = FRONTEND / "public" / "img" / "marketing"
     for sector in ("fnb", "hospitality", "retail", "real-estate", "fashion", "travel", "wellness", "lifestyle"):
         assert not (illus / f"hero-{sector}.svg").exists(), sector
@@ -1146,9 +1220,11 @@ def test_the_hero_names_no_sector_and_the_slider_is_gone():
 def test_the_h1_is_static_and_whole_from_the_first_paint():
     """Replaces `test_the_constant_half_of_the_headline_never_animates`.
 
-    The whole `h1` is constant now — "Creator campaigns, minus the chasing."
-    — and is in the DOM complete from the first paint. Nothing in it holds
-    state or reads a timer; its only motion is one word's reveal."""
+    The whole `h1` is constant — "Creator campaigns, minus the chasing." —
+    and is in the DOM complete from the first paint, in slide A, which is the
+    one showing on load and the one the crossfade never touches until the
+    first advance. Nothing in it holds state or reads a timer; its only motion
+    is one word's reveal."""
     assert content()["HOME"]["hero"]["title"] == "Creator campaigns, minus the chasing."
     h1 = _h1()
     assert "{title.slice(0, at)}" in h1 and "{title.slice(at + accent.length)}" in h1
@@ -1167,111 +1243,125 @@ def test_one_word_is_drawn_once_in_true_italic():
     assert 'className="font-normal italic text-accent-ink"' in h1
     css = read("src", "index.css")
     assert re.search(r"--mkt-wipe:\s*520ms;", css)
-    assert "aria-live" not in copy_of(*PAGES["home"])
+    assert "aria-live" not in copy_of(*PAGES["home"]) + copy_of(*HERO)
 
 
-def test_the_hero_has_one_timer_and_it_is_the_decks():
+def test_the_hero_has_one_timer_and_it_is_the_sliders():
     """Replaces `test_the_picture_and_the_word_change_on_one_timer`, which
-    existed because two clocks drifted apart. **The card cycles again, on one
-    clock**: the deck's provider owns the only timer in the hero (driven in
-    `test_hero_deck.py`), and nothing else — the page, the drawn screens, the
-    problem band — starts one. The Agree screen writes the deal's rows in
-    once as it arrives, the way the card did."""
+    existed because two clocks drifted apart. The slider owns the only timer
+    in the hero (driven in `test_hero_slider.py`), and nothing else — the
+    page, the drawn visuals, the deal card — starts one. The deal's rows are
+    written in once as the card first comes into view."""
     for rel in (PAGES["home"], ("src", "components", "marketing", "siteMocks.jsx"),
-                ("src", "components", "marketing", "heroScreens.jsx"),
-                ("src", "components", "marketing", "ComparisonBand.jsx")):
+                ("src", "components", "marketing", "heroSlides.jsx")):
         code = copy_of(*rel)
         assert "setTimeout" not in code and "setInterval" not in code, rel
-    screens = copy_of("src", "components", "marketing", "heroScreens.jsx")
-    assert "<RowWriter rows={rows}" in screens
+    mocks = copy_of("src", "components", "marketing", "siteMocks.jsx")
+    deal = mocks[mocks.index("export function DealCard") : mocks.index("export function ShortlistCard")]
+    assert "<RowWriter rows={rows} />" in deal
 
 
 def test_the_h1_is_display_scale():
     """Replaces `test_the_headline_is_poster_scale`. The h1 is `mkt-display`,
-    which climbs from 52px to 104px — the brief's clamp."""
+    which climbs from 52px to 104px — the brief's clamp — and the other
+    slides' h2s are set the same size, so swapping slides does not change the
+    headline's weight on the page."""
     h1 = _h1()
     assert 'className="mkt-display' in h1
+    assert 'const H2 = "mkt-display text-heading";' in read(*HERO)
     css = read("src", "index.css")
     display = re.search(r"\.mkt-display \{(.*?)\}", css, flags=re.S).group(1)
     assert "clamp(3.25rem, 1.6rem + 5vw, 6.5rem)" in display
 
 
 def test_the_hero_card_reserves_its_box():
-    """Replaces `test_the_headline_reserves_its_box_by_rendered_width`. The
-    deck's stage is one fixed box at every width — the tallest screen's,
-    measured — so swapping screens moves nothing, and the deal's rows wait at
-    opacity 0 in boxes they already occupy, so writing them moves nothing
-    either. The deal is the card's own data (`HOME.card`), drawn on the Agree
-    screen with **the agreed fee as its one large figure**."""
+    """Replaces `test_the_headline_reserves_its_box_by_rendered_width`. Every
+    visual sits in a frame of fixed height at every width, so swapping slides
+    — or a visual still arriving in its chunk — moves nothing, and the deal's
+    rows wait at opacity 0 in boxes they already occupy, so writing them moves
+    nothing either. Every slide's words share one grid cell through a subgrid,
+    so the words' row is the tallest slide's and the visual never moves on a
+    phone either. The deal is `HOME.card`, with **the agreed fee as its one
+    large figure**."""
     css = read("src", "index.css")
     assert re.search(r"\.mkt-row \{\s*opacity: 0;\s*\}", css)
-    deck = copy_of("src", "components", "marketing", "HeroDeck.jsx")
-    stage = deck[deck.index("export function DeckStage") : deck.index("export function StepRail")]
-    assert "h-[21rem] w-full" in stage
-    screens = copy_of("src", "components", "marketing", "heroScreens.jsx")
-    agree = screens[screens.index("export function AgreeScreen") : screens.index("export function DeliverScreen")]
-    assert agree.count("font-serif text-[1.75rem]") == 1, "the agreed fee is the only large figure"
-    assert "mkt-label" not in agree
+    hero = copy_of(*HERO)
+    assert "h-[21rem] w-full max-w-[33.75rem] sm:h-[24rem] lg:h-[26rem]" in hero and "xl:h-[24rem]" in hero
+    assert "grid-rows-subgrid" in hero and "lg:grid-cols-subgrid" in hero
+    assert "col-start-1 row-start-1" in hero and "lg:col-start-1" in hero and "lg:row-start-1" in hero
+    mocks = copy_of("src", "components", "marketing", "siteMocks.jsx")
+    deal = mocks[mocks.index("export function DealCard") : mocks.index("export function ShortlistCard")]
+    assert deal.count("font-serif text-[2rem]") == 1, "the agreed fee is the only large figure"
+    assert "mkt-label" not in deal
     card = content()["HOME"]["card"]
     assert "chips" not in card and "kicker" not in card
     assert [r.get("final", False) for r in card["rows"]] == [False, False, True]
 
 
 def test_the_hero_is_still_under_reduced_motion():
-    """Replaces `test_the_headline_is_static_under_reduced_motion`. The wipe
-    and the row writer resolve to their end state in `index.css`; nothing in
-    the hero carries a motion branch of its own."""
+    """Replaces `test_the_headline_is_static_under_reduced_motion`. The wipe,
+    the row writer, the crossfade and the progress fill resolve to their end
+    state in `index.css`; the slider's only motion branch is the one that
+    stops the timer."""
     css = read("src", "index.css")
     reduced = "\n".join(re.findall(r"@media \(prefers-reduced-motion: reduce\) \{(.*?)\n\}", css, flags=re.S))
     assert ".mkt-wipe" in reduced and ".mkt-row" in reduced
-    assert "useReducedMotion" not in copy_of(*PAGES["home"])
+    assert '[style*="heroSlide"]' in reduced and '[style*="heroProgress"]' in reduced
+    assert "useReducedMotion" not in copy_of(*PAGES["home"]) + copy_of(*HERO)
 
 
 def test_the_h1_has_one_stable_accessible_name():
     """Replaces `test_the_headline_has_one_stable_accessible_name`. One `h1`,
-    its text the sentence. The half that checked the rail's `nav` of anchors
-    went with the rail; see `test_the_hero_is_exactly_its_five_elements`."""
-    src = read(*PAGES["home"])
-    assert src.count("<h1") == 1
+    its text the sentence."""
+    assert read(*HERO).count("<h1") == 1 and "<h1" not in read(*PAGES["home"])
     h1 = _h1()
     assert "aria-label" not in h1 and "aria-live" not in h1
 
 
-def test_the_hero_is_exactly_its_five_elements():
-    """The hero read as noise, and the fix was subtraction: the h1, one lead,
-    the two asks, one quiet line, and the card — which is the step deck now,
-    the card cycling the four steps. **No eyebrow, no Built-for
-    line, no step rail** — and in three type styles at most: the Fraunces
-    display h1, the Inter Tight lead, and Inter Tight UI. No label face."""
-    src = copy_of(*PAGES["home"])
-    hero = src[src.index("function Hero()") : src.index("function WhoBuiltIt")]
+def test_the_hero_is_a_badge_a_stage_and_one_row():
+    """Was `test_the_hero_is_exactly_its_five_elements`. The hero is the
+    section rule, the AI badge (two switches), the stage — each slide's
+    headline, one lead and its visual — and one row under it: the two asks
+    and the quiet line on the left, the tabs on the right. **No eyebrow, no
+    Built-for line**, and the type is the Fraunces display headline, the Inter
+    Tight lead and Inter Tight UI — the label face only in the section rule."""
+    hero = copy_of(*HERO)
+    body = hero[hero.index("export default function HeroSlider") :]
     assert "<nav" not in hero and "<Label" not in hero and "HERO_EYEBROW" not in hero
     assert "builtFor" not in hero and "railLabel" not in hero
     assert "mkt-label" not in hero
-    for el in ("<HeroTitle", "{hero.lead}", "ASK.postBrief", "ASK.talkWhatsapp", "{hero.note}", "<HeroDeckProvider"):
-        assert hero.count(el) == 1, el
+    for el in ("<SectionRule", "<AiBadge", "ASK.postBrief", "ASK.talkWhatsapp", "{hero.note}", 'role="tablist"'):
+        assert body.count(el) == 1, el
     styles = set(re.findall(r"\bmkt-[a-z0-9]+", hero))
-    assert styles <= {"mkt-lead"}, styles  # the h1's own class sits in HeroTitle
+    assert styles <= {"mkt-display", "mkt-lead"}, styles
     hero_copy = content()["HOME"]["hero"]
-    # `aiLead` is the lead's other wording, never a sixth element: one of the
+    # `aiLead` is the lead's other wording, never another element: one of the
     # two renders, under the two-switch rule (test_ai_switches).
     assert set(hero_copy) == {"title", "accent", "lead", "aiLead", "note"}
     assert hero_copy["note"] == "Free to post. No retainer."
 
 
-def test_the_phone_gets_a_sticky_ask_between_the_hero_and_the_close():
-    """Below `md`, once the hero has scrolled away and until the close is on
-    screen. Hidden — not just invisible — while it is not wanted, so a
+def test_the_phone_gets_a_sticky_ask_between_the_hero_and_the_footer():
+    """Below `md`, once the hero has scrolled away and until the close — on a
+    page that has one — or the footer is on screen. Home has no close any
+    more: it ends on the spine, then the footer, so the footer is what hides
+    it there. Hidden — not just invisible — while it is not wanted, so a
     keyboard cannot land on it; a 48px target; no animation."""
     sticky = copy_of("src", "components", "marketing", "StickyCta.jsx")
-    assert "const shown = pastHero && !atClose;" in sticky
+    assert "const shown = pastHero && !atClose && !atFooter;" in sticky
+    assert "document.querySelector(`[data-testid=\"${FOOTER.root}\"]`)" in sticky
     assert "hidden={!shown}" in sticky and "md:hidden" in sticky
     assert "min-h-[3rem]" in sticky
     assert "animation" not in sticky and "transition" not in sticky
-    for name in CONTENT_EXPORT:
+    for name in ("brands", "creators"):
         src = read(*PAGES[name])
         assert 'heroId="hero" closeId="close"' in src, name
         assert 'id="hero"' in src and 'id="close"' in src, name
+    home = read(*PAGES["home"])
+    assert '<StickyCta ask={ASK.postBrief} heroId="hero" />' in home and "closeId" not in home
+    assert 'id="hero"' in read(*HERO)
+    footer = read("src", "components", "marketing", "MarketingFooter.jsx")
+    assert "root: IDS.root" in footer
 
 
 def test_the_mobile_menu_traps_focus_and_closes_on_navigation():

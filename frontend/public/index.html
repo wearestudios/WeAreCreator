@@ -118,9 +118,9 @@
               return path === p.replace(/\/$/, "") || path.indexOf(p) === 0;
             });
 
-          /* Home, /for-brands and /for-creators are drawn on the light set —
+          /* Home, /for-brands, /for-creators and /about are drawn on the light set —
              exact paths, the same list as LIGHT_MARKETING_PATHS. */
-          var LIGHT = ["/", "/for-brands", "/for-creators"];
+          var LIGHT = ["/", "/for-brands", "/for-creators", "/about"];
           var bare = path.length > 1 ? path.replace(/\/+$/, "") : path;
           var theme = "light";
           if (!isProduct && LIGHT.indexOf(bare) === -1) {

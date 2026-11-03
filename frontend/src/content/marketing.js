@@ -139,14 +139,12 @@ export const WHATSAPP_HREF = `https://wa.me/${WHATSAPP_NUMBER.replace(/\D/g, "")
 export const ASK = {
     postBrief: { label: "Post a brief", to: "/signup?role=brand", cta: "post-brief" },
     talkWhatsapp: { label: "Talk to us on WhatsApp", href: WHATSAPP_HREF, cta: "talk-whatsapp" },
-    haveUsRunIt: { label: "Have us run it", href: WHATSAPP_HREF, cta: "have-us-run-it" },
     joinFree: { label: "Join free", to: "/signup?role=creator", cta: "join-free" },
     howItWorks: { label: "See how it works", to: "#briefs", cta: "see-how-it-works" },
-    forCreators: { label: "For creators", to: "/for-creators", cta: "creator-door" },
 };
 
 // ---------------------------------------------------------------------------
-// Home — brands first, eight sections
+// Home — two sections: the hero slider, then how it works
 // ---------------------------------------------------------------------------
 
 export const HOME = {
@@ -176,13 +174,16 @@ export const HOME = {
         // brief; this is.
         note: "Free to post. No retainer.",
     },
-    // The product card in the hero. **The history this product keeps**: the
+    // Slide A's card, the deal. **The history this product keeps**: the
     // brief's budget, the creator's quote, and the fee agreed — the one large
     // figure. Offers and counter-offers are an unmerged feature; when it lands
     // these rows are the only thing that changes.
     card: {
+        tag: "Example",
         title: "Weekend brunch launch",
         subline: "Kiran M. · 1 reel, 3 stories",
+        termsLabel: "Terms",
+        terms: "Frozen at acceptance",
         rows: [
             { day: "Mon", who: "Your budget", amount: "₹11,000" },
             { day: "Tue", who: "Kiran quoted", amount: "₹14,000" },
@@ -190,9 +191,14 @@ export const HOME = {
         ],
         note: "Written on the deal. Both sides see the same numbers.",
     },
+    // Slide B of the hero, "The problem": the campaign as it runs today (a
+    // spreadsheet and two DMs) against the same campaign here. Everything
+    // under the sheet, the bubbles, the rows and `card` is drawn product UI.
     swap: {
-        label: "The problem",
-        title: "A campaign is not a spreadsheet and sixty DMs",
+        title: "Not a spreadsheet and sixty DMs.",
+        // Set in Fraunces italic.
+        accent: "DMs",
+        line: "Every creator, fee and draft in one place, with both sides looking at the same numbers.",
         sheetHead: ["Creator", "Rate", "Status", "Paid?"],
         sheetRows: [
             ["Priya R.", "12k?", "no reply 6d", ""],
@@ -206,6 +212,35 @@ export const HOME = {
             { name: "Rahul S.", amount: "₹8,000", state: "Draft sent back", tone: "warn" },
             { name: "Tanvi M.", amount: "Barter", state: "Posted", tone: "info" },
         ],
+        card: { tag: "Example", here: "On WeAre Creators", sheet: "campaign-final-v3.xlsx" },
+    },
+    // The hero slider: one slide per entry, in order, each with its tab.
+    // **The AI slide is not listed here**: it is `ai` below, appended while
+    // any AI switch is on and absent — not hidden — otherwise. The badge is
+    // the two-switch claim, the rule `meta.aiTitle` follows.
+    slides: {
+        label: "At a glance",
+        carousel: "WeAre Creators, slide by slide",
+        tabsLabel: "Choose a slide",
+        aiBadge: "AI-powered creator marketplace",
+        items: [
+            { key: "deal", tab: "The deal" },
+            { key: "problem", tab: "The problem" },
+            { key: "onLocation", tab: "On location" },
+        ],
+        // Slide C. Its headline and line are the photo slot's own
+        // (`home-on-location` in `photoSlots.js`), which is where they lived
+        // when this was a full-bleed band; the overlays are drawn UI.
+        onLocation: {
+            slot: "home-on-location",
+            card: {
+                tag: "Example",
+                name: "Kiran M.",
+                badge: "Verified",
+                line: "Shoot booked · Saturday, 7pm",
+                chip: "Fee agreed before the shoot",
+            },
+        },
     },
     // "How it works": the process spine. Five steps per side of the deal,
     // switched between brands and creators. Each step's `title` and `line`
@@ -394,13 +429,7 @@ export const HOME = {
                 },
             ],
         },
-        // The strip under the spine: the same campaign over DMs, and here.
-        strip: {
-            before: { label: "Doing it over DMs", line: "Dozens of DMs, a spreadsheet, chasing addresses, guessing what you got." },
-            after: { label: "With WeAre Creators", line: "One brief. Shortlist, shoot, approve and track — all in one place." },
-        },
-        // The feature row. A card with an `aiKey` renders only while
-        // `aiLive(aiKey)`.
+        // The feature row: what is built into the product, six cards.
         features: {
             label: "What is built in",
             prev: "Previous features",
@@ -412,113 +441,67 @@ export const HOME = {
                 { key: "approvals", icon: "CheckCheck", title: "Draft approvals", line: "Review before it counts, within the revisions agreed." },
                 { key: "analytics", icon: "BarChart3", title: "Campaign analytics", line: "Creators, views and shares on one dashboard." },
                 { key: "payouts", icon: "Wallet", title: "Payouts in 7 days", line: "Creators paid within 7 days of approval." },
-                { key: "aiBrief", aiKey: "briefWriter", icon: "Sparkles", title: "AI brief writer", line: "Two lines in, a full brief to edit." },
-                { key: "aiMatch", aiKey: "nicheMatching", icon: "Crosshair", title: "Niche matching", line: "Creators matched on what they actually post." },
-                { key: "aiSummary", aiKey: "campaignSummary", icon: "FileBarChart", title: "Campaign summary", line: "Your results read in plain English, from your real numbers." },
             ],
         },
     },
-    // The hero card: one screen per step, cycling. Drawn product UI, so it
-    // sits under `screen` and does not count against the budget. The deal is
-    // `card` above, unchanged, as the Agree screen.
-    deck: {
-        label: "The four steps",
-        // The steps the hero card cycles through, in order.
-        steps: [
-            { key: "offer", title: "Offer" },
-            { key: "agree", title: "Agree" },
-            { key: "deliver", title: "Deliver" },
-            { key: "paid", title: "Get paid" },
-        ],
-        screen: {
-            offer: {
-                kicker: "New brief",
-                title: "Weekend brunch launch",
-                chips: ["1 reel", "3 stories", "₹11,000 per creator"],
-                monograms: ["KM", "PR", "TM", "AS"],
-                applied: "18 applied",
-                shortlistLabel: "Shortlist",
-                shortlist: "Checked by a person",
-            },
-            agree: { kicker: "Deal · Kiran M.", termsLabel: "Terms", terms: "Frozen at acceptance" },
-            deliver: {
-                kicker: "Shoot · Weekend brunch launch",
-                title: "3 creators, one list",
-                rows: [
-                    { m: "KM", name: "Kiran M.", tone: "good", state: "Approved", owes: "Done" },
-                    { m: "PR", name: "Priya R.", tone: "warn", state: "Draft sent back", owes: "Creator" },
-                    { m: "TM", name: "Tanvi M.", tone: "info", state: "Shoot Saturday", owes: "Creator" },
-                ],
-            },
-            paid: {
-                kicker: "Payout · Kiran M.",
-                title: "₹12,500 on its way",
-                rows: [
-                    { label: "Work", value: "Approved", tone: "good" },
-                    { label: "Paid within", value: "7 days of approval" },
-                    { label: "To the creator", value: "₹12,500, all of it" },
-                ],
-                foot: "Our fee is invoiced to you on its own line.",
-            },
-        },
-    },
-    // The navy band. "Guarantee" is a banned word on these pages, so the
-    // label is not the brief's "The guarantees".
-    // "What the AI does": after How it works, while at least one switch is on,
-    // one card per switch that is on. It says what each feature does and,
-    // in the lead, what none of them does — the fee, the approval and the
-    // payment are people's, and the page says so rather than leaving it to
-    // be inferred.
+    // Slide D of the hero, "What the AI does": rendered while any AI switch
+    // is on, and absent otherwise. One row per feature that is on, read
+    // through `aiLive`; every example under `card` is drawn product UI with
+    // invented names and numbers. **No match percentage**: the scorer's
+    // number ranks a shortlist, and it is not a figure a brand is shown.
+    // The lead says what none of them does — the fee, the approval and the
+    // payment are people's.
     ai: {
-        label: "What the AI does",
-        title: "Where the AI helps, and where it stops",
+        // The tab: "AI-powered" only while two switches back it, the rule
+        // the badge and `meta.aiTitle` follow; plainer with one.
+        tab: "What the AI does",
+        aiTab: "AI-powered",
+        title: "AI where it helps. People where it counts.",
+        // Set in Fraunces italic.
+        accent: "counts",
         lead: "It drafts, matches and reads results. People agree every fee, approve every post and pay every creator.",
         cards: [
             {
                 key: "briefWriter",
                 title: "Drafts your brief",
-                line: "Describe your campaign in two lines. Get a full brief to edit.",
-                art: "why-planning",
+                card: { quote: "“Weekend brunch, 3 food creators, Indiranagar”", result: "a full brief to edit" },
             },
             {
                 key: "nicheMatching",
-                title: "Matches creators",
-                line: "Creators matched on what they actually post — cuisine, language, neighbourhood.",
-                art: "why-roster-tablet",
+                title: "Matches creators on what they actually post",
+                card: { chips: ["Food · brunch", "Kannada + English", "Indiranagar"], fit: "Strong fit" },
             },
             {
                 key: "campaignSummary",
-                title: "Reads your results",
-                line: "A plain-English read of your results, using only your real numbers.",
-                art: "how-report-desk",
+                title: "Reads your results, in plain English",
+                card: {
+                    summary: "6 creators posted. 1,24,000 views and 2,486 shares — the reel from Priya R. did a third of it.",
+                },
             },
         ],
+        card: { tag: "Example", head: "What the AI does", foot: "Fees, approvals and payments stay with people." },
     },
-    promises: {
-        label: "What holds",
-        title: "Three things that are true in the code",
-        items: [
-            {
-                title: "A brand never gets a creator's number",
-                line: "No phone, email or address at any stage — enforced by field allow-lists, not by policy.",
-            },
-            {
-                // The brief: "Money is held before the shoot". There is no
-                // escrow; the fee being agreed and frozen first is what is true.
-                title: "The fee is agreed before anyone shoots",
-                line: "Every fee and term is written down and frozen when a creator is taken on, before a slot is booked.",
-            },
-            {
-                // The review clock (`_approve_draft_by_window`). Scoped to a
-                // brief that reviews drafts, because that is the only review
-                // with a clock — live content has none.
-                title: "A draft review has a deadline",
-                line: "Where a brief reviews drafts, a draft nobody answers is approved when its window ends — three days unless the brief sets one to fourteen.",
-            },
-        ],
+};
+
+// ---------------------------------------------------------------------------
+// About — reached from the footer only
+//
+// "Who built it" used to be a homepage section. It is the studio's story
+// rather than the product's argument, so it lives on its own page, linked
+// from the footer and not the navbar: somebody evaluating the product is not
+// sent away from it to read about us, and somebody who wants to is one click
+// away. Every claim here is one the site already makes: the studio runs
+// campaigns end to end (the footer's own line), and every brand brief posted
+// here is run by our team (the managed offer). **No person is named and no
+// client is named.**
+// ---------------------------------------------------------------------------
+
+export const ABOUT = {
+    meta: {
+        title: "About WeAre Studios, who built it",
+        description:
+            "WeAre Creators is the tool WeAre Studios built for its own influencer campaigns, and the team that runs every brief posted on it.",
     },
-    // No client names on the homepage: the marquee and the three cards were
-    // removed. `FACTS.confirmedClients` stays for use elsewhere later.
     clients: {
         label: "Who built it",
         title: "Built by people who run these campaigns",
@@ -526,19 +509,17 @@ export const HOME = {
         // record of where the work was done, not as the platform's reach.
         fill: "WeAre Studios has run influencer campaigns for Bengaluru restaurants, cafés and bars for years. This is the tool we wanted and couldn't buy.",
     },
-    creatorDoor: {
-        label: "For creators",
-        title: "Paid briefs. Your number stays yours.",
-        // The brief: "The money is held before you travel". No escrow; the
-        // fee being in writing first is what is true.
-        line: "Any follower count, as long as you're verified. The fee is agreed in writing before you travel, you keep all of it, and a brand never sees your contact details.",
+    studio: {
+        label: "The studio",
+        title: "What the studio does for brands",
+        // Rendered after the studio's name, which links out when
+        // `STUDIO_URL` is set.
+        line: "runs influencer campaigns end to end — casting, rates, the shoot and the report.",
     },
-    close: {
-        label: "Get started",
-        title: "Post your first brief",
-        // The brief: "You only pay when a collaboration is agreed". A campaign
-        // fee can apply, so that is not true of every brief.
-        line: "Free to post, and no retainer.",
+    tool: {
+        label: "The tool",
+        title: "Built for our own campaigns first",
+        line: "Every brief a brand posts here is run by our team, with the tool we built to run our own.",
     },
 };
 

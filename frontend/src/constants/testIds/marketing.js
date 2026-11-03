@@ -6,6 +6,13 @@ export const MARKETING = {
 	// asked for rather than on the SPA's catch-all.
 	forBrands: 'for-brands-page',
 	forCreators: 'for-creators-page',
+	about: 'about-page',
+	aboutClients: 'about-clients',
+	aboutFill: 'about-fill',
+	aboutStudio: 'about-studio',
+	aboutStudioLink: 'about-studio-link',
+	aboutTool: 'about-tool',
+	aboutAsk: 'about-ask',
 	howItWorks: 'how-it-works-page',
 	whyWeAre: 'why-weare-page',
 	notFound: 'not-found-page',

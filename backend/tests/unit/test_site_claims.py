@@ -88,16 +88,21 @@ def _everything():
 
 
 class TestHomePromises:
-    def test_the_three_are_the_ones_that_are_true(self):
-        # The third was "Every creator is checked before they apply", standing
-        # in for the review clock while there was none. The clock is in the
-        # tree now and back in its place; the checking is still true and
-        # still said on /for-brands.
-        assert _titles(content()["HOME"]["promises"]) == [
-            "A brand never gets a creator's number",
-            "The fee is agreed before anyone shoots",
-            "A draft review has a deadline",
-        ]
+    def test_home_promises_only_what_its_slides_and_spine_carry(self):
+        """Home's navy promise band went when the page was cut to two
+        sections; its three claims are still made, in the hero slider and the
+        spine, and each is still held by the code below: the contact rule
+        ("never a phone or email" on the spine's shortlist step), the fee
+        agreed first (slide C's chip, the deal's frozen terms) and the review
+        clock (on /for-creators and in the brands FAQ). The promise band stays
+        on the audience pages that use it."""
+        home = content()["HOME"]
+        assert "promises" not in home
+        assert home["slides"]["onLocation"]["card"]["chip"] == "Fee agreed before the shoot"
+        assert home["card"]["terms"] == "Frozen at acceptance"
+        shortlist = next(s for s in home["processSpine"]["steps"]["brands"] if s["key"] == "shortlist")
+        assert "never a phone or email" in shortlist["line"]
+        assert _titles(content()["BRANDS"]["promises"])
 
     def test_a_brand_never_gets_a_creators_number(self):
         """Every brand-facing creator view is `_brand_visible_creator`, an
@@ -400,5 +405,5 @@ class TestWhatIsNotTrueIsNotSaid:
         a deal is agreed" would be false on those briefs."""
         text = _everything()
         assert "only pay when" not in text
-        assert content()["HOME"]["close"]["line"] == "Free to post, and no retainer."
+        assert "close" not in content()["HOME"], "home has no close; the hero's note says it"
         assert content()["HOME"]["hero"]["note"] == "Free to post. No retainer."

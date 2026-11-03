@@ -79,10 +79,25 @@ describe.each([
         }
     });
 
-    test("Home: the feature row's brief writer card", () => {
+    test("Home: the AI slide's brief writer row, and no feature card", async () => {
         page(require("@/pages/Home").default);
-        const el = byId("process-feature-aiBrief");
-        expect(Boolean(el)).toBe(on);
-        if (on) expect(el.getAttribute("data-track-section")).toBe("feature-aiBrief");
+        // The feature row is the six product features: no AI card in it.
+        expect(container.querySelector('[data-testid^="process-feature-ai"]')).toBeNull();
+        const tab = [...container.querySelectorAll('[data-testid^="hero-tab-"]')].pop();
+        // With this switch alone on, the AI slide is the fourth; with it off
+        // (and every other off), there is no AI slide at all.
+        expect(container.querySelectorAll('[data-testid^="hero-tab-"]').length).toBe(on ? 4 : 3);
+        if (!on) return;
+        await act(async () => {
+            tab.click();
+            await new Promise((r) => setTimeout(r, 0));
+        });
+        await act(async () => {
+            await new Promise((r) => setTimeout(r, 0));
+        });
+        const row = container.querySelector('[data-track-section="hero-ai-briefWriter"]');
+        expect(row).not.toBeNull();
+        // One row: only the switch that is on.
+        expect(container.querySelectorAll('li[data-track-section^="hero-ai-"]').length).toBe(1);
     });
 });

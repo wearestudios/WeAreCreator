@@ -1,6 +1,8 @@
 // The homepage's process spine: brand steps by default, the switch swapping
-// them and writing the hash, AI cards only behind their switches, no real
-// client anywhere in the section, and reduced motion at the end state.
+// them and writing the hash, the feature row's six product cards and no AI
+// card whatever the switches say (the AI is a hero slide now), no
+// before/after strip, no real client anywhere in the section, and reduced
+// motion at the end state.
 import React from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
@@ -105,22 +107,20 @@ test("a #creators link opens on the creators' steps", () => {
     expect(titles()).toEqual(copy.steps.creators.map((s) => s.title));
 });
 
-test("no AI card renders while its switch is off", () => {
+test("the feature row is the six product features and no AI card, whatever the switches say", () => {
+    mockLive = { briefWriter: true, nicheMatching: true, campaignSummary: true };
     render();
-    const ai = copy.features.items.filter((i) => i.aiKey);
-    expect(ai.length).toBeGreaterThan(0);
-    for (const item of ai) expect(byId(IDS.feature(item.key))).toBeNull();
-    for (const item of copy.features.items.filter((i) => !i.aiKey)) {
-        expect(byId(IDS.feature(item.key))).not.toBeNull();
-    }
+    expect(copy.features.items.filter((i) => i.aiKey)).toHaveLength(0);
+    expect(copy.features.items).toHaveLength(6);
+    for (const item of copy.features.items) expect(byId(IDS.feature(item.key))).not.toBeNull();
+    expect(container.querySelector('[data-testid^="process-feature-ai"]')).toBeNull();
+    expect(byId(IDS.section).textContent).not.toMatch(/\bAI\b/);
 });
 
-test("an AI card renders only for the switch that is on", () => {
-    mockLive = { nicheMatching: true };
+test("the before/after strip is gone: the hero's problem slide tells it", () => {
     render();
-    expect(byId(IDS.feature("aiMatch"))).not.toBeNull();
-    expect(byId(IDS.feature("aiBrief"))).toBeNull();
-    expect(byId(IDS.feature("aiSummary"))).toBeNull();
+    expect(container.querySelector('[data-testid="process-before-after"]')).toBeNull();
+    expect(copy.strip).toBeUndefined();
 });
 
 test("no real client's name appears in the section, on either side", () => {
@@ -171,15 +171,6 @@ test("without reduced motion the steps away from the centre are dimmed", () => {
     const dim = byId(IDS.step(2)).querySelector("[data-strength]");
     expect(dim.className).toContain("md:opacity-[0.35]");
     expect(dim.className).toContain("opacity-[0.7]");
-});
-
-test("the strip's ask is the hero's and reports its own click", () => {
-    render();
-    const cta = byId(IDS.stripCta);
-    expect(cta.textContent).toContain(jest.requireActual("@/content/marketing").ASK.postBrief.label);
-    expect(byId(IDS.beforeAfter).hasAttribute("data-track-self")).toBe(true);
-    act(() => cta.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true })));
-    expect(mockTrack).toHaveBeenCalledWith("cta_click", expect.objectContaining({ location: "process_strip" }));
 });
 
 test("the pure helpers", () => {

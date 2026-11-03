@@ -42568,12 +42568,16 @@ HOME_PATH = "/"
 FOR_BRANDS_PATH = "/for-brands"
 FOR_CREATORS_PATH = "/for-creators"
 CONTACT_PATH = "/contact"
+# Reached from the footer only — not the navbar — and in the sitemap like
+# every other public page.
+ABOUT_PATH = "/about"
 
 MARKETING_PATHS = (
     HOME_PATH,
     FOR_BRANDS_PATH,
     FOR_CREATORS_PATH,
     CONTACT_PATH,
+    ABOUT_PATH,
 )
 
 # Old path → where it lives now. Mirrors `RETIRED_MARKETING_PATHS` in
@@ -42652,6 +42656,7 @@ FOOTER_COLUMNS = (
     (
         "Company",
         (
+            ("About", ABOUT_PATH),
             ("Terms", "/terms"),
             ("Privacy", "/privacy"),
         ),
