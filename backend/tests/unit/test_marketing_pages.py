@@ -1681,7 +1681,11 @@ def test_the_copyright_names_the_studio_and_links_to_it():
         # The href specifically, not just the symbol: `STUDIO_URL` also
         # appears in the guard that renders plain text when it is unset, so
         # asserting the name alone passes with the link pointing anywhere.
-        assert "href={STUDIO_URL}" in src, f"{name} does not link to it"
+        # The marketing footer hands the URL to the beam footer as
+        # `companyHref`, which renders the link; the component's own fallback
+        # to text when it is unset is pinned by its Jest test.
+        linked = ("href={STUDIO_URL}", "companyHref={STUDIO_URL")
+        assert any(form in src for form in linked), f"{name} does not link to it"
         assert "copyrightYear" in src, f"{name} stopped reading the year"
 
 

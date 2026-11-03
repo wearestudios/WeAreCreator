@@ -1,137 +1,115 @@
-// The footer, for the marketing site only.
+// The footer, for the marketing site only — the navy closing band with the
+// beam wordmark (`components/ui/beam-wordmark-footer.jsx`).
 //
 // **A variant, not an edit.** `components/Footer.jsx` stays exactly as it is
-// for Legal, Campaigns and CampaignDetail. This one differs in one way that
-// matters: every link is a `<Link>`, because every destination it names is a
-// route the SPA owns, and it carries the hover warm the rest of the marketing
-// site uses.
+// for Legal, Campaigns and CampaignDetail; nothing here reaches into it.
 //
-// The link list itself is not duplicated — `lib/siteNav.js` is still the one
-// definition, mirrored by `FOOTER_COLUMNS` in `server.py`, which builds the
-// sitemap from it. Two footers with two lists is how one of them ends up
-// advertising a page that moved.
+// The link list is not duplicated: `lib/siteNav.js` is the one definition,
+// mirrored by `FOOTER_COLUMNS` in `server.py`, which builds the sitemap from
+// it. Two lists is how a footer advertises a page that moved.
+//
+// No social icons: there are no real profile URLs in the repository. When
+// there are, they belong in `lib/siteNav` beside the columns, not typed here.
 import React from "react";
 import { Link } from "react-router-dom";
 
+import BeamWordmarkFooter from "@/components/ui/beam-wordmark-footer";
+import Logo from "@/components/brand/Logo";
+import { FOOTER as IDS } from "@/constants/testIds";
+import { WHATSAPP_HREF } from "@/content/marketing";
 import { CONTACT_EMAIL, FOOTER_COLUMNS, copyrightYear } from "@/lib/siteNav";
 import { STUDIO_NAME, STUDIO_URL } from "@/lib/studio";
-import { FOOTER as IDS } from "@/constants/testIds";
-import Logo from "@/components/brand/Logo";
+import { EVENTS, track } from "@/lib/track";
 
-const LINK =
-    "text-sm text-muted-foreground transition-colors duration-200 hover:text-primary";
+// The brand tokens, never literals: the navy ground (`--brand-navy`), ink and
+// muted are white at 90% and 60%, the brand red accent (`--brand-red`). Measured
+// on the ground: ink 15.6:1, muted 7.0:1, the accent 4.9:1 — every word
+// somebody has to read passes AA. The wordmark is navy a step lighter than the
+// ground, so it reads as embossed rather than shouted; the beam lights it.
+const PALETTE = {
+    ground: "hsl(var(--brand-navy))",
+    ink: "hsl(var(--brand-white) / 0.9)",
+    muted: "hsl(var(--brand-white) / 0.6)",
+    accent: "hsl(var(--brand-red))",
+    wordFrom: "color-mix(in srgb, hsl(var(--brand-navy)) 84%, hsl(var(--brand-white)))",
+    wordTo: "color-mix(in srgb, hsl(var(--brand-navy)) 95%, hsl(var(--brand-white)))",
+};
 
-function FooterLink({ link }) {
-    const testid = IDS.link(link.to);
-    // `external` marks a destination the router must not handle — today only
-    // the mailto.
-    if (link.external) {
-        return (
-            <a href={link.to} data-testid={testid} className={LINK}>
-                {link.label}
-            </a>
-        );
-    }
-    return (
-        <Link to={link.to} data-testid={testid} className={LINK}>
-            {link.label}
-        </Link>
-    );
-}
+// The wordmark is set exactly like the site's display headings: `mkt-display`
+// carries the face, weight, optical size, tracking and axis settings from
+// index.css, the one place they are defined. The beam footer only overrides
+// the size (to fit the width) and the line height.
+const COLUMNS = FOOTER_COLUMNS.map((col) => ({
+    title: col.heading,
+    // `external` marks a destination the router must not handle: `/work` is
+    // server-rendered by the backend, so it stays a plain <a>.
+    links: col.links.map((l) => ({ label: l.label, href: l.to, external: !!l.external })),
+}));
+
+const CONTACT = [
+    { label: CONTACT_EMAIL, href: `mailto:${CONTACT_EMAIL}`, external: true, id: IDS.contact },
+    { label: "Talk to us on WhatsApp", href: WHATSAPP_HREF, external: true, id: IDS.whatsapp },
+];
+
+const TEST_IDS = {
+    root: IDS.root,
+    copyright: IDS.copyright,
+    company: IDS.copyrightLink,
+    link: (l) => IDS.link(l.href),
+    contact: (line) => line.id,
+};
+
+const renderLink = (link, props) => <Link to={link.href} {...props} />;
+
+// The footer reports its own clicks, with where they came from; the root
+// carries `data-track-self` so the analytics gate's delegated listener does
+// not count the same press a second time. A WhatsApp link is reported as
+// "whatsapp", never as the number inside it.
+const onLinkClick = (link) =>
+    track(EVENTS.ctaClick, {
+        location: "footer",
+        label: link.label,
+        href: link.href === WHATSAPP_HREF ? "whatsapp" : link.href,
+    });
 
 export function MarketingFooter() {
     return (
-        <footer
-            data-testid={IDS.root}
-            className="border-t border-border bg-card/40"
-        >
-            <div className="mx-auto max-w-7xl px-6 py-14 md:py-16">
-                <div className="grid gap-10 md:grid-cols-12">
-                    <div className="md:col-span-5">
-                        <Link
-                            to="/"
-                            data-testid={IDS.wordmark}
-                            className="inline-flex items-center gap-2.5"
-                        >
-                            <Logo variant="horizontal" height={26} />
-                        </Link>
-                        <div className="mt-3">
-                        </div>
-                        <p className="mt-5 max-w-xs text-sm leading-relaxed text-muted-foreground">
-                            Influencer marketing across India, run end to end — casting,
-                            rates, the shoot and the report.
-                        </p>
-                    </div>
-
-                    <nav
-                        aria-label="Footer"
-                        className="grid grid-cols-2 gap-8 sm:grid-cols-4 md:col-span-7"
-                    >
-                        {FOOTER_COLUMNS.map((col) => (
-                            <div key={col.heading}>
-                                <p className="text-meta font-medium text-foreground">
-                                    {col.heading}
-                                </p>
-                                <ul className="mt-4 space-y-3">
-                                    {col.links.map((link) => (
-                                        <li key={link.to}>
-                                            <FooterLink link={link} />
-                                        </li>
-                                    ))}
-                                </ul>
-                            </div>
-                        ))}
-                    </nav>
-                </div>
-
-                <div className="mt-12 flex flex-col gap-3 border-t border-border pt-7 sm:flex-row sm:items-center sm:justify-between">
-                    {/* **WeAre Studios, linked, and this overrides a note
-                        that argued the other way.** The line named "WeAre
-                        Monk" on the reasoning that who owns the thing is a
-                        fact rather than a copy decision. The owner asked for
-                        WeAre Studios directly, which settles it: the entity
-                        in a copyright line is theirs to name, and the comment
-                        that argued for the old string has no business
-                        outliving it.
-
-                        It also absorbs the studio credit. `StudioEndorsement`
-                        used to say "A WeAre Studios offering" in six places;
-                        the relationship belongs in the copyright, where
-                        ownership is already being stated, rather than as a
-                        standalone line repeated down the page. */}
-                    <p data-testid={IDS.copyright} className="text-xs text-muted-foreground">
-                        © {copyrightYear()}{" "}
-                        {/* **Absent is a supported state**, as it was for the
-                            endorsement this replaced: `STUDIO_URL` comes from
-                            the environment because the studio's address is
-                            not ours to hardcode, and an `<a href="">` is a
-                            link that reloads the page. Unset, the entity is
-                            still named — as text. */}
-                        {STUDIO_URL ? (
-                            <a
-                                href={STUDIO_URL}
-                                target="_blank"
-                                rel="noreferrer"
-                                data-testid={IDS.copyrightLink}
-                                className="underline-offset-4 transition-colors duration-200 hover:text-foreground hover:underline"
-                            >
-                                {STUDIO_NAME}
-                            </a>
-                        ) : (
-                            <span data-testid={IDS.copyrightLink}>{STUDIO_NAME}</span>
-                        )}{" "}
-                        · Bengaluru, India
+        <BeamWordmarkFooter
+            className="font-sans"
+            word="WeAre"
+            wordLabel="WeAre Creators"
+            wordClassName="mkt-display"
+            columns={COLUMNS}
+            // The copyright names WeAre Studios, which overrides an older note
+            // that argued for the old owner name: the entity in a copyright line is
+            // the owner's to name. It also absorbs the studio credit — the
+            // `StudioEndorsement` line is gone, because ownership is already
+            // stated here.
+            companyName={STUDIO_NAME}
+            // Absent is a supported state: `STUDIO_URL` comes from the
+            // environment, and an `<a href="">` reloads the page, so unset
+            // renders the name as text.
+            companyHref={STUDIO_URL || undefined}
+            year={copyrightYear()}
+            contactLines={CONTACT}
+            lead={
+                <>
+                    <Link to="/" data-testid={IDS.wordmark} className="inline-flex" onClick={() => onLinkClick({ label: "Home", href: "/" })}>
+                        <Logo variant="horizontal" height={26} tone="white" />
+                    </Link>
+                    <p className="mt-5 max-w-xs">
+                        Influencer marketing across India, run end to end — casting, rates, the shoot and the
+                        report.
                     </p>
-                    <a
-                        href={`mailto:${CONTACT_EMAIL}`}
-                        data-testid={IDS.contact}
-                        className="text-xs text-muted-foreground transition-colors duration-200 hover:text-primary"
-                    >
-                        {CONTACT_EMAIL}
-                    </a>
-                </div>
-            </div>
-        </footer>
+                </>
+            }
+            palette={PALETTE}
+            beamStrength={0.7}
+            renderLink={renderLink}
+            onLinkClick={onLinkClick}
+            testIds={TEST_IDS}
+            rootProps={{ "data-track-self": "" }}
+        />
     );
 }
 
