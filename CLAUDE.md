@@ -1901,6 +1901,32 @@ renders the name as text**: the environment holds it because the studio's
 address is not ours to hardcode, and an `<a href="">` is a link that reloads
 the page.
 
+#### The beam footer
+
+`MarketingFooter` is built on `components/ui/beam-wordmark-footer.jsx`, a
+generic port of a 21st.dev component (credited in its header, never on
+screen). Two rules in it are load-bearing:
+
+- **The loop moves layers and never repaints.** The original wrote the beam's
+  position into CSS variables every frame, moving gradient stops inside a
+  blurred backdrop and every letter — measured at ~100ms of main thread per
+  frame. The beam, the pointer glow and the rule's highlight are now static
+  paintings moved by `transform`/`opacity`, and the letters are a static fill
+  blended with `mix-blend-mode: screen`: zero long tasks on screen, idle or
+  under the pointer, at 4× CPU throttle. Reduced motion draws it once; the
+  loop stops offscreen and in a hidden tab.
+- **The fit's measuring element has `transition-property: none`.** The
+  reduced-motion backstop in `index.css` gives everything a 0.01ms duration,
+  so with the default `transition-property: all` the font size set for the
+  100px measurement *transitioned*, the synchronous read returned the old
+  width, and the wordmark re-fitted for ever.
+
+The palette is brand tokens and every tint is `color-mix`, because the colour
+sweeps refuse a literal anywhere under `src/`. The wordmark takes its face from
+`mkt-display`, so `"WONK" 1` stays defined once in `index.css`. The footer
+reports its own clicks (`cta_click` with `location: "footer"`) and carries
+`data-track-self` so `AnalyticsGate` does not count the same press twice.
+
 ### Writing in
 
 `/contact` and `POST /public/contact` — a public, unauthenticated write, and
