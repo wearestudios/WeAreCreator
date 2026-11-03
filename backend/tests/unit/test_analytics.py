@@ -1067,7 +1067,9 @@ class TestTheSurfacesExist:
     def test_the_brand_dashboard_renders_the_rollup(self):
         page = self._read("pages", "BrandDashboardView.jsx")
         assert "BrandAnalyticsSummary" in page
-        assert "<BrandAnalyticsSummary />" in page
+        # Handed the rollup the page already fetched, so it arrives with
+        # everything above it rather than a beat later.
+        assert "<BrandAnalyticsSummary initial={results} />" in page
 
     def test_the_applicant_board_renders_the_campaign_panel(self):
         page = self._read("pages", "BrandCampaignApplicants.jsx")
