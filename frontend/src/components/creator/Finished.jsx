@@ -30,7 +30,7 @@ export default function Finished({ rows, onChanged }) {
                     Campaigns land here once the work is approved.
                 </EmptyState>
             ) : (
-                <ul className="mt-5 divide-y divide-divider overflow-hidden rounded-md border border-border bg-card grain-surface">
+                <ul className="mt-5 divide-y divide-divider overflow-hidden rounded-lg bg-card shadow-card">
                     {list.map((row) => {
                         const money = formatCollabMoney({
                             compensationType: row.compensation_type,

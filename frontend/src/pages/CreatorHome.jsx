@@ -43,6 +43,7 @@ import Applications from "@/components/creator/Applications";
 import Earnings from "@/components/creator/Earnings";
 import Finished from "@/components/creator/Finished";
 import PlatformProtections from "@/components/creator/PlatformProtections";
+import { useShellBadges } from "@/components/app/shellContext";
 
 // ---------------------------------------------------------------------------
 // Banners
@@ -51,7 +52,7 @@ import PlatformProtections from "@/components/creator/PlatformProtections";
 const Banner = ({ Icon, tone, testid, children }) => (
     <div
         data-testid={testid}
-        className={"flex items-start gap-3 rounded-md border p-4 text-body leading-relaxed " + tone}
+        className={"flex items-start gap-3 rounded-[14px] px-4 py-3 text-meta font-semibold leading-relaxed " + tone}
     >
         <Icon className="mt-0.5 h-4 w-4 flex-none" />
         <p>{children}</p>
@@ -81,9 +82,9 @@ const StatusBanners = ({ profile, completeness, justOnboarded }) => {
                 key="suspended"
                 data-testid={BLOCK_IDS.banner}
                 role="alert"
-                className="rounded-md border border-state-rejected/30 bg-state-rejected-wash p-5 text-state-rejected"
+                className="rounded-[14px] bg-state-rejected-wash p-5 text-state-rejected"
             >
-                <p className="flex items-center gap-2 font-medium">
+                <p className="flex items-center gap-2 font-bold">
                     <Ban className="h-4 w-4 flex-none" />
                     Your account is on hold
                 </p>
@@ -114,7 +115,7 @@ const StatusBanners = ({ profile, completeness, justOnboarded }) => {
                 key="ready"
                 testid="profile-ready-banner"
                 Icon={Send}
-                tone="border-primary/30 bg-primary/10 text-primary"
+                tone="bg-wash-navy text-foreground"
             >
                 Your profile is finished but we haven't seen it yet.{" "}
                 <Link
@@ -135,7 +136,7 @@ const StatusBanners = ({ profile, completeness, justOnboarded }) => {
                 key="onboarded"
                 testid="just-onboarded-banner"
                 Icon={Sparkles}
-                tone="border-primary/30 bg-primary/10 text-primary"
+                tone="bg-wash-navy text-foreground"
             >
                 Thanks — your profile is with the WeAre team. Reviews usually finish
                 within 48 hours, and briefs open up to you the moment you're approved.
@@ -148,7 +149,7 @@ const StatusBanners = ({ profile, completeness, justOnboarded }) => {
                 key="pending"
                 testid="verification-pending-banner"
                 Icon={Clock}
-                tone="border-state-pending/30 bg-state-pending-wash text-state-pending"
+                tone="bg-state-due-wash text-state-due"
             >
                 Your profile is under review. You'll be able to pitch on briefs as
                 soon as the team approves it — usually within 48 hours.
@@ -161,7 +162,7 @@ const StatusBanners = ({ profile, completeness, justOnboarded }) => {
                 key="rejected"
                 testid="verification-rejected-banner"
                 Icon={XCircle}
-                tone="border-state-rejected/30 bg-state-rejected-wash text-state-rejected"
+                tone="bg-state-rejected-wash text-state-rejected"
             >
                 Your profile wasn't approved yet.{" "}
                 <Link to="/onboarding/creator" className="underline underline-offset-4 hover:no-underline">
@@ -177,7 +178,7 @@ const StatusBanners = ({ profile, completeness, justOnboarded }) => {
                 key="changes"
                 testid="verification-changes-banner"
                 Icon={Clock}
-                tone="border-state-progress/30 bg-state-progress-wash text-state-progress"
+                tone="bg-state-info-wash text-state-info"
             >
                 You're still live and visible to brands. We're just taking a second
                 look at the details you changed
@@ -200,7 +201,7 @@ const StatusBanners = ({ profile, completeness, justOnboarded }) => {
                 key="payout"
                 testid="payout-missing-banner"
                 Icon={Wallet}
-                tone="border-primary/30 bg-primary/10 text-primary"
+                tone="bg-wash-navy text-foreground"
             >
                 Add your UPI ID and PAN so we can pay you — we can't release a payout
                 without them.{" "}
@@ -216,7 +217,7 @@ const StatusBanners = ({ profile, completeness, justOnboarded }) => {
     }
 
     if (items.length === 0) return null;
-    return <div className="space-y-3">{items}</div>;
+    return <div className="space-y-2.5">{items}</div>;
 };
 
 // ---------------------------------------------------------------------------
@@ -246,6 +247,10 @@ export default function CreatorHome({ user, justOnboarded }) {
     useEffect(() => {
         load();
     }, [load]);
+
+    // The sidebar's Home count: invitations nobody has answered, off the
+    // dashboard's own payload — the sidebar never asks for a number itself.
+    useShellBadges({ invitations: (data?.invitations || []).filter((i) => i.open).length });
 
     const groups = data?.collaborations || {};
     const loading = !data && !error;
@@ -305,7 +310,7 @@ export default function CreatorHome({ user, justOnboarded }) {
         <div data-testid={IDS.page} className="min-h-screen bg-background grain-page">
             <Navbar />
 
-            <main className="mx-auto max-w-6xl px-5 py-8 md:px-6 md:py-14">
+            <main className="mx-auto max-w-7xl px-5 py-7 md:px-[34px] md:pb-10">
                 {loading && <HomeSkeleton testid={IDS.skeleton} />}
 
                 {error && !data && (
@@ -335,7 +340,7 @@ export default function CreatorHome({ user, justOnboarded }) {
                             </Reveal>
                         </SafeSection>
 
-                        <SafeSection name="banners" className="mt-8">
+                        <SafeSection name="banners" className="mt-5 empty:hidden">
                             <StatusBanners
                                 profile={data.profile}
                                 completeness={data.profile_completeness}
@@ -349,7 +354,7 @@ export default function CreatorHome({ user, justOnboarded }) {
                             one screen a verified creator has no reason to
                             open — so telling them there would be telling them
                             nowhere. Renders nothing until the window opens. */}
-                        <SafeSection name="revalidate" className="mt-4">
+                        <SafeSection name="revalidate" className="mt-3 empty:hidden">
                             <VerificationExpiry
                                 verification={data.profile?.verification}
                                 kind="creator"
@@ -358,7 +363,7 @@ export default function CreatorHome({ user, justOnboarded }) {
                         </SafeSection>
 
                         {showCompleteness && (
-                            <SafeSection name="completeness" className="mt-10 md:mt-12">
+                            <SafeSection name="completeness" className="mt-3">
                                 <Reveal index={1} data-testid={COMPLETENESS_IDS.section}>
                                     <Completeness completeness={completeness} />
                                 </Reveal>
@@ -369,7 +374,7 @@ export default function CreatorHome({ user, justOnboarded }) {
                             creator with held pitches has one question — do I
                             have to do this again — and burying the answer in
                             a drawer is answering it with "look for it". */}
-                        <SafeSection name="held" className="mt-10 md:mt-12">
+                        <SafeSection name="held" className="mt-6 empty:hidden">
                             <HeldApplications
                                 held={data.held_applications}
                                 resolved={data.held_resolved}
@@ -382,7 +387,7 @@ export default function CreatorHome({ user, justOnboarded }) {
                             is the reason the page gets opened, and a venue
                             address in a drawer is a creator lost on a
                             footpath. */}
-                        <SafeSection name="active" className="mt-10 md:mt-12">
+                        <SafeSection name="active" className="mt-6">
                             <Reveal index={2} data-testid={ACTIVE_IDS.section}>
                                 <ActiveCampaigns
                                     collaborations={groups.active}
@@ -395,19 +400,19 @@ export default function CreatorHome({ user, justOnboarded }) {
                             one drawer each. Radix tabs, so arrow keys walk the
                             strip and the panels stay in the accessibility
                             tree's good books. */}
-                        <SafeSection name="drawers" className="mt-10 md:mt-14">
+                        <SafeSection name="drawers" className="mt-8 md:mt-10">
                             <Reveal index={3}>
                                 <Tabs defaultValue="suggested" data-testid={IDS.tabs}>
-                                    <TabsList className="h-auto w-full justify-start gap-1 overflow-x-auto rounded-full border border-border bg-card/60 p-1.5">
+                                    <TabsList className="h-auto w-full justify-start gap-2 overflow-x-auto rounded-none bg-transparent p-0.5">
                                         {[
                                             {
                                                 value: "suggested",
-                                                label: "For you",
+                                                label: "Briefs for you",
                                                 count: suggestedCount,
                                             },
                                             {
                                                 value: "applications",
-                                                label: "Applications",
+                                                label: "My pitches",
                                                 count: applicationsCount,
                                             },
                                             {
@@ -419,17 +424,17 @@ export default function CreatorHome({ user, justOnboarded }) {
                                                     (r) => r.can_respond_takedown,
                                                 ).length,
                                             },
-                                            { value: "earnings", label: "Earnings" },
+                                            { value: "earnings", label: "Payments" },
                                         ].map((t) => (
                                             <TabsTrigger
                                                 key={t.value}
                                                 value={t.value}
                                                 data-testid={IDS.tab(t.value)}
-                                                className="min-h-[2.5rem] flex-none rounded-full px-4 text-label text-muted-foreground transition-colors duration-200 data-[state=active]:bg-primary/15 data-[state=active]:text-primary"
+                                                className="min-h-[2.5rem] flex-none rounded-pill bg-card px-4 text-meta font-bold text-foreground shadow-card transition-colors duration-200 hover:text-primary data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:hover:text-primary-foreground"
                                             >
                                                 {t.label}
                                                 {t.count > 0 && (
-                                                    <span className="ml-2 rounded-full bg-muted px-1.5 py-0.5 text-label tabular-nums text-foreground/70">
+                                                    <span className="ml-2 rounded-pill bg-wash-warm px-1.5 py-0.5 text-label tabular-nums text-foreground">
                                                         {t.count}
                                                     </span>
                                                 )}
@@ -437,14 +442,14 @@ export default function CreatorHome({ user, justOnboarded }) {
                                         ))}
                                     </TabsList>
 
-                                    <TabsContent value="suggested" className="mt-8">
+                                    <TabsContent value="suggested" className="mt-5">
                                         <SafeSection name="suggested">
                                             <div data-testid={SUGGESTED_IDS.section}>
                                                 <Suggested campaigns={data.suggested_campaigns} />
                                             </div>
                                         </SafeSection>
                                     </TabsContent>
-                                    <TabsContent value="applications" className="mt-8">
+                                    <TabsContent value="applications" className="mt-5">
                                         <SafeSection name="applications">
                                             <div data-testid={APPLICATIONS_IDS.section}>
                                                 <Applications
@@ -456,7 +461,7 @@ export default function CreatorHome({ user, justOnboarded }) {
                                             </div>
                                         </SafeSection>
                                     </TabsContent>
-                                    <TabsContent value="finished" className="mt-8">
+                                    <TabsContent value="finished" className="mt-5">
                                         <SafeSection name="finished">
                                             <Finished
                                                 rows={groups.completed}
@@ -464,7 +469,7 @@ export default function CreatorHome({ user, justOnboarded }) {
                                             />
                                         </SafeSection>
                                     </TabsContent>
-                                    <TabsContent value="earnings" className="mt-8">
+                                    <TabsContent value="earnings" className="mt-5">
                                         <SafeSection name="earnings">
                                             <div data-testid={EARNINGS_IDS.section}>
                                                 <Earnings
@@ -485,7 +490,7 @@ export default function CreatorHome({ user, justOnboarded }) {
                             something to go looking for in a drawer, because
                             the moment it matters is the moment somebody is
                             deciding whether to answer a brand's DM. */}
-                        <SafeSection name="protections" className="mt-12 md:mt-16">
+                        <SafeSection name="protections" className="mt-10 md:mt-12">
                             <Reveal index={4}>
                                 <PlatformProtections
                                     protections={data.platform_protections}
@@ -493,7 +498,7 @@ export default function CreatorHome({ user, justOnboarded }) {
                             </Reveal>
                         </SafeSection>
 
-                        <footer className="mt-16 flex flex-wrap items-center justify-between gap-4 rounded-md border border-border bg-card/40 p-6 text-meta text-muted-foreground">
+                        <footer className="mt-10 flex flex-wrap items-center justify-between gap-4 rounded-lg bg-wash-warm px-5 py-4 text-meta text-muted-foreground">
                             <p>
                                 <span className="text-foreground">Signed in as</span>{" "}
                                 {/* Accounts created over WhatsApp have no email. */}
@@ -507,7 +512,7 @@ export default function CreatorHome({ user, justOnboarded }) {
                                 onClick={load}
                                 disabled={refreshing}
                                 data-testid={IDS.refresh}
-                                className="inline-flex min-h-[2.75rem] items-center gap-2 rounded-full border border-border px-4 text-label transition-colors duration-200 hover:border-primary/40 hover:text-primary disabled:opacity-50"
+                                className="inline-flex min-h-[2.75rem] items-center gap-2 rounded-button bg-card px-4 text-meta font-bold text-foreground shadow-card transition-colors duration-200 hover:text-primary disabled:opacity-50"
                             >
                                 <RotateCw
                                     className={"h-3.5 w-3.5 " + (refreshing ? "animate-spin" : "")}

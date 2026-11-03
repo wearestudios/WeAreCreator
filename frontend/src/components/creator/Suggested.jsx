@@ -6,18 +6,17 @@
 // which is the only place that knows what actually matched.
 import React from "react";
 import { Link } from "react-router-dom";
-import { motion, useReducedMotion } from "framer-motion";
-import { Compass, MapPin, Sparkles } from "lucide-react";
+import { Compass, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CREATOR_SUGGESTED as IDS } from "@/constants/testIds";
-import { isBarter } from "@/lib/compensation";
+import { formatInr, isBarter } from "@/lib/compensation";
+import { categoryLabel } from "@/lib/categories";
+import { Pill } from "@/components/app/ui";
 import BrandAvatar from "@/components/BrandAvatar";
-import { DeliverableSummary } from "@/components/Deliverables";
 import CampaignCover from "@/components/CampaignCover";
-import { CAT_LABEL, EmptyState, Money, SectionHead, formatRupees } from "./shared";
+import { EmptyState, SectionHead } from "./shared";
 
 export default function Suggested({ campaigns }) {
-    const still = useReducedMotion();
     const rows = campaigns || [];
 
     return (
@@ -34,7 +33,7 @@ export default function Suggested({ campaigns }) {
                 }
             />
 
-            <div className="mt-8">
+            <div className="mt-4">
                 {rows.length === 0 ? (
                     <EmptyState
                         testid={IDS.empty}
@@ -42,7 +41,7 @@ export default function Suggested({ campaigns }) {
                         title="Nothing matched today."
                         action={
                             <Link to="/campaigns" className="mt-2">
-                                <Button className="h-12 rounded-full bg-primary text-primary-foreground hover:bg-primary-hover">
+                                <Button variant="solid" className="h-11">
                                     Browse everything
                                 </Button>
                             </Link>
@@ -60,89 +59,74 @@ export default function Suggested({ campaigns }) {
                         className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
                     >
                         {rows.map((c) => (
-                            <motion.li
+                            <li
                                 key={c.id}
                                 data-testid={IDS.tile(c.id)}
-                                whileHover={still ? undefined : { y: -3 }}
-                                transition={{ duration: 0.2, ease: "easeOut" }}
-                                className="flex flex-col overflow-hidden rounded-md border border-border bg-card transition-colors duration-200 hover:border-tint/30 grain-surface"
+                                className="flex min-w-0 flex-col overflow-hidden rounded-lg bg-card shadow-card"
                             >
+                                {/* A strip of the cover, not a poster: 84px
+                                    from `md`, so three tiles read as a row of
+                                    briefs rather than a gallery. */}
                                 <CampaignCover
                                     campaign={c}
+                                    ratio="aspect-[16/5]"
                                     rounded="rounded-none"
-                                    className="border-0 border-b"
+                                    className="border-0 md:max-h-[5.25rem]"
                                 />
-                                <div className="flex flex-1 flex-col p-6">
-                                <p className="flex items-center gap-2 text-label text-muted-foreground">
-                                    <BrandAvatar brand={c} size="h-5 w-5" />
-                                    <span className="truncate">{c.brand_name || "Brand"}</span>
-                                </p>
-                                <Link
-                                    to={`/campaigns/${c.id}`}
-                                    className="mt-2 font-bold text-h3 leading-tight transition-colors duration-200 hover:text-primary"
-                                >
-                                    {c.title}
-                                </Link>
-
-                                <p
-                                    data-testid={IDS.reason(c.id)}
-                                    className="mt-4 inline-flex items-start gap-2 rounded-md border border-primary/25 bg-primary/10 px-3 py-2 text-meta leading-relaxed text-primary"
-                                >
-                                    <Sparkles className="mt-0.5 h-3.5 w-3.5 flex-none" />
-                                    {c.match_reason}
-                                </p>
-
-                                <DeliverableSummary
-                                    campaign={c}
-                                    className="mt-4 line-clamp-3 block text-body leading-relaxed text-muted-foreground"
-                                />
-
-                                <div className="mt-5 flex flex-wrap items-center gap-x-3 gap-y-2 text-meta text-muted-foreground">
-                                    {c.area && (
-                                        <span className="inline-flex items-center gap-1.5">
-                                            <MapPin className="h-3.5 w-3.5" />
-                                            {c.area}
-                                        </span>
-                                    )}
-                                    {c.category && (
-                                        <span className="text-label rounded-full bg-muted px-2.5 py-0.5">
-                                            {CAT_LABEL[c.category] || c.category}
-                                        </span>
-                                    )}
-                                </div>
-
-                                {/* mt-auto so every tile's price and button line up
-                                    across the row however long the brief runs. */}
-                                <div className="mt-auto flex items-end justify-between gap-3 pt-6">
-                                    {/* Money renders the rupee symbol, so a
-                                      * barter brief cannot go through it. */}
-                                    {isBarter(c) ? (
-                                        <span
-                                            data-testid={IDS.budget(c.id)}
-                                            className="app-figure text-h3 leading-none"
-                                        >
-                                            Barter
-                                        </span>
-                                    ) : (
-                                        <Money
-                                            symbolClass="h-4 w-4"
-                                            className="app-figure text-h3 leading-none"
-                                        >
-                                            <span data-testid={IDS.budget(c.id)}>
-                                                {formatRupees(c.budget_per_creator)}
-                                            </span>
-                                        </Money>
-                                    )}
-                                    {/* Applying needs a pitch and a rate, and that
-                                        form lives on the brief. */}
-                                    <Link to={`/campaigns/${c.id}`} data-testid={IDS.apply(c.id)}>
-                                        <Button className="h-11 rounded-full bg-primary text-primary-foreground hover:bg-primary-hover">
-                                            Apply
-                                        </Button>
+                                <div className="flex flex-1 flex-col p-4 md:px-[18px]">
+                                    <Link
+                                        to={`/campaigns/${c.id}`}
+                                        className="text-body font-extrabold leading-snug text-heading transition-colors duration-200 hover:text-primary"
+                                    >
+                                        {c.title}
                                     </Link>
+                                    <p className="mt-1 flex min-w-0 items-center gap-1.5 text-meta font-semibold text-muted-foreground">
+                                        <BrandAvatar brand={c} size="h-5 w-5" />
+                                        <span className="truncate">
+                                            {c.brand_name || "Brand"}
+                                            {c.area ? ` · ${c.area}` : ""}
+                                        </span>
+                                    </p>
+
+                                    {/* Why it surfaced, from the server — the
+                                        only place that knows what matched. */}
+                                    {c.match_reason && (
+                                        <p
+                                            data-testid={IDS.reason(c.id)}
+                                            className="mt-2.5 flex items-start gap-1.5 text-meta leading-snug text-muted-foreground"
+                                        >
+                                            <Sparkles aria-hidden="true" className="mt-0.5 h-3.5 w-3.5 flex-none text-accent-ink" />
+                                            {c.match_reason}
+                                        </p>
+                                    )}
+
+                                    {/* mt-auto so every tile's fee lines up
+                                        across the row however long the reason
+                                        runs. */}
+                                    <div className="mt-auto flex items-center justify-between gap-3 pt-4">
+                                        <div className="flex min-w-0 items-center gap-2">
+                                            {c.category && (
+                                                <Pill tone="neutral">{categoryLabel(c.category)}</Pill>
+                                            )}
+                                            {/* A barter brief has no rupee
+                                                figure to print. */}
+                                            <span
+                                                data-testid={IDS.budget(c.id)}
+                                                className="app-figure truncate text-body-lg text-heading"
+                                            >
+                                                {isBarter(c) ? "Barter" : formatInr(c.budget_per_creator)}
+                                            </span>
+                                        </div>
+                                        {/* Applying needs a pitch and a rate,
+                                            and that form lives on the brief. */}
+                                        <Link to={`/campaigns/${c.id}`} data-testid={IDS.apply(c.id)}>
+                                            <Button variant="quiet" size="sm">
+                                                Apply
+                                            </Button>
+                                        </Link>
+                                    </div>
                                 </div>
-                                </div>
-                            </motion.li>
+                            </li>
                         ))}
                     </ul>
                 )}

@@ -266,7 +266,7 @@ export default function Applications({ applied, declined, invitations, onChanged
                 }
             />
 
-            <div className="mt-8 space-y-4">
+            <div className="mt-4 space-y-4">
                 {/* Shown whenever there are no pitches, invitation or not: the
                     heading above says "Pitched", and a heading with nothing
                     under it is a section that looks broken. It is also still
@@ -278,7 +278,7 @@ export default function Applications({ applied, declined, invitations, onChanged
                         title="You haven't pitched on anything yet."
                         action={
                             <Link to="/campaigns" data-testid={IDS.browse} className="mt-2">
-                                <Button className="h-12 rounded-full bg-primary text-primary-foreground hover:bg-primary-hover">
+                                <Button variant="solid" className="h-11">
                                     Browse campaigns
                                 </Button>
                             </Link>
@@ -292,7 +292,7 @@ export default function Applications({ applied, declined, invitations, onChanged
                         {waiting.length > 0 && (
                             <ul
                                 data-testid={IDS.list}
-                                className="divide-y divide-divider overflow-hidden rounded-md border border-border bg-card grain-surface"
+                                className="divide-y divide-divider overflow-hidden rounded-lg bg-card shadow-card"
                             >
                                 {waiting.map((row) => (
                                     <Row
@@ -307,7 +307,7 @@ export default function Applications({ applied, declined, invitations, onChanged
                         )}
 
                         {notThisTime.length > 0 && (
-                            <div className="overflow-hidden rounded-md border border-border bg-card/50">
+                            <div className="overflow-hidden rounded-lg bg-wash-warm">
                                 <p className="border-b border-border px-5 py-4 text-label text-muted-foreground sm:px-6">
                                     Went another way
                                 </p>

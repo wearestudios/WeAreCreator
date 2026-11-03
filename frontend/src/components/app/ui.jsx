@@ -39,6 +39,35 @@ export function CardHeading({ children, aside, as: Tag = "h2", className = "" })
     );
 }
 
+/**
+ * A line of facts separated by dots — "@handle · Food · Bengaluru" — that
+ * wraps without leaving a dot dangling at either end of a line.
+ *
+ * Every item carries its separator on its left, and the line is pulled left
+ * by exactly one separator's width inside a box that clips sideways, so the
+ * dot in front of whichever item starts a line sits outside the box. No
+ * measuring and no script: the browser's own wrapping decides which dot goes.
+ * An empty item (`null`, `false`, `""`) is dropped rather than drawn as a
+ * stray dot.
+ */
+export function MetaLine({ children, className = "", as: Tag = "p" }) {
+    const items = React.Children.toArray(children).filter((c) => c !== "" && c != null && c !== false);
+    return (
+        <div className="overflow-x-clip">
+            <Tag className={cx("-ml-4 flex flex-wrap items-center gap-y-1", className)}>
+                {items.map((child, i) => (
+                    <span
+                        key={i}
+                        className="inline-flex min-w-0 items-center before:w-4 before:flex-none before:text-center before:font-normal before:text-muted-foreground/60 before:content-['·']"
+                    >
+                        {child}
+                    </span>
+                ))}
+            </Tag>
+        </div>
+    );
+}
+
 /** The five tones a pill can carry. `due` is amber — a clock that is running. */
 export const PILL_TONE = {
     good: "bg-state-approved-wash text-state-approved",

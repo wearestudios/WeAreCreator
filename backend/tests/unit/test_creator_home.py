@@ -29,13 +29,14 @@ def read(*parts):
 
 
 def test_the_photo_is_the_anchor_of_the_page():
-    """h-28 on a phone rising to h-40 — a portrait, not a thumbnail. Both
-    branches, because most creators start without a photo and the monogram
-    must hold the same space."""
+    """h-28 on a phone rising to h-40 — a portrait, not a thumbnail. **4:5
+    now, not square**: board 26 draws a portrait, and the box is one constant
+    used by both branches, because most creators start without a photo and the
+    monogram must hold the same space."""
     src = read("components", "creator", "Hero.jsx")
 
-    assert "h-28 w-28" in src and "md:h-40 md:w-40" in src
-    assert src.count("md:h-40 md:w-40") >= 2, "the monogram fallback shrank"
+    assert 'const PHOTO_BOX = "h-28 w-[5.6rem] flex-none rounded-xl md:h-40 md:w-32"' in src
+    assert src.count("PHOTO_BOX") >= 3, "the monogram fallback stopped sharing the box"
 
 
 def test_the_photo_box_is_reserved():
@@ -120,14 +121,14 @@ def test_the_completeness_nudge_stays_outside_too():
 
 
 def test_the_active_card_carries_the_campaign_cover():
-    """A slim 16:5 slice, capped on desktop — aspect-ratio yields to
-    max-height, which is what stops a full-width card growing a 350px wall of
-    tint."""
+    """A slim 16:5 slice, capped at 118px from `md` (board 26's strip) —
+    aspect-ratio yields to max-height, which is what stops a wide card growing
+    a wall of tint."""
     src = read("components", "creator", "ActiveCampaigns.jsx")
 
     assert "<CampaignCover" in src
     assert "aspect-[16/5]" in src
-    assert "md:max-h-44" in src
+    assert "md:max-h-[7.375rem]" in src
 
 
 def test_the_suggested_tiles_carry_covers_too():
@@ -202,14 +203,15 @@ def test_nothing_on_the_page_loops():
 
 
 def test_the_skeleton_matches_the_new_arrangement():
-    """Big photo box, cover strip on the active card, tab strip — the shapes
-    that now occupy the space."""
+    """The portrait box and the three tiles, two active cards with their cover
+    strips, the tab pills — the shapes that now occupy the space."""
     src = read("components", "creator", "shared.jsx")
-    skeleton = src[src.index("export const HomeSkeleton"):]
+    skeleton = src[src.index("const ActiveCardSkeleton"):]
 
-    assert "md:h-40 md:w-40" in skeleton, "the photo box kept its old size"
-    assert "aspect-[16/5]" in skeleton, "no cover strip reserved"
-    assert "rounded-full" in skeleton, "no tab strip reserved"
+    assert "md:h-40 md:w-32" in skeleton, "the photo box kept its old size"
+    assert "aspect-[16/5]" in skeleton and "md:max-h-[7.375rem]" in skeleton, "no cover strip reserved"
+    assert "lg:grid-cols-[1.25fr_1fr]" in skeleton, "the cards are two up now"
+    assert skeleton.count("rounded-pill") >= 3, "no tab pills reserved"
 
 
 def test_every_drawer_has_an_empty_state():
@@ -228,3 +230,82 @@ def test_the_next_action_is_one_button():
 
     assert src.count("IDS.primary(collab.id)") >= 3, "the action variants share one slot"
     assert "waiting_on" in src, "and the card says whose move it is"
+
+
+# --- Board 26 ----------------------------------------------------------------
+
+
+def test_the_next_step_comes_before_the_reference_half():
+    """**The fold is the reason for the order.** The card used to draw the
+    terms, the checklist and the fee's history above its button, so on a
+    laptop the button of the first card sat below the fold. The next step and
+    its button now follow the tracker, and the reference half folds into a
+    native `<details>` after them — still in the DOM, so nothing is fetched
+    on opening it."""
+    src = read("components", "creator", "ActiveCampaigns.jsx")
+    card = src[src.index("    return (\n        <li"):]
+
+    nxt = card.index("IDS.nextAction(collab.id)")
+    fold = card.index("<details")
+    assert card.index("variant=\"bars\"") < nxt < fold
+    for reference in ("<BriefChecklist", "<NegotiationHistory", "DRAFT_IDS.block"):
+        assert card.index(reference) > fold, reference
+
+
+def test_the_box_is_red_only_when_the_move_is_the_creators():
+    """One red button per card at most, and only on the creator's own move —
+    every other wait is navy. Whose move it is reads the server's process
+    owner, which is mapped through `execution_owner`."""
+    src = read("components", "creator", "ActiveCampaigns.jsx")
+
+    assert 'const owner = collab.process?.next_action?.owner' in src
+    assert 'const buttonVariant = mine ? "urgent" : "solid"' in src
+    assert '(mine ? "bg-wash-red" : "bg-wash-navy")' in src
+    assert "bg-primary text-primary-foreground" not in src, "a hand-styled button skipped the variants"
+
+
+def test_the_tracker_is_a_variant_of_the_shared_flow():
+    flow = read("components", "application", "ProcessFlow.jsx")
+
+    assert 'variant === "bars"' in flow
+    assert "function Bars(" in flow
+    # Done navy, current red, still to come a warm track.
+    assert '"bg-accent"' in flow and '"bg-primary"' in flow
+
+
+def test_the_drawers_are_named_as_the_board_names_them():
+    """"Finished" stays as the fourth: it holds the takedown answers, which
+    are the one thing in there to act on."""
+    src = read("pages", "CreatorHome.jsx")
+
+    for label in ('"Briefs for you"', '"My pitches"', '"Finished"', '"Payments"'):
+        assert label in src
+    assert "data-[state=active]:bg-primary" in src, "the active pill is navy"
+
+
+def test_the_sidebar_count_is_the_open_invitations_from_this_payload():
+    src = read("pages", "CreatorHome.jsx")
+
+    assert "useShellBadges({ invitations:" in src
+    assert src.index("useShellBadges(") < src.index("if (untouched && !alreadySteered)"), (
+        "a hook after the early return"
+    )
+
+
+def test_the_header_names_where_the_follower_count_came_from():
+    """"from Instagram" only when the count was read from it; "self-reported"
+    otherwise. A count with no provenance beside it is the thing
+    `_follower_provenance` exists to prevent."""
+    src = read("components", "creator", "Hero.jsx")
+
+    assert "profile.follower_count_verified ?" in src
+    assert "from Instagram" in src and "self-reported" in src
+
+
+def test_the_profile_nudge_is_one_row():
+    """It sits between the header and the live work; as a 290px panel it put
+    the first card's button below the fold."""
+    src = read("components", "creator", "Completeness.jsx")
+
+    assert "p-6 md:p-7" not in src
+    assert "h-[52px] w-[52px]" in src

@@ -29,8 +29,6 @@ export const CREATOR_HERO = {
 	lifetime: 'creator-stat-lifetime',
 	completed: 'creator-stat-completed',
 	pending: 'creator-stat-pending',
-	editProfile: 'header-edit-profile',
-	browse: 'header-browse-campaigns',
 };
 
 export const CREATOR_COMPLETENESS = {
@@ -55,6 +53,10 @@ export const CREATOR_ACTIVE = {
 	amount: (id) => `creator-active-amount-${id}`,
 	tracker: (id) => `creator-active-tracker-${id}`,
 	stage: (id, key) => `creator-active-stage-${id}-${key}`,
+	// Whose move it is, from the server's process owner.
+	move: (id) => `creator-active-move-${id}`,
+	// The brief, the terms and how the fee was agreed, folded under the work.
+	more: (id) => `creator-active-more-${id}`,
 	nextAction: (id) => `creator-active-next-${id}`,
 	manager: (id) => `creator-active-manager-${id}`,
 	call: (id) => `creator-active-call-${id}`,
