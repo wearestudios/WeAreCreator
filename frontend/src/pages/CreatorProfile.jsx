@@ -25,6 +25,7 @@ import { notifyError, notifySuccess } from "@/lib/feedback";
 import { Switch } from "@/components/ui/switch";
 import { payoutMethodLabel } from "@/lib/payout";
 import DeleteAccount from "@/components/account/DeleteAccount";
+import TagEditor from "@/components/tags/TagEditor";
 import { Navbar } from "@/components/Navbar";
 import { Button } from "@/components/ui/button";
 import { DetailPageSkeleton } from "@/components/data/PageSkeleton";
@@ -445,6 +446,12 @@ export default function CreatorProfile() {
                             to a section and press Save is three chances to
                             give up on a decision they already made. It saves
                             on the switch. */}
+                        {/* The tags briefs are matched on, editable here
+                            because suggestions from Instagram arrive after
+                            onboarding — this is where they are kept or
+                            removed. */}
+                        <TagEditor endpoint="/creator/tags" decide title="Tags briefs are matched on" className="mt-10" />
+
                         <Section title="Being featured" testid={IDS.featuring}>
                             <FeaturingToggle
                                 value={profile.homepage_opt_in}

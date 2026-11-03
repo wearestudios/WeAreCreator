@@ -767,3 +767,76 @@ def test_the_summary_module_writes_nothing():
 
     source = pathlib.Path(cs.__file__).read_text()
     assert "db." not in source and "await " not in source
+
+
+# ---------------------------------------------------------------------------
+# 6. The dashboard's derived values, and the one multiple the model may quote
+# ---------------------------------------------------------------------------
+
+DASHBOARD = {
+    "by_format": [
+        {"format": "reel", "posts": 7, "views": 420000},
+        {"format": "carousel", "posts": 4, "views": 100000},
+    ],
+    "versus_last_campaign": {"title": "Diwali menu", "views": 400000, "change_percent": 30.0},
+}
+
+
+def dashboard_input():
+    analytics = {
+        "campaign": {"title": "Brunch"},
+        "totals": {"total_reach": 300000, "total_views": 520000, "total_shares": 2100,
+                   "engagement_rate": 4.0},
+        "creators": [
+            {"creator_id": "a", "name": "Aditi Rao", "views": 312000, "reach": 180000,
+             "shares": 1500, "measured": True},
+            {"creator_id": "b", "name": "Kiran M", "views": 208000, "reach": 120000,
+             "shares": 600, "measured": True},
+        ],
+    }
+    return cs.build_summary_input(analytics, None, {}, dashboard=DASHBOARD)
+
+
+class TestDashboardDerived:
+    def test_each_creators_share_of_views_and_shares_per_thousand(self):
+        d = dashboard_input()["derived"]
+        aditi, kiran = d["by_creator_views"]
+        assert aditi["share_of_views_percent"] == 60.0 and kiran["share_of_views_percent"] == 40.0
+        assert aditi["shares_per_thousand_views"] == round(1500 / 312000 * 1000, 1)
+
+    def test_average_views_per_post_by_format_and_the_ratio(self):
+        d = dashboard_input()["derived"]
+        reel, carousel = d["by_post_format"]
+        assert reel["average_views_per_post"] == 60000 and carousel["average_views_per_post"] == 25000
+        (ratio,) = d["format_ratios"]
+        assert ratio == {"formats": "reel to carousel", "average_views_ratio": 2.4}
+
+    def test_the_delta_against_the_last_campaign(self):
+        assert dashboard_input()["derived"]["vs_last_campaign"] == {
+            "views_last_campaign": 400000, "views_change_percent": 30.0,
+        }
+
+    def test_a_computed_ratio_may_be_quoted_as_a_multiple(self):
+        data = dashboard_input()
+        s = summary("Reels drew 60,000 views a post", [
+            point("Reels averaged 2.4x the views of a carousel.", "derived.format_ratios[0].average_views_ratio"),
+            point("Reels averaged 2.4 times a carousel's views.", "derived.format_ratios[0].average_views_ratio"),
+        ])
+        assert cs.ground(s, data) == []
+
+    def test_a_multiple_that_is_not_the_ratio_is_still_refused(self):
+        data = dashboard_input()
+        s = summary("Reels drew 60,000 views a post", [point("Reels did 3x better.", "totals.views")])
+        assert any('"3x"' in p for p in cs.ground(s, data))
+
+    def test_a_ratio_does_not_vouch_for_a_plain_count_it_shares_digits_with(self):
+        """2.4 as a multiple; "2.4%" is a different claim and is not in the data."""
+        data = dashboard_input()
+        s = summary("Reels drew 60,000 views a post", [point("Shares rose 2.4%.", "totals.views")])
+        assert cs.ground(s, data)
+
+    def test_with_no_ratio_field_every_multiple_is_refused(self):
+        data = sample_input()
+        assert "format_ratios" not in data["derived"]
+        s = summary(GOOD_HEADLINE, [point("Aditi did 2.4x.", "totals.reach")])
+        assert cs.ground(s, data)

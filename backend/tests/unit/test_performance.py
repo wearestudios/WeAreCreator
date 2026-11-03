@@ -210,11 +210,15 @@ class TestManualEntryAlwaysWorks:
 
         # The body, not the docstring — which says "never raises" and would
         # otherwise satisfy a substring check about the word "raise".
-        src = inspect.getsource(server._fetch_instagram_performance)
+        # The reader moved to `_fetch_instagram_posts` when a delivery became
+        # several posts; the old one-reading function is a sum over it.
+        src = inspect.getsource(server._fetch_instagram_posts)
         body = src.split('"""')[2]
         assert "raise " not in body
-        # Every early exit hands back a sentence, not a bare None.
-        assert src.count("return None, ") >= 6
+        # Every early exit hands back a sentence, not a bare empty list.
+        assert src.count("return [], ") >= 6
+        wrapper = inspect.getsource(server._fetch_instagram_performance).split('"""')[2]
+        assert "raise " not in wrapper
 
     def test_the_fetch_endpoint_answers_200_when_it_cannot_fetch(self):
         # A creator who has not connected Instagram is the ordinary case, not
@@ -230,8 +234,8 @@ class TestManualEntryAlwaysWorks:
         than fetching insights for a link we were handed."""
         import inspect
 
-        src = inspect.getsource(server._fetch_instagram_performance)
-        assert '"/me/media"' in src
+        src = inspect.getsource(server._fetch_instagram_posts)
+        assert 'f"/{INSTAGRAM_MEDIA_API_VERSION}/me/media"' in src
         assert 'db.instagram_connections.find_one({"user_id": collab["creator_id"]})' in src
 
     @pytest.mark.parametrize(

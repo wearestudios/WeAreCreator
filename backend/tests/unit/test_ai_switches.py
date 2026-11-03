@@ -33,8 +33,12 @@ CAPABILITIES = {
         ],
     },
     "nicheMatching": {
-        "module": "niche_matching",
-        "routes": [("GET", "/api/brand/campaigns/{campaign_id}/niche-matches")],
+        "module": "niche_tagging",
+        "routes": [
+            ("GET", "/api/creator/tags"),
+            ("GET", "/api/brand/campaigns/{campaign_id}/tags"),
+            ("PUT", "/api/brand/campaigns/{campaign_id}/tags"),
+        ],
     },
     "briefWriter": {
         "module": "brief_writer",
@@ -97,11 +101,20 @@ def test_a_switch_that_is_on_has_its_backend(key):
     )
 
 
-def test_the_check_would_fail_a_switch_with_no_backend():
-    """The negative half, so the test above is known to be able to fail: the
-    two features not built yet are missing their module and route."""
-    assert missing_for("nicheMatching")
-    assert missing_for("briefWriter")
+def test_the_check_would_fail_a_switch_with_no_backend(monkeypatch):
+    """The negative half, so the test above is known to be able to fail: a
+    capability naming a module and a route that do not exist is reported."""
+    monkeypatch.setitem(
+        CAPABILITIES, "imaginary", {"module": "no_such_module", "routes": [("GET", "/api/nowhere")]}
+    )
+    assert missing_for("imaginary") == ["module no_such_module", "route GET /api/nowhere"]
+
+
+def test_the_brief_writer_backend_exists():
+    assert missing_for("briefWriter") == []
+
+def test_the_matching_backend_exists():
+    assert missing_for("nicheMatching") == []
 
 
 def test_the_summary_backend_exists():
@@ -145,3 +158,107 @@ def test_ai_live_reads_only_a_literal_true():
     state = switches()
     expected = [state["campaignSummary"], state["nicheMatching"], state["briefWriter"], False, False]
     assert got == str(expected).replace("True", "true").replace("False", "false").replace(" ", "")
+
+
+# ---------------------------------------------------------------------------
+# The lines each switch governs, on the pages that print them
+# ---------------------------------------------------------------------------
+
+PAGES = Path(server.__file__).resolve().parents[1] / "frontend" / "src" / "pages"
+
+# (page file, the content key printed, the switch that must guard it, the
+# analytics section id it reports as).
+# (page file, the content expression printed, the guard that must sit above
+# it, the analytics section id it reports as). Home's step lines and the FAQ
+# item carry their own switch key, held to the right switch by the tests below.
+SWITCHED_LINES = [
+    ("ForBrands.jsx", "report.aiLine", 'aiLive("campaignSummary")', "report-ai-summary"),
+    ("ForBrands.jsx", "shortlist.aiLine", 'aiLive("nicheMatching")', "shortlist-ai-matching"),
+    ("ForBrands.jsx", "hero.aiLead", 'aiLive("briefWriter")', "hero-ai-lead"),
+    ("Home.jsx", "hero.aiLead", "aiPowered", "hero-ai-lead"),
+    ("ForCreators.jsx", "briefs.aiLine", 'aiLive("nicheMatching")', "briefs-ai-matching"),
+    ("ForCreators.jsx", "hero.aiLine", 'aiLive("nicheMatching")', "hero-ai-matching"),
+    ("Home.jsx", "a.line", "aiLive(a.key)", "step-${step.key}-ai-${a.key}"),
+]
+
+# Homepage steps that carry AI lines, and the switch behind each line.
+STEP_SWITCHES = {
+    "offer": ["briefWriter", "nicheMatching"],
+    "paid": ["campaignSummary"],
+}
+
+
+@pytest.mark.parametrize("page,expr,guard,track", SWITCHED_LINES)
+def test_each_ai_line_renders_only_behind_its_switch(page, expr, guard, track):
+    src = (PAGES / page).read_text()
+    at = src.index("{" + expr + "}")
+    found = src.rfind(guard, 0, at)
+    assert found != -1 and at - found < 600, f"{expr} on {page} is not inside {guard}"
+    # And the element it renders on reports when it is seen.
+    assert f"data-track-section={{`{track}`}}" in src or f'data-track-section="{track}"' in src
+
+
+def _evaluated(expr: str):
+    script = (
+        re.sub(r"^import .*?;\s*$", "", MARKETING.read_text(), flags=re.M)
+        + f"\nconsole.log(JSON.stringify({expr}));"
+    )
+    out = subprocess.run(
+        ["node", "--input-type=module", "-e", script], capture_output=True, text=True, timeout=60
+    )
+    assert out.returncode == 0, out.stderr
+    import json
+
+    return json.loads(out.stdout)
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_each_homepage_ai_line_names_its_switch():
+    got = _evaluated("HOME.how.items.filter(s => s.ai).map(s => [s.key, s.ai.map(a => a.key)])")
+    assert dict(got) == STEP_SWITCHES
+    assert all(key in CAPABILITIES for keys in STEP_SWITCHES.values() for key in keys)
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_the_switched_faq_item_is_filtered_and_tracked():
+    items = _evaluated("BRANDS.faq.items.filter(i => i.aiKey)")
+    assert [(i["aiKey"], i["q"]) for i in items] == [("briefWriter", "Do I have to write the brief myself?")]
+    assert items[0]["track"]
+    src = (PAGES / "ForBrands.jsx").read_text()
+    assert "!item.aiKey || aiLive(item.aiKey)" in src
+    parts = (FRONTEND / "components" / "marketing" / "SiteParts.jsx").read_text()
+    assert "data-track-section={item.track" in parts
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_the_example_why_line_is_drawn_only_behind_the_switch():
+    src = (PAGES / "ForBrands.jsx").read_text()
+    assert 'showWhy={aiLive("nicheMatching")}' in src
+    mocks = (FRONTEND / "components" / "marketing" / "siteMocks.jsx").read_text()
+    assert "showWhy = false" in mocks and "showWhy && row.why" in mocks
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_every_switched_string_in_the_content_has_a_guarded_render():
+    """Every `aiLine`/`aiLead` in the content is printed by an entry above."""
+    text = MARKETING.read_text()
+    keys = set(re.findall(r"^\s*(ai[A-Z]\w*):", text, re.M)) - {"aiKey"}
+    assert keys <= {"aiLine", "aiLead", "aiTitle", "aiDescription"}, keys
+    printed = {expr.split(".")[-1] for _, expr, *_ in SWITCHED_LINES}
+    assert keys - {"aiTitle", "aiDescription"} <= printed
+    # The home page's title and description are swapped together, under the
+    # same two-switch rule as its lead.
+    home = (PAGES / "Home.jsx").read_text()
+    assert "title: plainMeta.aiTitle, description: plainMeta.aiDescription" in home
+    assert "const aiPowered = aiCards.length >= 2;" in home
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_the_lines_say_only_what_the_validator_holds():
+    """"Using only your real numbers" is a claim — `campaign_summary.ground`
+    is what makes it true, and the grounding tests are what hold it."""
+    text = MARKETING.read_text()
+    assert "using only your real numbers, never invented ones" in text
+    import campaign_summary
+
+    assert callable(campaign_summary.ground)

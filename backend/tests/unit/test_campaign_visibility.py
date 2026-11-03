@@ -430,7 +430,7 @@ def test_the_feed_defaults_to_relevance():
     src = frontend("pages", "Campaigns.jsx")
 
     assert 'useState("relevant")' in src
-    assert '{ value: "relevant", label: "Most relevant first" }' in src
+    assert '{ value: "relevant", label: "Matches your niche" }' in src
     assert 'sort !== "relevant"' in src, "the default travels as an absence"
 
 

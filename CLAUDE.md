@@ -4382,10 +4382,148 @@ next PR, so both routes are in `test_router_callers.py`'s `UNBUILT`.
 - An erasure deletes summaries naming the creator (`creator_ids`) or written
   for the brand.
 
+### The results dashboard
+
+`components/dashboard/CampaignDashboard.jsx`, at `/brand/campaigns/:id/results`
+and `/admin/campaigns/:id/results` (one component, its own `results` chunk),
+drawn from the `dashboard` block of `GET /brand/campaigns/{id}/analytics`.
+
+- **A delivery is several posts now.** `post_performance` is the latest
+  reading per post (merged, so a hand-typed likes count does not erase the
+  views Instagram brought); `performance_snapshots` is append-only and is what
+  "Views, building up" is drawn from; `content_performance` is re-derived as
+  the delivery's sum by `_rollup_collab_performance`, so every older reader
+  keeps one row per delivery. `backfill_post_performance` turns pre-existing
+  readings into posts at startup, idempotently.
+- **Instagram is asked per media type** (`_IG_METRICS_BY_FORMAT`) on a pinned
+  Graph version (`INSTAGRAM_MEDIA_API_VERSION`), because one unsupported metric
+  refuses the whole request; `_fetch_media_insights` then falls back to one
+  metric at a time, so a wrong entry costs a metric, never the post.
+  `shares` joined `PERFORMANCE_METRICS` and `ENGAGEMENT_METRICS`.
+- `refresh_post_insights` re-reads every live post every 6 hours until 14 days
+  after posting, then freezes it (`insights_refresh` on the collaboration),
+  backs off on failure, caps calls per creator, and refreshes the expiring
+  thumbnail URL with the numbers. The screen falls back to a plain tile on any
+  image error. Manual readings are kept and shown as "Entered by hand".
+- **Totals are live posts only**, `None` rather than 0 before anything is live
+  (the empty state lists creators and where they are). Engagement rate is
+  (likes + comments + shares + saves) ÷ reach summed across posts.
+  `versus_last_campaign` is the one most recent earlier campaign, not a sum.
+- Motion is CSS (`.dash-*` in `index.css`, on `--weare-ease`) plus
+  `useCountUp`, which writes `textContent` per frame with Indian grouping.
+  Entrance classes go on the first render only; the 5-minute background
+  refresh never replays them. Reduced motion paints the end state.
+- The summary's derived values grew with it: each creator's share of views,
+  shares per 1,000 views, average views per post by format and the
+  `format_ratios` between them, the last-campaign delta, and the dashboard's
+  post and creator counts. **A multiple ("2.4x") matches only a `ratio`
+  field** — the one relaxation, and every other "3x" is still refused.
+  Prompt is `campaign_summary.v2`.
+
+### Niche tagging and matching
+
+`niche_tagging.py` (pure) is the vocabulary and the match; `lib/niches.js`
+mirrors the vocabulary with a drift test. Niches are grouped by campaign
+category (food and drink first, fifteen of them), plus six languages, five
+tones and 41 Bengaluru localities. **Nothing outside it is ever stored**: the
+model's reply, a person's save and a brief's confirmation all go through
+`_keep`, and an unknown value is dropped rather than refused.
+
+- **Read on connect and weekly** (`tag_creator_from_instagram`, the Instagram
+  loop), from the last 24 posts under the scope we already hold
+  (`instagram_business_basic` covers `/me/media`). The format mix and cadence
+  are counted; niche (with confidence ≥ 0.5), language, tone and areas come
+  from the model reading **captions only** — thumbnail vision is behind
+  `AI_TAGGING_VISION`, off and not built. Captions are untrusted, wrapped as
+  data, and an area survives only if a caption names it. Audience top cities
+  are stored where Instagram gives them and skipped silently otherwise.
+- **What a person said beats what the model guessed.** `creator_tags` keeps
+  `ai`, `confirmed` and `rejected` apart; `effective_tags` lays confirmed over
+  the guesses and keeps a removal removed through every re-read. Disconnecting
+  Instagram (`_drop_ai_tags`) deletes everything it gave and keeps what the
+  creator confirmed. A creator without Instagram picks tags in onboarding;
+  an admin edits the same confirmed set.
+- **Filters read stored fields** (`tag_niches`, `tag_languages`, `tag_areas`,
+  `tag_formats`, written by `flattened` on every save, indexed) — never a
+  model at query time. Applicants and suggestions filter on niche, language,
+  area, format, tier and reliability.
+- **A brief's tags are suggested, never applied.** After a save the model
+  suggests niche, language and area (the area only if the venue text names
+  it); they sit in `tag_suggestions` until the brand confirms them in
+  `BriefTags`. `tags` is the only thing matching reads.
+- `match_score` is five components that sum to the score
+  (`MATCH_WEIGHTS`: niche 35, language 20, area 20, tier 15, reliability 10),
+  unknowns at the midpoint, with a "Why this creator" line naming only what
+  matched. The creator feed adds the same three tags to
+  `score_campaign_for_creator` — still no money term, and barter still opt-in.
+- `backfill_creator_tags.py` is dry-run by default and batched under the day's
+  AI ceiling. The public site's three matching lines render only while
+  `nicheMatching` is on; the step-01 line says "not by follower count alone",
+  because tier fit is a component and the site may not claim otherwise.
+
+### The brief writer
+
+A textarea at the top of Post a brief: "Describe your campaign in two lines".
+English, Kannada or Hinglish in, the form's fields out in English.
+`brief_writer.py` is pure and holds the rules; `POST /brand/campaigns/brief-writer`
+is the door. **It never posts** — the draft lands in the form and the ordinary
+`POST /brand/campaigns` is still the only way a campaign is made.
+
+- **The hard rules are code, not prompt.** Budget, total budget, creator
+  count, revisions and dates survive only if the brand's text carries them
+  (`stated`, over `campaign_summary.extract_numbers`); every number in the
+  title, brief, dos, don'ts and caption guidance must too, as the `check` that
+  earns one retry, after which the draft fails closed. Dates are never before
+  today (IST) or more than a year out, and only the ones the campaign type has.
+  Enums are the server's literals, mirrored and drift-tested. "eight thousand"
+  is not read, so that fee is left for the brand rather than guessed.
+- **Disclosure is always added by code**: `paid_partnership`, `#ad` among the
+  hashtags, and a do saying so.
+- **Compensation defaults to paid; barter is never chosen.** If the brand's
+  words mention barter, `compensation_type` comes back `null`, the picker is
+  left unselected, a notice says why, and the form will not submit until the
+  brand picks. The model has no compensation field to fill.
+- **The venue is the brand's** first outlet; the model has no address field.
+- Ten drafts per brand per IST day (`brief_writer_uses`, claimed before the
+  call so a failure counts), twenty seconds then "Couldn't draft this — fill
+  it in below". `brief_writer` on `GET /brand/profile` says whether to render
+  it; with AI off it is `{"available": false}` and nothing renders.
+- **An AI-filled field carries "AI draft" until it is edited**, by value: the
+  marker shows while the field still holds what the draft wrote
+  (`lib/briefDraft.js`). Regenerate replaces only fields still at the default
+  or the last draft's value; anything the brand changed comes back as a
+  conflict and a dialog asks before replacing it.
+- The site's lines — the For Brands hero lead (the h1 stays), home step 01 and
+  the FAQ entry — render only while `briefWriter` is on. The lead says "we
+  shortlist" where the brief said "you shortlist", because we do.
+
+### "AI-powered", and only where it is true
+
+The site says "AI" only where a switch backs it, and `test_ai_site_copy.py`
+walks every string in the content module that contains the word and names the
+switch behind it — an `ai*` field, the home `ai` section, a step's `ai` list,
+or a FAQ item's `aiKey`. A new "AI" sentence with no switch fails CI.
+
+- **"AI-powered" is a two-switch claim.** Home's lead, title and description
+  swap to their `ai*` wording only while at least two switches are on; one
+  feature is not a product powered by it. The h1 never changes, and no h1
+  anywhere may say "AI".
+- **"What the AI does"** sits after How it works while at least one switch is
+  on, one card per live switch, each with its drawing (`why-planning` found
+  its place here). Everything after it renumbers by `shift`, so the section
+  rules stay a contents list; `HomeAiSection.test.jsx` renders 0–3 switches
+  and reads the numbers back.
+- **The AI never prices, approves or pays**, and the section's lead says so in
+  as many words: "People agree every fee, approve every post and pay every
+  creator." A pattern test refuses the opposite claim.
+- /for-creators adds "Briefs are matched to what you post — cuisine, language
+  and neighbourhood." under the hero lead while `nicheMatching` is on.
+
 ### The public site's switches
 
-`AI_FEATURES` in `content/marketing.js` (`campaignSummary`, `nicheMatching`,
-`briefWriter`, all false) and `aiLive(key)`, the only way a page may read them.
+`AI_FEATURES` in `content/marketing.js` (`campaignSummary` on since the
+dashboard shipped, `nicheMatching` since matching did, `briefWriter` since
+the writer did) and `aiLive(key)`, the only way a page may read them.
 A switch goes true only in the PR that ships the feature to brands or
 creators; if `AI_ENABLED` goes false in production these go false too, because
 a bundle cannot read the server's environment. `test_ai_switches.py` fails CI

@@ -81,7 +81,9 @@ const BUDGET_BUCKETS = [
 // profile — niches, city, neighbourhood. For a profile that matches nothing it
 // degrades to newest-first, so the option is never worse than the old default.
 const SORT_OPTIONS = [
-    { value: "relevant", label: "Most relevant first" },
+    // Ranked on the brief's confirmed tags against what you post, then on
+    // niche words, city and neighbourhood — "matches your niche" first.
+    { value: "relevant", label: "Matches your niche" },
     { value: "newest", label: "Newest first" },
     { value: "budget_desc", label: "Budget: high to low" },
     { value: "budget_asc", label: "Budget: low to high" },
@@ -286,6 +288,9 @@ export default function Campaigns() {
     const [compensation, setCompensation] = useState(ANY);
     const [budget, setBudget] = useState(ANY);
     const [sort, setSort] = useState("relevant");
+    // Only briefs whose confirmed niche is one of yours. The barter setting
+    // below still applies on top — this narrows, it never widens.
+    const [nicheOnly, setNicheOnly] = useState(false);
     const [q, setQ] = useState("");
     const [debouncedQ, setDebouncedQ] = useState("");
     const [filters, setFilters] = useState({
@@ -334,6 +339,7 @@ export default function Campaigns() {
         // "relevant" is the server's default, so it travels as an absence.
         if (sort && sort !== "relevant") params.sort = sort;
         if (debouncedQ) params.q = debouncedQ;
+        if (nicheOnly) params.niche_match = true;
         api.get("/campaigns", { params })
             .then(({ data, headers }) => {
                 if (cancelled) return;
@@ -352,7 +358,7 @@ export default function Campaigns() {
         return () => {
             cancelled = true;
         };
-    }, [city, area, category, campaignType, compensation, budget, sort, debouncedQ, feedKey]);
+    }, [city, area, category, campaignType, compensation, budget, sort, debouncedQ, feedKey, nicheOnly]);
 
     const hasFilters =
         city !== ANY ||
@@ -665,6 +671,18 @@ export default function Campaigns() {
                             setFeedKey((k) => k + 1);
                         }}
                     />
+                )}
+                {user?.role === "creator" && (
+                    <label className="mt-2 inline-flex items-center gap-2 pl-2 text-meta">
+                        <input
+                            type="checkbox"
+                            checked={nicheOnly}
+                            onChange={(e) => setNicheOnly(e.target.checked)}
+                            data-testid="feed-niche-only"
+                            className="h-4 w-4 rounded border-input"
+                        />
+                        Only briefs that match your niche
+                    </label>
                 )}
 
                 {/* What you are looking at, and why. Both stay in the sticky

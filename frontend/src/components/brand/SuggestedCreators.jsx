@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 
 import { api, formatApiError, mediaUrl } from "@/lib/api";
+import TagFilterBar from "@/components/tags/TagFilterBar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -128,12 +129,15 @@ export function SuggestedCreators({ campaignId, canInvite = false }) {
         max_followers: "",
     });
     const [applied, setApplied] = useState(filters);
+    // The tag filters, applied as they change: language, area, format and
+    // reliability, answered from stored tags.
+    const [tagFilters, setTagFilters] = useState({});
 
     const load = useCallback(async () => {
         setLoading(true);
         setError(null);
         try {
-            const params = { limit, offset: 0 };
+            const params = { limit, offset: 0, ...tagFilters };
             Object.entries(applied).forEach(([k, v]) => {
                 if (String(v).trim() !== "") params[k] = v;
             });
@@ -147,7 +151,7 @@ export function SuggestedCreators({ campaignId, canInvite = false }) {
         } finally {
             setLoading(false);
         }
-    }, [campaignId, applied, limit]);
+    }, [campaignId, applied, limit, tagFilters]);
 
     useEffect(() => {
         load();
@@ -245,6 +249,15 @@ export function SuggestedCreators({ campaignId, canInvite = false }) {
                 )}
             </div>
 
+            <TagFilterBar
+                value={tagFilters}
+                onChange={(next) => {
+                    setLimit(PAGE_SIZE);
+                    setTagFilters(next);
+                }}
+                only={["language", "area", "format", "reliability"]}
+                className="mb-4"
+            />
             <form
                 data-testid={T.filters}
                 onSubmit={(e) => {
@@ -451,6 +464,11 @@ export function SuggestedCreators({ campaignId, canInvite = false }) {
                                     >
                                         {row.match_reason}
                                     </p>
+                                    {row.match?.why ? (
+                                        <p data-testid={`suggested-why-${row.user_id}`} className="text-meta text-muted-foreground">
+                                            <span className="font-medium text-foreground">Why this creator:</span> {row.match.why}
+                                        </p>
+                                    ) : null}
 
                                     <ScoreBreakdown row={row} />
 

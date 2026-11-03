@@ -155,6 +155,8 @@ db = client[os.environ["DB_NAME"]]
 # `server.db` for an in-memory database is logging there too.
 import ai  # noqa: E402
 import campaign_summary  # noqa: E402
+import niche_tagging  # noqa: E402
+import brief_writer  # noqa: E402
 
 ai.configure(lambda: db)
 
@@ -8841,6 +8843,9 @@ async def finish_instagram_connect(
         creator_oid,
         after={"ig_user_id": ig_user_id, "username": stats.get("username")},
     )
+    # Tag from their last 24 posts, in the background — connecting is not
+    # something to make somebody wait on a model for.
+    _tag_in_background(creator_oid)
     fresh = await db.instagram_connections.find_one({"_id": doc["_id"]})
     return _serialize_instagram(fresh)
 
@@ -8874,6 +8879,9 @@ async def disconnect_instagram(user: dict = Depends(require_roles("creator"))):
         creator_oid,
         before={"ig_user_id": existing.get("ig_user_id")},
     )
+    # What was read from Instagram goes with the connection; what the creator
+    # confirmed is theirs and stays.
+    await _drop_ai_tags(creator_oid)
     return _serialize_instagram(None)
 
 
@@ -12580,7 +12588,8 @@ async def get_brand_profile(user: dict = Depends(require_roles(*BRAND_ROLES))):
     doc = await db.brand_profiles.find_one({"user_id": _brand_scope(user)})
     if not doc:
         raise HTTPException(status_code=404, detail="Brand profile not found")
-    return await _brand_profile_response(doc)
+    # Whether Post a brief offers the writer — absent when AI is off.
+    return {**await _brand_profile_response(doc), "brief_writer": await _brief_writer_status(_brand_scope(user))}
 
 
 @brand_router.put("/profile")
@@ -13365,6 +13374,9 @@ async def create_brand_campaign(
             note="Published without review — the brand is trusted.",
             **_campaign_audit_context(doc),
         )
+    # Tags for matching, suggested in the background. Nothing applies until
+    # the brand confirms them.
+    _suggest_in_background(result.inserted_id)
     return {
         **_serialize_brand_campaign(doc, 0, payout_default=await creator_payout_days()),
         # **What the brand is getting, said at the moment they post.** All
@@ -13578,6 +13590,7 @@ async def update_brand_campaign(
     counts = await _brand_applicant_counts_for([updated])
     filled_map = await _filled_counts_for([doc["_id"]])
     awaiting = await _awaiting_brand_counts([doc["_id"]])
+    _suggest_in_background(doc["_id"])
     return _serialize_brand_campaign(
         updated,
         counts.get(doc["_id"], 0),
@@ -13764,6 +13777,8 @@ def _analytics_creator_row(visible: dict, performance: Optional[dict], cost) -> 
         "profile_image_url": visible.get("profile_image_url"),
         "follower_count": visible.get("follower_count"),
         "reach": reach,
+        "views": performance.get("views"),
+        "shares": performance.get("shares"),
         "impressions": performance.get("impressions"),
         # **The post's rate, not the creator's profile rate.** The profile
         # figure describes their account in general; this describes the work
@@ -13984,6 +13999,296 @@ def _against_their_own_history(this: dict, others: list) -> Optional[dict]:
     }
 
 
+# ---------------------------------------------------------------------------
+# The campaign dashboard: what the posts did, post by post
+# ---------------------------------------------------------------------------
+#
+# The block the brand's animated dashboard draws, built from `post_performance`
+# (the latest reading per post) and `performance_snapshots` (every reading,
+# which is what the "views, building up" chart needs). Same door, same shortlist
+# gate and same projection as everything else on this endpoint: creators are
+# named through `_brand_visible_creator`, and nothing here reads a profile
+# field that projection does not carry.
+
+# What a creator who has not posted yet is doing, in words. The empty state
+# lists people and where they are rather than a dashboard of zeros.
+_DASHBOARD_STATUS = {
+    "accepted": "Agreed, picking a slot",
+    "commercial_agreed": "Agreed, picking a slot",
+    "slot_booked": "Shoot booked",
+    "address_confirmed": "Product on its way",
+    "dispatched": "Product on its way",
+    "received": "Product received",
+    "attended": "Shoot done",
+    "draft_submitted": "Draft in review",
+    "draft_approved": "Draft approved, posting soon",
+}
+# Formats as the screen names them, and the order it lists them in.
+DASHBOARD_FORMATS = ("reel", "carousel", "image", "story", "post")
+# The deliverables that are Instagram posts a brand counts on the wall.
+_POST_DELIVERABLES = ("reel", "static_post")
+
+
+def _expected_posts(campaign: dict) -> int:
+    """Posts one creator owes this brief, from the counted ask. A brief with
+    no counted ask is one post a creator — the old free-text default."""
+    n = sum(
+        int(i["quantity"]) for i in _deliverable_items(campaign) if i["type"] in _POST_DELIVERABLES
+    )
+    return n or 1
+
+
+def _fallback_format(campaign: dict) -> str:
+    """A post with no Instagram reading has no media type. If the brief only
+    asked for reels, it is a reel; otherwise the screen calls it a post."""
+    kinds = {i["type"] for i in _deliverable_items(campaign)} & set(_POST_DELIVERABLES)
+    if kinds == {"reel"}:
+        return "reel"
+    if kinds == {"static_post"}:
+        return "image"
+    return "post"
+
+
+def _sum_or_none(values) -> Optional[int]:
+    present = [v for v in values if v is not None]
+    return sum(present) if present else None
+
+
+def _day_key(day) -> str:
+    """A calendar day as `YYYY-MM-DD`. A date has no time and so no zone —
+    which is why it is not `_iso`, whose whole job is the zone."""
+    return day.strftime("%Y-%m-%d")
+
+
+def _ist_date(value: datetime):
+    return _as_utc(value).astimezone(SHOOT_TZ).date()
+
+
+def _cumulative_views(posts: list, snapshots: list, today) -> list:
+    """Views per day, cumulative, from each post's latest reading on or before
+    that day. Pure.
+
+    **On or before**, and carried forward: a post read on Monday and again on
+    Thursday counts Monday's number on Tuesday and Wednesday, because that is
+    the most recent thing anybody knew. A post with no reading yet counts
+    nothing, rather than a guess.
+    """
+    keys = {p["key"] for p in posts}
+    history: dict = {}
+    for snap in sorted(snapshots, key=lambda s: _as_utc(s["captured_at"])):
+        if snap.get("post_key") in keys and (snap.get("metrics") or {}).get("views") is not None:
+            history.setdefault(snap["post_key"], []).append(
+                (_ist_date(snap["captured_at"]), snap["metrics"]["views"])
+            )
+    starts = [p["posted_day"] for p in posts if p.get("posted_day")]
+    starts += [h[0][0] for h in history.values() if h]
+    if not starts:
+        return []
+    first = min(starts)
+    last_seen = max((h[-1][0] for h in history.values() if h), default=first)
+    last = max(first, min(today, last_seen))
+    out = []
+    day = first
+    while day <= last:
+        total = 0
+        for readings in history.values():
+            latest = None
+            for when, views in readings:
+                if when <= day:
+                    latest = views
+                else:
+                    break
+            total += latest or 0
+        out.append({"date": _day_key(day), "views": total})
+        day += timedelta(days=1)
+    return out
+
+
+async def _campaign_dashboard(campaign: dict) -> dict:
+    """Everything the brand's results dashboard draws, for one brief."""
+    cid = campaign["_id"]
+    collabs = await db.collaborations.find({"campaign_id": cid}).to_list(length=500)
+    taken = [
+        c for c in collabs
+        if c.get("state") in _FILLED_COLLAB_STATES and _brand_sees_collab(campaign, c)
+    ]
+    profiles = await db.creator_profiles.find(
+        {"user_id": {"$in": [c["creator_id"] for c in taken]}}
+    ).to_list(length=500)
+    names = {
+        p["user_id"]: (_brand_visible_creator(p).get("name") or "A creator") for p in profiles
+    }
+    rows = await db.post_performance.find({"campaign_id": cid}).to_list(length=2000)
+    by_key = {(r["collaboration_id"], r["post_key"]): r for r in rows}
+    fallback_format = _fallback_format(campaign)
+
+    posts: list = []
+    creators: list = []
+    expected = _expected_posts(campaign)
+    total_expected = 0
+    for collab in taken:
+        name = names.get(collab["creator_id"], "A creator")
+        live = []
+        if collab.get("state") in DELIVERED_COLLAB_STATES:
+            keys = [(_post_key(u, collab), u) for u in _collab_post_urls(collab)]
+            if not keys and any(r["collaboration_id"] == collab["_id"] for r in rows):
+                keys = [(f"collab:{collab['_id']}", None)]
+            for key, url in keys:
+                row = by_key.get((collab["_id"], key)) or {}
+                posted = row.get("posted_at") or collab.get("content_submitted_at")
+                live.append(
+                    {
+                        "key": key,
+                        "creator_name": name,
+                        "media_type": row.get("media_type") or fallback_format,
+                        "permalink": row.get("permalink") or url,
+                        "thumbnail_url": row.get("thumbnail_url"),
+                        "carousel_count": row.get("carousel_count"),
+                        **{m: row.get(m) for m in ("views", "reach", "likes", "comments", "shares", "saves")},
+                        # "entered by hand" on screen, beside the numbers.
+                        "source": row.get("source"),
+                        "unsupported_metrics": row.get("unsupported_metrics") or [],
+                        "posted_at": _iso(posted),
+                        "posted_day": _ist_date(posted) if posted else None,
+                        "captured_at": _iso(row.get("captured_at")),
+                    }
+                )
+        posts += live
+        total_expected += max(expected, len(live))
+        creators.append(
+            {
+                "name": name,
+                "posted": bool(live),
+                "status": "Posted" if live else _DASHBOARD_STATUS.get(collab.get("state"), "In progress"),
+            }
+        )
+
+    totals = {
+        "views": _sum_or_none(p["views"] for p in posts),
+        "reach_sum": _sum_or_none(p["reach"] for p in posts),
+        "likes": _sum_or_none(p["likes"] for p in posts),
+        "comments": _sum_or_none(p["comments"] for p in posts),
+        "shares": _sum_or_none(p["shares"] for p in posts),
+        "saves": _sum_or_none(p["saves"] for p in posts),
+    }
+    interactions = _sum_or_none(totals[m] for m in ("likes", "comments", "shares", "saves"))
+    totals["interactions"] = interactions
+    totals["engagement_rate"] = (
+        round(interactions / totals["reach_sum"] * 100, 2)
+        if interactions is not None and totals["reach_sum"]
+        else None
+    )
+
+    by_format = []
+    for fmt in DASHBOARD_FORMATS:
+        group = [p for p in posts if p["media_type"] == fmt]
+        if group:
+            by_format.append(
+                {"format": fmt, "posts": len(group), "views": _sum_or_none(p["views"] for p in group)}
+            )
+
+    by_creator: dict = {}
+    for p in posts:
+        entry = by_creator.setdefault(p["creator_name"], {"name": p["creator_name"], "views": None, "posts": 0})
+        entry["posts"] += 1
+        if p["views"] is not None:
+            entry["views"] = (entry["views"] or 0) + p["views"]
+    creator_views = sorted(by_creator.values(), key=lambda r: (r["views"] is None, -(r["views"] or 0)))
+
+    snapshots = await db.performance_snapshots.find({"campaign_id": cid}).to_list(length=20000)
+    today = datetime.now(timezone.utc).astimezone(SHOOT_TZ).date()
+    timeseries = _cumulative_views(posts, snapshots, today)
+    markers = [
+        {"date": _day_key(p["posted_day"]), "name": p["creator_name"]}
+        for p in sorted(posts, key=lambda p: p["posted_day"] or today)
+        if p["media_type"] == "reel" and p["posted_day"]
+    ]
+    for p in posts:
+        p.pop("posted_day", None)
+    posts.sort(key=lambda p: (p["views"] is None, -(p["views"] or 0)))
+
+    updated = max((r.get("captured_at") for r in rows if r.get("captured_at")), default=None)
+    return {
+        "campaign": {
+            "id": str(cid),
+            "title": campaign.get("title"),
+            "start_date": _iso(campaign.get("start_date") or campaign.get("event_date")),
+            "end_date": _iso(campaign.get("end_date") or campaign.get("event_date")),
+            "status": campaign.get("status"),
+        },
+        "updated_at": _iso(updated),
+        "totals": totals,
+        "creators": {
+            "total": len(taken),
+            "posted": sum(1 for c in creators if c["posted"]),
+            "list": creators,
+        },
+        "posts": {"total": total_expected, "live": len(posts), "items": posts},
+        "by_format": by_format,
+        "by_creator": creator_views,
+        "timeseries": timeseries,
+        "markers": markers,
+    }
+
+
+async def _versus_last_campaign(campaign: dict, views: Optional[int]) -> Optional[dict]:
+    """This brief's views against the brand's most recent earlier one.
+
+    **The last campaign, not a total of all of them.** "52% more than last
+    time" is a sentence a brand checks against the one brief it remembers; a
+    comparison against everything before it combined reads as the same claim
+    and is not.
+    """
+    previous = await db.campaigns.find(
+        {
+            "brand_id": campaign.get("brand_id"),
+            "_id": {"$ne": campaign["_id"]},
+            "status": {"$in": _COMPARABLE_CAMPAIGN_STATUSES},
+            "created_at": {"$lt": campaign.get("created_at") or datetime.now(timezone.utc)},
+        }
+    ).sort("created_at", -1).to_list(length=1)
+    if not previous:
+        return None
+    before = (await _campaign_analytics(previous[0], with_creators=False))["totals"].get("total_views")
+    if not before or views is None:
+        return {"title": previous[0].get("title"), "views": before or None, "change_percent": None}
+    return {
+        "title": previous[0].get("title"),
+        "views": before,
+        "change_percent": round((views - before) / before * 100, 1),
+    }
+
+
+async def backfill_post_performance() -> int:
+    """Readings recorded before posts existed become one post each.
+
+    Idempotent: only a delivery with a `content_performance` row and no
+    `post_performance` rows is touched, and the snapshot it writes is that one
+    reading at the moment it described. Without this, every campaign measured
+    before the dashboard would open on an empty one.
+    """
+    done = 0
+    async for rec in db.content_performance.find({}):
+        if await db.post_performance.find_one({"collaboration_id": rec["collaboration_id"]}, {"_id": 1}):
+            continue
+        collab = await db.collaborations.find_one({"_id": rec["collaboration_id"]})
+        if not collab:
+            continue
+        url = rec.get("content_url") or (_collab_post_urls(collab) or [None])[0]
+        captured = rec.get("captured_at") or rec.get("updated_at") or datetime.now(timezone.utc)
+        await _record_post_reading(
+            collab,
+            _post_key(url, collab),
+            {m: rec.get(m) for m in PERFORMANCE_METRICS},
+            source=rec.get("source") or "manual",
+            captured_at=captured,
+            meta={"permalink": url, "media_id": rec.get("media_id"),
+                  "posted_at": collab.get("content_submitted_at") or captured},
+        )
+        done += 1
+    return done
+
+
 @brand_router.get("/campaigns/{campaign_id}/analytics")
 async def brand_campaign_analytics(
     campaign_id: str, user: dict = Depends(require_roles(*BRAND_ROLES, "admin"))
@@ -14008,9 +14313,16 @@ async def brand_campaign_analytics(
     ).to_list(length=200)
     history = [await _campaign_analytics(c, with_creators=False) for c in others]
 
+    dashboard = await _campaign_dashboard(campaign)
+    dashboard["versus_last_campaign"] = await _versus_last_campaign(
+        campaign, dashboard["totals"]["views"]
+    )
     return {
         **analytics,
         "versus_their_own_history": _against_their_own_history(analytics, history),
+        # The results dashboard's own block. Namespaced rather than spread, so
+        # the panels already reading `totals` and `creators` keep their shape.
+        "dashboard": dashboard,
     }
 
 
@@ -14209,11 +14521,16 @@ async def _campaign_summary_input(campaign: dict) -> dict:
         )
         for row in analytics.get("creators") or []
     }
+    dashboard = await _campaign_dashboard(campaign)
+    dashboard["versus_last_campaign"] = await _versus_last_campaign(
+        campaign, dashboard["totals"]["views"]
+    )
     return campaign_summary.build_summary_input(
         analytics,
         versus,
         formats,
         category_label=CATEGORY_LABELS.get(campaign.get("category")),
+        dashboard=dashboard,
     )
 
 
@@ -14670,6 +14987,9 @@ def _brand_visible_creator(
         # long-form field on this surface, and the only one they chose the
         # words of.
         "about": profile.get("about"),
+        # What they post about, in the controlled vocabulary — keys only, no
+        # confidences and no record of who confirmed what.
+        "tags": _public_creator_tags(profile),
         "follower_count": profile.get("follower_count"),
         **_follower_provenance(profile),
         "engagement_rate": profile.get("engagement_rate"),
@@ -14790,10 +15110,578 @@ def _serialize_applicant(
     }
 
 
+# ---------------------------------------------------------------------------
+# Niche tags: what creators post, what briefs want, and why they match
+# ---------------------------------------------------------------------------
+#
+# The vocabulary, the model's schemas and the match score live in
+# `niche_tagging.py` (pure). Here: storage on the creator profile, the weekly
+# read of a creator's last 24 captions, the routes a creator, an admin and a
+# brand edit tags through, and the filters — which read stored fields only,
+# never a model at query time.
+
+NICHE_LITERAL = niche_tagging.NICHE_LITERAL
+LANGUAGE_LITERAL = niche_tagging.LANGUAGE_LITERAL
+TONE_LITERAL = niche_tagging.TONE_LITERAL
+AREA_LITERAL = niche_tagging.AREA_LITERAL
+
+# Captions only. Reading the thumbnails would need image input the AI module
+# does not send yet; the flag exists so turning it on is a decision, and until
+# that path is built it logs and stays on captions.
+CREATOR_TAGGING_VISION = (os.environ.get("AI_TAGGING_VISION") or "").strip().lower() in ("1", "true", "yes")
+CREATOR_TAG_REFRESH_DAYS = 7
+
+
+async def _write_creator_tags(user_id, creator_tags: dict) -> dict:
+    """Store the tags and the flattened fields filters read, in one write."""
+    now = datetime.now(timezone.utc)
+    creator_tags = {**creator_tags, "updated_at": now}
+    await db.creator_profiles.update_one(
+        {"user_id": user_id},
+        {"$set": {"creator_tags": creator_tags, **niche_tagging.flattened(creator_tags)}},
+    )
+    return creator_tags
+
+
+async def _creator_media(conn: dict, token: str) -> list:
+    """The creator's last 24 posts: caption, type, link, time, thumbnail.
+    Never comments or messages — this API is not asked for either."""
+    listing = await _instagram_get(
+        f"/{INSTAGRAM_MEDIA_API_VERSION}/me/media",
+        {
+            "fields": "caption,media_type,media_product_type,permalink,timestamp,thumbnail_url",
+            "limit": niche_tagging.POSTS_PER_TAGGING,
+            "access_token": token,
+        },
+    )
+    return (listing.get("data") or [])[: niche_tagging.POSTS_PER_TAGGING]
+
+
+async def _audience_top_cities(conn: dict, token: str) -> Optional[list]:
+    """Follower cities, where Instagram will give them; `None` silently when
+    it will not (small accounts, missing permission, an API change)."""
+    try:
+        data = await _instagram_get(
+            f"/{INSTAGRAM_MEDIA_API_VERSION}/{conn.get('ig_user_id') or 'me'}/insights",
+            {
+                "metric": "follower_demographics",
+                "period": "lifetime",
+                "metric_type": "total_value",
+                "breakdown": "city",
+                "access_token": token,
+            },
+        )
+        rows = (((data.get("data") or [{}])[0].get("total_value") or {}).get("breakdowns") or [{}])[0].get("results") or []
+        ranked = sorted(rows, key=lambda r: -(r.get("value") or 0))[:5]
+        return [(r.get("dimension_values") or [""])[0].split(",")[0].strip() for r in ranked if r.get("dimension_values")]
+    except Exception:
+        return None
+
+
+async def tag_creator_from_instagram(user_id, *, force: bool = False) -> dict:
+    """Read a creator's last 24 captions and tag them. Never raises.
+
+    The format mix and posting cadence are counted, not inferred; the niche,
+    language, tone and areas come from the model, held to the vocabulary and
+    — for areas — to a caption that names the place. At most once a week per
+    creator unless forced, which is the 24-posts-a-week cap.
+    """
+    if not instagram_configured():
+        return {"tagged": False, "reason": "instagram_off"}
+    conn = await db.instagram_connections.find_one({"user_id": user_id})
+    if not conn or conn.get("status") != "connected":
+        return {"tagged": False, "reason": "not_connected"}
+    token = _decrypt_token(conn.get("access_token"))
+    if not token:
+        return {"tagged": False, "reason": "no_token"}
+    profile = await db.creator_profiles.find_one({"user_id": user_id}) or {}
+    current = profile.get("creator_tags") or {}
+    last = _as_utc((current.get("ai") or {}).get("updated_at") or current.get("read_at"))
+    now = datetime.now(timezone.utc)
+    if not force and last and now - last < timedelta(days=CREATOR_TAG_REFRESH_DAYS):
+        return {"tagged": False, "reason": "fresh"}
+    try:
+        media = await _creator_media(conn, token)
+    except HTTPException as exc:
+        return {"tagged": False, "reason": f"instagram: {exc.detail}"[:120]}
+
+    mix = niche_tagging.format_mix(media)
+    stamps = [_parse_ig_timestamp(m.get("timestamp")) for m in media]
+    updated = {
+        **current,
+        "formats": niche_tagging.formats_posted(mix),
+        "format_mix": mix,
+        "posts_per_week": niche_tagging.posts_per_week(stamps),
+        "posts_read": len(media),
+        "read_at": now,
+    }
+    cities = await _audience_top_cities(conn, token)
+    if cities:
+        updated["audience_top_cities"] = cities
+
+    if CREATOR_TAGGING_VISION:
+        logger.warning("AI_TAGGING_VISION is set, but thumbnail reading is not built; tagging from captions")
+    reason = None
+    if ai.ai_configured() and media:
+        try:
+            result = await ai.generate_json(
+                niche_tagging.CREATOR_PROMPT.task,
+                niche_tagging.CREATOR_PROMPT.system,
+                niche_tagging.caption_payload(media),
+                niche_tagging.CreatorTagging,
+                prompt_version=niche_tagging.CREATOR_PROMPT.version,
+                max_output_tokens=1500,
+                timeout_s=30,
+            )
+            status = ai.ai_status()
+            updated["ai"] = {
+                **niche_tagging.ground_creator_tags(result, media),
+                "model": status["model"],
+                "prompt_version": niche_tagging.CREATOR_PROMPT.version,
+                "updated_at": now,
+            }
+            updated["source"] = "ai"
+        except ai.AIUnavailable as exc:
+            reason = f"ai: {exc.reason}"
+    else:
+        reason = "ai_off" if media else "no_posts"
+    await _write_creator_tags(user_id, updated)
+    return {"tagged": "ai" in updated and reason is None, "reason": reason, "posts": len(media)}
+
+
+_TAG_TASKS: set = set()
+
+
+def _tag_in_background(user_id) -> None:
+    """On connect: tag without making the creator wait on a model."""
+    async def run():
+        try:
+            await tag_creator_from_instagram(user_id, force=True)
+        except Exception:  # pragma: no cover — tagging never fails a connect
+            logger.exception("Creator tagging failed")
+
+    try:
+        task = asyncio.get_running_loop().create_task(run())
+    except RuntimeError:  # pragma: no cover
+        return
+    _TAG_TASKS.add(task)
+    task.add_done_callback(_TAG_TASKS.discard)
+
+
+async def refresh_creator_tags(limit: int = 50) -> dict:
+    """The weekly pass: every connected creator whose tags are a week old.
+    Bounded by `limit` per pass and by the AI module's daily ceiling."""
+    report = {"considered": 0, "tagged": 0, "skipped": 0}
+    if not instagram_configured():
+        report["skipped_all"] = "instagram_off"
+        return report
+    cutoff = datetime.now(timezone.utc) - timedelta(days=CREATOR_TAG_REFRESH_DAYS)
+    conns = await db.instagram_connections.find({"status": "connected"}).to_list(length=2000)
+    for conn in conns:
+        if report["considered"] >= limit:
+            break
+        profile = await db.creator_profiles.find_one({"user_id": conn["user_id"]}, {"creator_tags": 1}) or {}
+        ct = profile.get("creator_tags") or {}
+        last = _as_utc(ct.get("read_at"))
+        if last and last > cutoff:
+            continue
+        report["considered"] += 1
+        out = await tag_creator_from_instagram(conn["user_id"])
+        if out.get("tagged"):
+            report["tagged"] += 1
+        else:
+            report["skipped"] += 1
+            if (out.get("reason") or "").startswith("ai: daily_limit"):
+                break
+    return report
+
+
+async def _drop_ai_tags(user_id) -> None:
+    """On disconnect: everything read from Instagram goes, what the creator
+    confirmed stays — they said it, Instagram did not."""
+    profile = await db.creator_profiles.find_one({"user_id": user_id}, {"creator_tags": 1}) or {}
+    ct = dict(profile.get("creator_tags") or {})
+    for key in ("ai", "formats", "format_mix", "posts_per_week", "posts_read", "read_at",
+                "audience_top_cities", "source"):
+        ct.pop(key, None)
+    await _write_creator_tags(user_id, ct)
+
+
+def _public_creator_tags(profile: Optional[dict]) -> dict:
+    """Tags as a brand or a creator reads them: keys, no confidences, no
+    record of who confirmed what."""
+    eff = niche_tagging.effective_tags((profile or {}).get("creator_tags"))
+    return {
+        "niche": [n["tag"] for n in eff["niche"]],
+        "languages": eff["languages"],
+        "tone": eff["tone"],
+        "shoots_in": eff["shoots_in"],
+        "formats": eff["formats"],
+    }
+
+
+def _creator_tags_payload(profile: Optional[dict], connected: bool) -> dict:
+    ct = (profile or {}).get("creator_tags") or {}
+    return {
+        "vocabulary": niche_tagging.vocabulary(),
+        "effective": niche_tagging.effective_tags(ct),
+        "confirmed": niche_tagging.clean_tag_set(ct.get("confirmed")),
+        "suggestions": niche_tagging.suggestions(ct),
+        "formats": ct.get("formats") or [],
+        "posts_per_week": ct.get("posts_per_week"),
+        "audience_top_cities": ct.get("audience_top_cities") or [],
+        "instagram_connected": connected,
+        "read_at": _iso(ct.get("read_at")),
+        "ai_on": ai.ai_configured(),
+    }
+
+
+class TagSetPayload(BaseModel):
+    """A person's tags. Unknown values are dropped by `clean_tag_set`, not
+    refused — a stale screen offering a retired tag should not fail a save."""
+
+    niche: list[str] = Field(default_factory=list, max_length=12)
+    languages: list[str] = Field(default_factory=list, max_length=6)
+    tone: list[str] = Field(default_factory=list, max_length=5)
+    shoots_in: list[str] = Field(default_factory=list, max_length=20)
+
+
+@creator_router.get("/tags")
+async def get_creator_tags(user: dict = Depends(require_roles("creator"))):
+    oid = ObjectId(user["_id"])
+    profile = await db.creator_profiles.find_one({"user_id": oid})
+    conn = await db.instagram_connections.find_one({"user_id": oid}, {"status": 1})
+    return _creator_tags_payload(profile, bool(conn and conn.get("status") == "connected"))
+
+
+async def _set_confirmed_tags(user_id, payload: TagSetPayload, by: str) -> dict:
+    profile = await db.creator_profiles.find_one({"user_id": user_id})
+    if not profile:
+        raise HTTPException(status_code=404, detail="Creator not found")
+    ct = dict(profile.get("creator_tags") or {})
+    ct["confirmed"] = niche_tagging.clean_tag_set(payload.model_dump())
+    ct["confirmed_by"] = by
+    # A suggestion the person removed from their set stays removed.
+    rejected = niche_tagging.clean_tag_set(ct.get("rejected"))
+    for kind in niche_tagging.TAG_KINDS:
+        guessed = [g["tag"] for g in (ct.get("ai") or {}).get("niche") or []] if kind == "niche" else (ct.get("ai") or {}).get(kind) or []
+        previously = (profile.get("creator_tags") or {}).get("confirmed", {}).get(kind) or []
+        for v in previously:
+            if v not in ct["confirmed"][kind] and v in guessed and v not in rejected[kind]:
+                rejected[kind].append(v)
+    ct["rejected"] = rejected
+    return await _write_creator_tags(user_id, ct)
+
+
+@creator_router.put("/tags")
+async def put_creator_tags(payload: TagSetPayload, user: dict = Depends(require_roles("creator"))):
+    """The creator's own tags. They override the model and survive every
+    refresh; the model's suggestions sit beside them until accepted or
+    removed."""
+    oid = ObjectId(user["_id"])
+    await _set_confirmed_tags(oid, payload, "creator")
+    await audit(user, "creator.tags", "creator_profile", oid, after=payload.model_dump())
+    profile = await db.creator_profiles.find_one({"user_id": oid})
+    conn = await db.instagram_connections.find_one({"user_id": oid}, {"status": 1})
+    return _creator_tags_payload(profile, bool(conn and conn.get("status") == "connected"))
+
+
+@creator_router.post("/tags/suggestions/{kind}/{tag}/{decision}")
+async def decide_creator_tag_suggestion(
+    kind: str, tag: str, decision: Literal["accept", "remove"],
+    user: dict = Depends(require_roles("creator")),
+):
+    """One chip under "Suggested from your posts": keep it, or take it away
+    for good."""
+    if kind not in niche_tagging.TAG_KINDS or tag not in niche_tagging.TAG_KINDS[kind]:
+        raise HTTPException(status_code=404, detail="Unknown tag")
+    oid = ObjectId(user["_id"])
+    profile = await db.creator_profiles.find_one({"user_id": oid}) or {}
+    ct = dict(profile.get("creator_tags") or {})
+    confirmed = niche_tagging.clean_tag_set(ct.get("confirmed"))
+    rejected = niche_tagging.clean_tag_set(ct.get("rejected"))
+    if decision == "accept":
+        if tag not in confirmed[kind]:
+            confirmed[kind].append(tag)
+        rejected[kind] = [t for t in rejected[kind] if t != tag]
+    else:
+        confirmed[kind] = [t for t in confirmed[kind] if t != tag]
+        if tag not in rejected[kind]:
+            rejected[kind].append(tag)
+    ct.update(confirmed=confirmed, rejected=rejected, confirmed_by=ct.get("confirmed_by") or "creator")
+    await _write_creator_tags(oid, ct)
+    await audit(user, f"creator.tag_{decision}", "creator_profile", oid, after={"kind": kind, "tag": tag})
+    profile = await db.creator_profiles.find_one({"user_id": oid})
+    conn = await db.instagram_connections.find_one({"user_id": oid}, {"status": 1})
+    return _creator_tags_payload(profile, bool(conn and conn.get("status") == "connected"))
+
+
+# --- Briefs -----------------------------------------------------------------
+
+
+def _campaign_tags_block(campaign: dict) -> dict:
+    """The brief's tags: what was confirmed, and what is suggested and not."""
+    confirmed = campaign.get("tags") or {}
+    suggested = campaign.get("tag_suggestions") or {}
+    return {
+        "confirmed": {k: list(confirmed.get(k) or []) for k in ("niche", "languages", "areas")},
+        "suggested": {
+            k: [v for v in suggested.get(k) or [] if v not in (confirmed.get(k) or [])]
+            for k in ("niche", "languages", "areas")
+        },
+        "suggested_at": _iso(suggested.get("at")),
+        "ai_on": ai.ai_configured(),
+    }
+
+
+async def _venue_text(campaign: dict) -> str:
+    """Where the brief happens, in words: its area and the brand's outlets.
+    Read from what the brand saved, never from the model."""
+    parts = [campaign.get("area") or ""]
+    profile = await db.brand_profiles.find_one({"user_id": campaign.get("brand_id")}, {"outlets": 1}) or {}
+    for outlet in profile.get("outlets") or []:
+        parts += [outlet.get("area") or "", outlet.get("address") or ""]
+    return " · ".join(p for p in parts if p)
+
+
+async def suggest_campaign_tags(campaign: dict, actor: Optional[dict] = None) -> dict:
+    """Ask the model for the brief's tags and store them as **suggestions**.
+    Nothing is applied: `tags` only changes when a person confirms."""
+    if not ai.ai_configured():
+        return _campaign_tags_block(campaign)
+    venue = await _venue_text(campaign)
+    try:
+        result = await ai.generate_json(
+            niche_tagging.BRIEF_PROMPT.task,
+            niche_tagging.BRIEF_PROMPT.system,
+            niche_tagging.brief_payload(campaign, venue),
+            niche_tagging.BriefTagging,
+            prompt_version=niche_tagging.BRIEF_PROMPT.version,
+            max_output_tokens=800,
+            account=str(campaign.get("brand_id")) if campaign.get("brand_id") else None,
+        )
+    except ai.AIUnavailable:
+        return _campaign_tags_block(campaign)
+    suggested = {
+        **niche_tagging.ground_brief_tags(result, venue),
+        "at": datetime.now(timezone.utc),
+        "prompt_version": niche_tagging.BRIEF_PROMPT.version,
+    }
+    await db.campaigns.update_one({"_id": campaign["_id"]}, {"$set": {"tag_suggestions": suggested}})
+    return _campaign_tags_block({**campaign, "tag_suggestions": suggested})
+
+
+def _suggest_in_background(campaign_id) -> None:
+    """After a brief is saved: suggest without holding the save."""
+    if not ai.ai_configured():
+        return
+
+    async def run():
+        try:
+            campaign = await db.campaigns.find_one({"_id": campaign_id})
+            if campaign:
+                await suggest_campaign_tags(campaign)
+        except Exception:  # pragma: no cover
+            logger.exception("Brief tag suggestion failed")
+
+    try:
+        task = asyncio.get_running_loop().create_task(run())
+    except RuntimeError:  # pragma: no cover
+        return
+    _TAG_TASKS.add(task)
+    task.add_done_callback(_TAG_TASKS.discard)
+
+
+class CampaignTagsPayload(BaseModel):
+    niche: list[str] = Field(default_factory=list, max_length=6)
+    languages: list[str] = Field(default_factory=list, max_length=4)
+    areas: list[str] = Field(default_factory=list, max_length=6)
+
+
+@brand_router.get("/campaigns/{campaign_id}/tags")
+async def get_campaign_tags(campaign_id: str, user: dict = Depends(require_roles(*BRAND_ROLES, "admin"))):
+    campaign = await _own_campaign_or_404(campaign_id, user)
+    return {**_campaign_tags_block(campaign), "vocabulary": niche_tagging.vocabulary()}
+
+
+@brand_router.post("/campaigns/{campaign_id}/tags/suggest")
+async def suggest_campaign_tags_now(campaign_id: str, user: dict = Depends(require_roles(*BRAND_ROLES, "admin"))):
+    campaign = await _own_campaign_or_404(campaign_id, user)
+    return {**await suggest_campaign_tags(campaign, user), "vocabulary": niche_tagging.vocabulary()}
+
+
+@brand_router.put("/campaigns/{campaign_id}/tags")
+async def confirm_campaign_tags(
+    campaign_id: str, payload: CampaignTagsPayload, user: dict = Depends(require_roles(*BRAND_ROLES, "admin"))
+):
+    """The brand's confirmation — the only way a brief gets tags."""
+    campaign = await _own_campaign_or_404(campaign_id, user)
+    tags = {
+        "niche": niche_tagging._keep(payload.niche, niche_tagging.NICHES),
+        "languages": niche_tagging._keep(payload.languages, niche_tagging.LANGUAGES),
+        "areas": niche_tagging._keep(payload.areas, niche_tagging.AREAS),
+    }
+    await db.campaigns.update_one({"_id": campaign["_id"]}, {"$set": {"tags": tags}})
+    await audit(user, "campaign.tags", "campaign", campaign["_id"], after=tags, **_campaign_audit_context(campaign))
+    return {**_campaign_tags_block({**campaign, "tags": tags}), "vocabulary": niche_tagging.vocabulary()}
+
+
+# --- The brief writer -------------------------------------------------------
+#
+# Two lines in, a filled form out. `brief_writer.py` holds the rules and
+# enforces them in code; this is the door: who may call it, how often, how
+# long it may take, and the venue it fills from the brand's own profile. It
+# **never creates a campaign** — the draft goes back to the form, and the
+# ordinary `POST /brand/campaigns` is still the only way one is made.
+
+
+class BriefWriterPayload(BaseModel):
+    text: str = Field(min_length=8, max_length=brief_writer.MAX_INPUT_CHARS)
+
+
+def _brief_writer_venue(profile: Optional[dict]) -> Optional[dict]:
+    """The brand's first outlet, as the form's venue. Never the model's."""
+    profile = profile or {}
+    for outlet in profile.get("outlets") or []:
+        address = ", ".join(p for p in (outlet.get("name"), outlet.get("address")) if p)
+        area = outlet.get("area") or None
+        if address or area:
+            return {"venue_address": address or None, "area": area}
+    areas = profile.get("areas") or []
+    return {"venue_address": None, "area": areas[0]} if areas else None
+
+
+async def _brief_writer_used_today(brand_id) -> int:
+    row = await db.brief_writer_uses.find_one(
+        {"brand_id": brand_id, "day": brief_writer.day_key()}
+    )
+    return int((row or {}).get("count") or 0)
+
+
+async def _brief_writer_status(brand_id) -> dict:
+    """Whether the form shows the writer, and how many drafts are left today.
+    Off — `available: false` — when AI is off, and the form renders nothing."""
+    if not ai.ai_configured():
+        return {"available": False}
+    used = await _brief_writer_used_today(brand_id)
+    return {
+        "available": True,
+        "limit": brief_writer.DRAFTS_PER_DAY,
+        "remaining": max(0, brief_writer.DRAFTS_PER_DAY - used),
+    }
+
+
+@brand_router.post("/campaigns/brief-writer")
+async def draft_brief(payload: BriefWriterPayload, user: dict = Depends(require_roles(*BRAND_ROLES))):
+    """Draft the form's fields from a description. Ten a day per brand,
+    counting failed attempts; twenty seconds, then the brand fills it in."""
+    if not ai.ai_configured():
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "ai_off", "message": "Drafting isn't available right now — fill the brief in below."},
+        )
+    brand_id = _brand_scope(user)
+    day = brief_writer.day_key()
+    # Claimed before the call, so a slow failure still counts and two tabs
+    # cannot both take the tenth draft.
+    row = await db.brief_writer_uses.find_one_and_update(
+        {"brand_id": brand_id, "day": day},
+        {"$inc": {"count": 1}, "$setOnInsert": {"created_at": datetime.now(timezone.utc)}},
+        upsert=True,
+        return_document=True,
+    )
+    used = int(row.get("count") or 0)
+    if used > brief_writer.DRAFTS_PER_DAY:
+        await db.brief_writer_uses.update_one({"_id": row["_id"]}, {"$inc": {"count": -1}})
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "code": "draft_limit",
+                "message": f"That's today's {brief_writer.DRAFTS_PER_DAY} drafts. Fill the brief in below, or draft again tomorrow.",
+            },
+        )
+    profile = await db.brand_profiles.find_one({"user_id": brand_id}) or {}
+    text = payload.text.strip()
+    today = brief_writer.today_ist()
+    try:
+        draft = await asyncio.wait_for(
+            ai.generate_json(
+                brief_writer.PROMPT.task,
+                brief_writer.PROMPT.system,
+                brief_writer.payload(text, today, category_hint=profile.get("category")),
+                brief_writer.BriefDraft,
+                prompt_version=brief_writer.PROMPT.version,
+                max_output_tokens=1200,
+                timeout_s=brief_writer.TIMEOUT_S,
+                account=str(brand_id),
+                check=lambda d: brief_writer.text_problems(d, text),
+            ),
+            timeout=brief_writer.TIMEOUT_S,
+        )
+    except (asyncio.TimeoutError, ai.AIUnavailable) as exc:
+        reason = "timeout" if isinstance(exc, asyncio.TimeoutError) else exc.reason
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "draft_failed", "reason": reason, "message": "Couldn't draft this — fill it in below."},
+        )
+    out = brief_writer.finalise(draft, text, today=today, venue=_brief_writer_venue(profile))
+    await audit(
+        user, "campaign.brief_drafted", "brand_profile", brand_id,
+        after={"fields": sorted(out["fields"]), "dropped": out["dropped"]},
+    )
+    return {
+        "fields": out["fields"],
+        "notices": out["notices"],
+        "remaining": max(0, brief_writer.DRAFTS_PER_DAY - used),
+    }
+
+
+# --- Matching ---------------------------------------------------------------
+
+
+def _match_score(profile: Optional[dict], campaign: dict, *, brand: Optional[dict] = None,
+                 reliability_band: Optional[str] = None) -> dict:
+    """Why this creator, for this brief: niche, language, area, follower tier
+    and reliability, each a component that sums to the score."""
+    tags = niche_tagging.effective_tags((profile or {}).get("creator_tags"))
+    low, high, _tier, _stated = _wanted_reach_tier(campaign, brand)
+    followers = (profile or {}).get("follower_count")
+    fit = _fit_within(followers, low, high) if isinstance(followers, int) and followers > 0 else None
+    return niche_tagging.match_score(
+        tags, campaign.get("tags") or {}, tier_fit=fit, reliability_band=reliability_band
+    )
+
+
+def _creator_tag_filter(
+    niche: Optional[str], language: Optional[str], area: Optional[str],
+    fmt: Optional[str], tier: Optional[str],
+) -> dict:
+    """A Mongo filter on the stored tag fields. Never a call to a model."""
+    q: dict = {}
+    if niche:
+        q["tag_niches"] = niche
+    if language:
+        q["tag_languages"] = language
+    if area:
+        q["tag_areas"] = area
+    if fmt:
+        q["tag_formats"] = fmt
+    if tier and tier in FOLLOWER_TIER_KEYS:
+        low, high = _tier_bounds(tier)
+        q["follower_count"] = {"$gte": low, **({"$lt": high} if high else {})}
+    return q
+
+
 @brand_router.get("/campaigns/{campaign_id}/applicants")
 async def list_campaign_applicants(
     campaign_id: str,
     user: dict = Depends(require_roles(*BRAND_ROLES, "admin")),
+    niche: Optional[str] = None,
+    language: Optional[str] = None,
+    area: Optional[str] = None,
+    format: Optional[str] = None,
+    tier: Optional[str] = None,
+    reliability: Optional[str] = None,
 ):
     """Who applied, what they pitched, what they want to be paid.
 
@@ -14817,6 +15705,19 @@ async def list_campaign_applicants(
         .sort("created_at", -1)
         .to_list(length=500)
     )
+    # Filters on the stored tags and follower count: a query, never a model.
+    # Captured now: `reliability` is reused below for the history lookup.
+    reliability_filter = reliability
+    tag_filter = _creator_tag_filter(niche, language, area, format, tier)
+    filtered = bool(tag_filter or reliability_filter)
+    if tag_filter:
+        keep = {
+            p["user_id"]
+            async for p in db.creator_profiles.find(
+                {"user_id": {"$in": [c["creator_id"] for c in collabs]}, **tag_filter}, {"user_id": 1}
+            )
+        }
+        collabs = [c for c in collabs if c["creator_id"] in keep]
 
     creator_ids = list({c["creator_id"] for c in collabs})
     users_by_id: dict = {}
@@ -14851,6 +15752,17 @@ async def list_campaign_applicants(
         )
         for c in collabs
     ]
+    brand_doc = (await _load_brand_map([campaign["brand_id"]])).get(campaign["brand_id"]) or {}
+    for row, c in zip(rows, collabs):
+        row["match"] = _match_score(
+            profiles_by_uid.get(c["creator_id"]), campaign, brand=brand_doc,
+            reliability_band=_reliability_band(reliability.get(c["creator_id"]))["band"],
+        )
+    if reliability_filter:
+        rows = [
+            r for r in rows
+            if ((r.get("creator") or {}).get("reliability") or {}).get("band") == reliability_filter
+        ]
 
     # Invited and still deciding. The brand asked for these people; a board
     # that showed nothing until one of them pitched made an invite look like it
@@ -14885,6 +15797,10 @@ async def list_campaign_applicants(
         },
         "applicants": rows,
         "invited": invited,
+        # The brief's confirmed tags, which the "Why this creator" lines
+        # are matched against, and whether any filter is narrowing the list.
+        "tags": _campaign_tags_block(campaign),
+        "filtered": filtered,
         "totals": {
             "all": len(rows),
             "invited": len(invited),
@@ -17075,6 +17991,11 @@ async def _suggest_creators_for_campaign(
     max_followers: Optional[int] = None,
     limit: int = 20,
     offset: int = 0,
+    language: Optional[str] = None,
+    area: Optional[str] = None,
+    fmt: Optional[str] = None,
+    tier: Optional[str] = None,
+    reliability_band: Optional[str] = None,
 ) -> dict:
     """The ranked shortlist for a brief, with the filters applied first.
 
@@ -17096,6 +18017,8 @@ async def _suggest_creators_for_campaign(
         if max_followers is not None:
             band["$lte"] = int(max_followers)
         query["follower_count"] = band
+    # The tag filters read stored fields — never a model at query time.
+    query.update(_creator_tag_filter(None, language, area, fmt, tier))
 
     # Anyone already asked, or already applied, is not a suggestion.
     on_campaign = {
@@ -17150,8 +18073,15 @@ async def _suggest_creators_for_campaign(
                 "matched_genres": result["matched_genres"],
                 "unknown_signals": result["unknown_signals"],
                 "campaigns_delivered": (history.get(profile["user_id"]) or {}).get("completed", 0),
+                # "Why this creator", from the tags: niche, language, area.
+                "match": _match_score(
+                    profile, campaign, brand=brand,
+                    reliability_band=_reliability_band(reliability.get(profile["user_id"]))["band"],
+                ),
             }
         )
+    if reliability_band:
+        scored = [r for r in scored if (r.get("reliability") or {}).get("band") == reliability_band]
 
     # Highest score first; ties broken by the bigger audience, then by name so
     # the order is stable across two identical requests.
@@ -17202,6 +18132,11 @@ async def brand_suggested_creators(
     max_followers: Optional[int] = None,
     limit: int = 20,
     offset: int = 0,
+    language: Optional[str] = None,
+    area: Optional[str] = None,
+    format: Optional[str] = None,
+    tier: Optional[str] = None,
+    reliability: Optional[str] = None,
     user: dict = Depends(require_roles(*BRAND_ROLES, "admin")),
 ):
     """Verified creators ranked for this brief, each with the reason.
@@ -17228,6 +18163,11 @@ async def brand_suggested_creators(
         max_followers=max_followers,
         limit=limit,
         offset=offset,
+        language=language,
+        area=area,
+        fmt=format,
+        tier=tier,
+        reliability_band=reliability,
     )
 
 
@@ -20081,9 +21021,14 @@ async def dismiss_circumvention(
 
 # What a creator's audience actually did with the post. Reach is the
 # denominator for engagement rate; the rest are the numerator or context.
-PERFORMANCE_METRICS = ("reach", "impressions", "views", "likes", "comments", "saves")
-# The three that count as somebody engaging rather than merely seeing.
-ENGAGEMENT_METRICS = ("likes", "comments", "saves")
+PERFORMANCE_METRICS = (
+    "reach", "impressions", "views", "likes", "comments", "shares", "saves",
+)
+# The four that count as somebody engaging rather than merely seeing. Shares
+# joined when the dashboard did: a share is the strongest of the four (somebody
+# put the post in front of their own people), and leaving it out understated
+# every engagement rate on the platform.
+ENGAGEMENT_METRICS = ("likes", "comments", "shares", "saves")
 
 
 class PerformancePayload(BaseModel):
@@ -20102,11 +21047,15 @@ class PerformancePayload(BaseModel):
     views: Optional[int] = Field(default=None, ge=0)
     likes: Optional[int] = Field(default=None, ge=0)
     comments: Optional[int] = Field(default=None, ge=0)
+    shares: Optional[int] = Field(default=None, ge=0)
     saves: Optional[int] = Field(default=None, ge=0)
     # When the numbers were read off the screen, which is not when they were
     # typed in. Defaults to now.
     captured_at: Optional[datetime] = None
     note: Optional[str] = Field(default=None, max_length=500)
+    # Which post, when a delivery has more than one. Absent means the first
+    # link on the delivery — the only post most deliveries have.
+    post_url: Optional[str] = Field(default=None, max_length=500)
 
     @model_validator(mode="after")
     def _at_least_one_number(self):
@@ -20203,6 +21152,10 @@ def _rollup_performance(
         "total_reach": reach,
         "total_impressions": sum(r["impressions"] for r in records if r.get("impressions")),
         "total_views": sum(r["views"] for r in records if r.get("views")),
+        "total_likes": sum(r["likes"] for r in records if r.get("likes")),
+        "total_comments": sum(r["comments"] for r in records if r.get("comments")),
+        "total_shares": sum(r["shares"] for r in records if r.get("shares")),
+        "total_saves": sum(r["saves"] for r in records if r.get("saves")),
         "total_engagements": engagements,
         # The aggregate rate, which is engagements over reach for the whole set
         # — not the mean of the per-post rates. Those two differ whenever the
@@ -20299,6 +21252,103 @@ async def _campaign_performance(campaign_ids: list, spend: float) -> dict:
     )
 
 
+def _post_key(url: Optional[str], collab: dict) -> str:
+    """One post's identity: the permalink's shortcode, or the delivery itself
+    for a post nobody linked (a manual reading on a delivery with no URL)."""
+    return _permalink_key(url) or f"collab:{collab['_id']}"
+
+
+def _collab_post_urls(collab: dict) -> list:
+    return [u for u in (collab.get("content_urls") or [collab.get("content_url")]) if u]
+
+
+async def _record_post_reading(
+    collab: dict,
+    post_key: str,
+    metrics: dict,
+    *,
+    source: str,
+    captured_at: datetime,
+    meta: Optional[dict] = None,
+) -> dict:
+    """One reading of one post: appended to the history, laid over the latest.
+
+    **`performance_snapshots` is append-only** — never updated, never deleted
+    outside an erasure — because it is what the "views, building up" chart is
+    drawn from, and a history that can be rewritten draws whatever the last
+    write said. `post_performance` is the latest per post, merged rather than
+    replaced, so a manual reading of likes alone does not erase the views an
+    Instagram reading brought.
+    """
+    now = datetime.now(timezone.utc)
+    clean = {m: int(v) for m, v in metrics.items() if m in PERFORMANCE_METRICS and v is not None}
+    await db.performance_snapshots.insert_one(
+        {
+            "collaboration_id": collab["_id"],
+            "campaign_id": collab["campaign_id"],
+            "creator_id": collab["creator_id"],
+            "post_key": post_key,
+            "captured_at": captured_at,
+            "metrics": clean,
+            "source": source,
+            "created_at": now,
+        }
+    )
+    fields = {
+        **clean,
+        "collaboration_id": collab["_id"],
+        "campaign_id": collab["campaign_id"],
+        "creator_id": collab["creator_id"],
+        "post_key": post_key,
+        "source": source,
+        "captured_at": captured_at,
+        "updated_at": now,
+        **{k: v for k, v in (meta or {}).items() if v is not None},
+    }
+    return await db.post_performance.find_one_and_update(
+        {"collaboration_id": collab["_id"], "post_key": post_key},
+        {"$set": fields, "$setOnInsert": {"created_at": now}},
+        upsert=True,
+        return_document=True,
+    )
+
+
+async def _rollup_collab_performance(collab: dict, extra: Optional[dict] = None) -> dict:
+    """`content_performance` as the sum of the delivery's posts.
+
+    It used to be the one reading for a delivery, overwritten on every refresh.
+    Everything that reads it — the reports, the reliability standing, the
+    summary input — keeps reading one row per delivery; what changed is that
+    the row is now derived from the posts, so a two-post delivery counts both.
+    A metric no post has is absent, never 0.
+    """
+    posts = await db.post_performance.find({"collaboration_id": collab["_id"]}).to_list(None)
+    now = datetime.now(timezone.utc)
+    totals = {}
+    for m in PERFORMANCE_METRICS:
+        values = [p[m] for p in posts if p.get(m) is not None]
+        totals[m] = sum(values) if values else None
+    sources = {p.get("source") for p in posts}
+    doc = {
+        **totals,
+        "collaboration_id": collab["_id"],
+        "campaign_id": collab["campaign_id"],
+        "creator_id": collab["creator_id"],
+        "captured_at": max((p["captured_at"] for p in posts if p.get("captured_at")), default=now),
+        "source": "instagram" if sources == {"instagram"} else "manual",
+        "posts": len(posts),
+        "content_url": (_collab_post_urls(collab) or [None])[0],
+        "updated_at": now,
+        **(extra or {}),
+    }
+    return await db.content_performance.find_one_and_update(
+        {"collaboration_id": collab["_id"]},
+        {"$set": doc, "$setOnInsert": {"created_at": now}},
+        upsert=True,
+        return_document=True,
+    )
+
+
 async def _record_performance(
     collab: dict,
     payload: PerformancePayload,
@@ -20307,11 +21357,13 @@ async def _record_performance(
     source: str = "manual",
     media_id: Optional[str] = None,
 ) -> dict:
-    """Write or replace the reading for one collaboration.
+    """Write a reading for one post of one delivery, and roll the delivery up.
 
-    One record per collaboration, upserted: a post keeps accruing reach, so the
-    second reading a week later is a correction of the first rather than a
-    second data point. `captured_at` says which moment the numbers describe.
+    The reading lands on the post named by `post_url` (the first link on the
+    delivery otherwise), in the snapshot history and on the latest row, and
+    `content_performance` is re-derived as the delivery's sum. A reading typed
+    in by hand is marked `manual` all the way to the screen, which says
+    "entered by hand" beside it.
 
     Deliberately does **not** require the collaboration to be in any particular
     state. The obvious rule would be "only once content is approved", and it
@@ -20320,29 +21372,30 @@ async def _record_performance(
     """
     now = datetime.now(timezone.utc)
     given = payload.model_dump(exclude_unset=True)
-    doc = {
-        **{m: given.get(m) for m in PERFORMANCE_METRICS if m in given},
-        "collaboration_id": collab["_id"],
-        "campaign_id": collab["campaign_id"],
-        "creator_id": collab["creator_id"],
-        "captured_at": payload.captured_at or now,
-        "source": source,
+    urls = _collab_post_urls(collab)
+    url = payload.post_url or (urls[0] if urls else None)
+    meta = {"permalink": url, "media_id": media_id}
+    if not await db.post_performance.find_one(
+        {"collaboration_id": collab["_id"], "post_key": _post_key(url, collab)}, {"_id": 1}
+    ):
+        meta["posted_at"] = collab.get("content_submitted_at") or payload.captured_at or now
+    await _record_post_reading(
+        collab,
+        _post_key(url, collab),
+        {m: given.get(m) for m in PERFORMANCE_METRICS if m in given},
+        source=source,
+        captured_at=payload.captured_at or now,
+        meta=meta,
+    )
+    extra = {
         "captured_by": ObjectId(actor["_id"]),
         "captured_by_name": actor.get("name"),
-        "content_url": (collab.get("content_urls") or [collab.get("content_url")] or [None])[0],
-        "updated_at": now,
     }
     if media_id:
-        doc["media_id"] = media_id
+        extra["media_id"] = media_id
     if payload.note is not None:
-        doc["note"] = payload.note.strip() or None
-
-    saved = await db.content_performance.find_one_and_update(
-        {"collaboration_id": collab["_id"]},
-        {"$set": doc, "$setOnInsert": {"created_at": now}},
-        upsert=True,
-        return_document=True,
-    )
+        extra["note"] = payload.note.strip() or None
+    saved = await _rollup_collab_performance(collab, extra)
     campaign = await db.campaigns.find_one({"_id": collab["campaign_id"]})
     await audit(
         actor,
@@ -20351,7 +21404,7 @@ async def _record_performance(
         collab["_id"],
         after={
             "source": source,
-            **{m: doc.get(m) for m in PERFORMANCE_METRICS if m in doc},
+            **{m: given.get(m) for m in PERFORMANCE_METRICS if m in given},
             "engagement_rate": _engagement_rate_from(saved),
         },
         **_campaign_audit_context(campaign or {}),
@@ -20359,15 +21412,341 @@ async def _record_performance(
     return _serialize_performance(saved)
 
 
-# What Instagram calls each metric, against what we call it. `saved` and
-# `total_interactions` are theirs; the rest happen to match.
+# What Instagram calls each metric, against what we call it. `saved` is
+# theirs; the rest happen to match.
 _IG_MEDIA_METRICS = {
+    "views": "views",
     "reach": "reach",
     "likes": "likes",
     "comments": "comments",
+    "shares": "shares",
     "saves": "saved",
-    "views": "views",
 }
+
+# **The media calls are pinned to a Graph version.** `INSTAGRAM_GRAPH` is
+# unversioned, and an unversioned call runs on the app's default version —
+# which is exactly the thing that decides whether `impressions` and `plays`
+# still exist (they were retired in favour of `views`). A metric set written
+# for one version and sent to another is how a whole post goes blank.
+INSTAGRAM_MEDIA_API_VERSION = "v23.0"
+
+# **Which metrics each kind of post supports, asked for per kind.** Instagram
+# refuses the WHOLE insights request when one metric does not apply to that
+# media type, so one list for everything blanks every post it is wrong for.
+# Taken from Meta's media-insights reference for Instagram API with Instagram
+# Login: feed posts (single images and carousels) and reels support all six;
+# a story has no likes, comments or saves. And because a reference can be
+# wrong or change under us, `_fetch_media_insights` falls back to asking one
+# metric at a time when the set is refused — so an entry wrong here costs
+# that one metric, never the post.
+_IG_METRICS_BY_FORMAT = {
+    "reel": ("views", "reach", "likes", "comments", "shares", "saves"),
+    "carousel": ("views", "reach", "likes", "comments", "shares", "saves"),
+    "image": ("views", "reach", "likes", "comments", "shares", "saves"),
+    "story": ("views", "reach", "shares"),
+}
+
+_IG_MEDIA_FIELDS = (
+    "id,permalink,media_type,media_product_type,timestamp,thumbnail_url,media_url,"
+    "children{media_type,media_url,thumbnail_url}"
+)
+
+# Refreshed every six hours from posting, then frozen fourteen days after:
+# almost all of a post's views arrive in its first fortnight, and reading it
+# for ever costs rate limit for numbers that no longer move.
+POST_REFRESH_HOURS = 6
+POST_FREEZE_DAYS = 14
+# Well under Instagram's 200 calls per account per hour, so one pass over a
+# creator with many posts cannot spend their whole allowance.
+POST_REFRESH_CALLS_PER_CREATOR = 40
+
+
+def _post_format(media: dict) -> Optional[str]:
+    """`reel`, `carousel`, `image` or `story`, from what Instagram says."""
+    product = (media.get("media_product_type") or "").upper()
+    kind = (media.get("media_type") or "").upper()
+    if product == "STORY":
+        return "story"
+    if product == "REELS" or kind == "VIDEO":
+        return "reel"
+    if kind == "CAROUSEL_ALBUM":
+        return "carousel"
+    if kind == "IMAGE":
+        return "image"
+    return None
+
+
+def _post_thumbnail(media: dict) -> tuple[Optional[str], Optional[int]]:
+    """The picture for a tile, and how many images a carousel holds.
+
+    A video's frame is `thumbnail_url`; an image is its own `media_url`; a
+    carousel has neither and is shown by its first child. These URLs are
+    signed and expire, so they are refreshed with every reading and the screen
+    falls back to a plain tile rather than a broken image.
+    """
+    children = ((media.get("children") or {}).get("data")) or []
+    if children:
+        first = children[0]
+        return first.get("thumbnail_url") or first.get("media_url"), len(children)
+    return media.get("thumbnail_url") or media.get("media_url"), None
+
+
+def _read_insights(data: dict, wanted) -> dict:
+    by_name = {row.get("name"): row for row in (data.get("data") or [])}
+    out = {}
+    for ours in wanted:
+        row = by_name.get(_IG_MEDIA_METRICS[ours]) or {}
+        values = row.get("values") or []
+        value = values[0].get("value") if values else row.get("total_value", {}).get("value")
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            out[ours] = int(value)
+    return out
+
+
+async def _fetch_media_insights(media_id: str, fmt: Optional[str], token: str) -> tuple[dict, list]:
+    """`(metrics, unsupported)` for one post. Raises only on a revoked token.
+
+    Asks for the whole set first — one call, the ordinary case. If Instagram
+    refuses the set, asks for each metric alone and keeps whatever answers, so
+    one metric Instagram will not give for this media type costs that metric
+    and nothing else. `unsupported` names what was refused, so the screen can
+    say "not available for this post" rather than draw a zero.
+    """
+    wanted = _IG_METRICS_BY_FORMAT.get(fmt or "") or _IG_METRICS_BY_FORMAT["image"]
+    path = f"/{INSTAGRAM_MEDIA_API_VERSION}/{media_id}/insights"
+    try:
+        data = await _instagram_get(
+            path, {"metric": ",".join(_IG_MEDIA_METRICS[m] for m in wanted), "access_token": token}
+        )
+        return _read_insights(data, wanted), []
+    except HTTPException as exc:
+        if _is_revoked(str(exc.detail)):
+            raise
+    metrics, unsupported = {}, []
+    for ours in wanted:
+        try:
+            one = await _instagram_get(path, {"metric": _IG_MEDIA_METRICS[ours], "access_token": token})
+        except HTTPException as exc:
+            if _is_revoked(str(exc.detail)):
+                raise
+            unsupported.append(ours)
+            continue
+        metrics.update(_read_insights(one, [ours]))
+    return metrics, unsupported
+
+
+async def _fetch_instagram_posts(collab: dict, media_cache: Optional[dict] = None) -> tuple[list, Optional[str]]:
+    """Every linked post on a delivery, read off the creator's own account.
+
+    Returns `(posts, reason_it_did_not_work)` and never raises. Each post is
+    `{post_key, permalink, media_id, media_type, posted_at, thumbnail_url,
+    carousel_count, metrics, unsupported}`. A delivery with two posts returns
+    two; a post Instagram will not read is skipped rather than failing the
+    others.
+
+    **It only ever looks at media belonging to the creator's own connected
+    account.** Permalinks are matched against their media list rather than
+    fetched directly, so there is no path here that reads insights for a post
+    we were merely given a link to.
+    """
+    if not instagram_configured():
+        return [], "Instagram isn't connected on this deployment — enter the numbers by hand."
+    urls = _collab_post_urls(collab)
+    wanted = {k: u for u, k in ((u, _permalink_key(u)) for u in urls) if k}
+    if not wanted:
+        return [], "No Instagram link on this delivery — enter the numbers by hand."
+
+    conn = await db.instagram_connections.find_one({"user_id": collab["creator_id"]})
+    if not conn or conn.get("status") != "connected":
+        return [], "This creator hasn't connected Instagram — enter the numbers by hand."
+    token = _decrypt_token(conn.get("access_token"))
+    if not token:
+        return [], "Their Instagram connection needs renewing — enter the numbers by hand."
+
+    cache = media_cache if media_cache is not None else {}
+    media = cache.get(collab["creator_id"])
+    if media is None:
+        try:
+            listing = await _instagram_get(
+                f"/{INSTAGRAM_MEDIA_API_VERSION}/me/media",
+                {"fields": _IG_MEDIA_FIELDS, "limit": 50, "access_token": token},
+            )
+        except HTTPException as exc:
+            return [], f"Instagram wouldn't answer ({exc.detail}) — enter the numbers by hand."
+        media = listing.get("data") or []
+        cache[collab["creator_id"]] = media
+
+    posts = []
+    for item in media:
+        key = _permalink_key(item.get("permalink"))
+        if key not in wanted:
+            continue
+        fmt = _post_format(item)
+        try:
+            metrics, unsupported = await _fetch_media_insights(item["id"], fmt, token)
+        except HTTPException as exc:
+            return posts, f"Instagram wouldn't answer ({exc.detail}) — enter the numbers by hand."
+        thumb, count = _post_thumbnail(item)
+        posts.append(
+            {
+                "post_key": key,
+                "permalink": item.get("permalink") or wanted[key],
+                "media_id": item["id"],
+                "media_type": fmt,
+                "posted_at": _parse_ig_timestamp(item.get("timestamp")),
+                "thumbnail_url": thumb,
+                "carousel_count": count,
+                "metrics": metrics,
+                "unsupported": unsupported,
+            }
+        )
+    if not posts:
+        return [], (
+            "That post isn't in their recent media — it may be older than the last 50 "
+            "posts, or posted from another account. Enter the numbers by hand."
+        )
+    if not any(p["metrics"] for p in posts):
+        return [], "Instagram returned no numbers for that post — enter them by hand."
+    return posts, None
+
+
+def _parse_ig_timestamp(value: Optional[str]) -> Optional[datetime]:
+    """Instagram writes `2026-10-31T13:30:00+0000` — no colon in the offset."""
+    if not value:
+        return None
+    try:
+        return datetime.strptime(value, "%Y-%m-%dT%H:%M:%S%z").astimezone(timezone.utc)
+    except ValueError:
+        return None
+
+
+async def _fetch_instagram_performance(collab: dict) -> tuple[Optional[dict], Optional[str]]:
+    """The delivery's posts summed, in the old one-reading shape.
+
+    Kept for any caller that wants one number per delivery; the posts
+    themselves ride along under `posts`, which is what the recorder uses.
+    """
+    posts, reason = await _fetch_instagram_posts(collab)
+    if reason and not posts:
+        return None, reason
+    out: dict = {"media_id": posts[0]["media_id"], "posts": posts}
+    for m in PERFORMANCE_METRICS:
+        values = [p["metrics"][m] for p in posts if m in p["metrics"]]
+        if values:
+            out[m] = sum(values)
+    return out, None
+
+
+async def _record_instagram_posts(collab: dict, posts: list, actor: Optional[dict] = None) -> dict:
+    """Store an Instagram reading of every post on a delivery, then roll up.
+
+    The thumbnail is stored *with* the reading on purpose: Instagram's media
+    URLs are signed and expire, and refreshing them on the same six-hour clock
+    as the numbers is what keeps the wall of posts showing pictures.
+    """
+    now = datetime.now(timezone.utc)
+    for post in posts:
+        await _record_post_reading(
+            collab,
+            post["post_key"],
+            post["metrics"],
+            source="instagram",
+            captured_at=now,
+            meta={
+                "permalink": post["permalink"],
+                "media_id": post["media_id"],
+                "media_type": post["media_type"],
+                "posted_at": post["posted_at"],
+                "thumbnail_url": post["thumbnail_url"],
+                "thumbnail_fetched_at": now,
+                "carousel_count": post["carousel_count"],
+                "unsupported_metrics": post["unsupported"],
+            },
+        )
+    saved = await _rollup_collab_performance(collab, {"media_id": posts[0]["media_id"]})
+    campaign = await db.campaigns.find_one({"_id": collab["campaign_id"]})
+    await audit(
+        actor or _SYSTEM_ACTOR,
+        "collaboration.performance",
+        "collaboration",
+        collab["_id"],
+        after={"source": "instagram", "posts": len(posts),
+               **{m: saved.get(m) for m in PERFORMANCE_METRICS if saved.get(m) is not None}},
+        **_campaign_audit_context(campaign or {}),
+    )
+    return saved
+
+
+async def refresh_post_insights(limit: int = 100) -> dict:
+    """Read every live post again, every six hours, until it is a fortnight old.
+
+    **Driven by a schedule on the delivery** (`insights_refresh`): when it is
+    next due, how many times in a row it has failed, and when it froze. A
+    failure backs off (`30 min × 2^failures`, capped at a day) rather than
+    retrying every pass; a revoked token stops and leaves the connection to
+    the job that renews it. Never on a dashboard load — the same rule
+    `refresh_instagram_stats` holds, for the same 200-calls-an-hour reason.
+
+    Manual readings are left alone: a post nobody can read from Instagram
+    keeps the numbers somebody typed, marked "entered by hand".
+    """
+    if not instagram_configured():
+        return {"considered": 0, "refreshed": 0, "skipped": "not configured"}
+    now = datetime.now(timezone.utc)
+    horizon = now - timedelta(days=POST_FREEZE_DAYS + 2)
+    collabs = await db.collaborations.find(
+        {
+            "state": {"$in": list(DELIVERED_COLLAB_STATES)},
+            "insights_refresh.frozen_at": {"$exists": False},
+            "$or": [
+                {"insights_refresh.next_at": {"$exists": False}},
+                {"insights_refresh.next_at": {"$lte": now}},
+            ],
+            "updated_at": {"$gte": horizon},
+        }
+    ).to_list(length=limit)
+
+    report = {"considered": len(collabs), "refreshed": 0, "frozen": 0, "failed": 0}
+    media_cache: dict = {}
+    calls: dict = {}
+    for collab in collabs:
+        creator = collab["creator_id"]
+        if calls.get(creator, 0) >= POST_REFRESH_CALLS_PER_CREATOR:
+            continue
+        calls[creator] = calls.get(creator, 0) + 1 + len(_collab_post_urls(collab))
+        state = collab.get("insights_refresh") or {}
+        try:
+            posts, reason = await _fetch_instagram_posts(collab, media_cache)
+        except Exception as exc:  # one bad delivery must not stop the batch
+            posts, reason = [], str(exc)
+        if posts:
+            await _record_instagram_posts(collab, posts)
+            oldest = min((p["posted_at"] for p in posts if p["posted_at"]), default=None)
+            update = {
+                "insights_refresh.next_at": now + timedelta(hours=POST_REFRESH_HOURS),
+                "insights_refresh.failures": 0,
+                "insights_refresh.last_ok_at": now,
+            }
+            if oldest and _as_utc(oldest) + timedelta(days=POST_FREEZE_DAYS) <= now:
+                update["insights_refresh.frozen_at"] = now
+                report["frozen"] += 1
+            await db.collaborations.update_one({"_id": collab["_id"]}, {"$set": update})
+            report["refreshed"] += 1
+        else:
+            failures = int(state.get("failures") or 0) + 1
+            delay = min(timedelta(minutes=30) * (2 ** min(failures, 6)), timedelta(days=1))
+            await db.collaborations.update_one(
+                {"_id": collab["_id"]},
+                {"$set": {
+                    "insights_refresh.next_at": now + delay,
+                    "insights_refresh.failures": failures,
+                    "insights_refresh.last_error": (reason or "")[:200],
+                }},
+            )
+            report["failed"] += 1
+    if report["refreshed"] or report["failed"]:
+        logger.info("Post insights refresh: %s", report)
+    return report
 
 
 def _permalink_key(url: Optional[str]) -> Optional[str]:
@@ -20382,73 +21761,6 @@ def _permalink_key(url: Optional[str]) -> Optional[str]:
         return None
     m = re.search(r"instagram\.com/(?:reel|reels|p|tv)/([A-Za-z0-9_-]+)", url)
     return m.group(1) if m else None
-
-
-async def _fetch_instagram_performance(collab: dict) -> tuple[Optional[dict], Optional[str]]:
-    """Read one post's insights off the creator's own connected account.
-
-    Returns `(metrics, reason_it_did_not_work)` — never raises. Every branch
-    that fails returns a sentence a human can act on, because the alternative
-    to this working is somebody typing the numbers in, and they need to know
-    that is what they are now doing.
-
-    **It only ever looks at media belonging to the creator's own connected
-    account.** The permalink is matched against their media list rather than
-    being fetched directly, so there is no path here that reads insights for a
-    post we were merely given a link to.
-    """
-    if not instagram_configured():
-        return None, "Instagram isn't connected on this deployment — enter the numbers by hand."
-
-    urls = collab.get("content_urls") or ([collab["content_url"]] if collab.get("content_url") else [])
-    wanted = {k for k in (_permalink_key(u) for u in urls) if k}
-    if not wanted:
-        return None, "No Instagram link on this delivery — enter the numbers by hand."
-
-    conn = await db.instagram_connections.find_one({"user_id": collab["creator_id"]})
-    if not conn or conn.get("status") != "connected":
-        return None, "This creator hasn't connected Instagram — enter the numbers by hand."
-    token = _decrypt_token(conn.get("access_token"))
-    if not token:
-        return None, "Their Instagram connection needs renewing — enter the numbers by hand."
-
-    try:
-        media = await _instagram_get(
-            "/me/media",
-            {"fields": "id,permalink,media_type,timestamp", "limit": 50, "access_token": token},
-        )
-    except HTTPException as exc:
-        return None, f"Instagram wouldn't answer ({exc.detail}) — enter the numbers by hand."
-
-    match = next(
-        (m for m in (media.get("data") or []) if _permalink_key(m.get("permalink")) in wanted),
-        None,
-    )
-    if not match:
-        return None, (
-            "That post isn't in their recent media — it may be older than the last 50 "
-            "posts, or posted from another account. Enter the numbers by hand."
-        )
-
-    try:
-        insights = await _instagram_get(
-            f"/{match['id']}/insights",
-            {"metric": ",".join(_IG_MEDIA_METRICS.values()), "access_token": token},
-        )
-    except HTTPException as exc:
-        return None, f"Instagram had no insights for that post ({exc.detail}) — enter the numbers by hand."
-
-    by_name = {row.get("name"): row for row in (insights.get("data") or [])}
-    out: dict = {"media_id": match["id"]}
-    for ours, theirs in _IG_MEDIA_METRICS.items():
-        row = by_name.get(theirs) or {}
-        values = row.get("values") or []
-        value = values[0].get("value") if values else None
-        if isinstance(value, (int, float)):
-            out[ours] = int(value)
-    if not any(k in out for k in PERFORMANCE_METRICS):
-        return None, "Instagram returned no numbers for that post — enter them by hand."
-    return out, None
 
 
 def _phone_tail(raw: Optional[str]) -> Optional[str]:
@@ -23554,18 +24866,11 @@ async def fetch_collaboration_performance(
     4xx would make the UI treat "this creator uses YouTube" as a fault.
     """
     collab = await _collab_or_404(collab_id, user)
-    metrics, reason = await _fetch_instagram_performance(collab)
-    if reason:
+    posts, reason = await _fetch_instagram_posts(collab)
+    if not posts:
         return {"fetched": False, "reason": reason, "performance": None}
-    media_id = metrics.pop("media_id", None)
-    saved = await _record_performance(
-        collab,
-        PerformancePayload(**metrics),
-        user,
-        source="instagram",
-        media_id=media_id,
-    )
-    return {"fetched": True, "reason": None, "performance": saved}
+    saved = await _record_instagram_posts(collab, posts, user)
+    return {"fetched": True, "reason": reason, "performance": _serialize_performance(saved)}
 
 
 @admin_router.post("/impersonate/{user_id}")
@@ -32387,6 +33692,8 @@ async def _instagram_loop() -> None:
             await asyncio.sleep(interval)
             await refresh_instagram_tokens()
             await refresh_instagram_stats()
+            await refresh_post_insights()
+            await refresh_creator_tags()
         except asyncio.CancelledError:
             raise
         except Exception as exc:
@@ -32400,7 +33707,9 @@ async def run_instagram_jobs(user: dict = Depends(require_roles("admin"))):
     cache window, so a manual run can't blow the rate limit."""
     tokens = await refresh_instagram_tokens()
     stats = await refresh_instagram_stats()
-    report = {"tokens": tokens, "stats": stats}
+    posts = await refresh_post_insights()
+    tags = await refresh_creator_tags()
+    report = {"tokens": tokens, "stats": stats, "posts": posts, "tags": tags}
     await audit(user, "job.instagram_refresh", "job", "instagram", after=report)
     return report
 
@@ -35729,6 +37038,10 @@ async def _load_brand_map(brand_ids: list) -> dict:
 # vocabulary (`_campaign_terms`, `_overlap`), so the two ends of the market are
 # matched on one definition of fit rather than two that drift.
 CREATOR_FEED_WEIGHTS = {"work_match": 50, "city": 30, "neighbourhood": 20}
+# **What a brief's confirmed tags add**, on top of the free-text match above.
+# A separate table rather than a re-tuning of the first, so a feed with no
+# tagged briefs ranks exactly as it did — the tags only ever add.
+CREATOR_FEED_TAG_WEIGHTS = {"niche": 60, "language": 25, "area": 25}
 
 
 def score_campaign_for_creator(campaign: dict, profile: Optional[dict]) -> float:
@@ -35774,6 +37087,17 @@ def score_campaign_for_creator(campaign: dict, profile: Optional[dict]) -> float
     if campaign_area and campaign_area in creator_places:
         score += CREATOR_FEED_WEIGHTS["neighbourhood"]
 
+    # The tags: the brief's confirmed niche, language and area against what
+    # this creator posts. A brief nobody tagged adds nothing.
+    wanted = campaign.get("tags") or {}
+    mine = niche_tagging.effective_tags(profile.get("creator_tags"))
+    if set(wanted.get("niche") or []) & {n["tag"] for n in mine["niche"]}:
+        score += CREATOR_FEED_TAG_WEIGHTS["niche"]
+    if set(wanted.get("languages") or []) & set(mine["languages"]):
+        score += CREATOR_FEED_TAG_WEIGHTS["language"]
+    if set(wanted.get("areas") or []) & set(mine["shoots_in"]):
+        score += CREATOR_FEED_TAG_WEIGHTS["area"]
+
     return score
 
 
@@ -35798,6 +37122,7 @@ async def list_campaigns(
     limit: int = 200,
     offset: int = 0,
     user: dict = Depends(require_roles("creator", "admin")),
+    niche_match: bool = False,
 ):
     """Every live brief this caller may see, most relevant first.
 
@@ -35898,6 +37223,12 @@ async def list_campaigns(
         # itself, and the count header has to agree with the list.
         if not _shows_barter_briefs(profile):
             query.setdefault("$and", []).append(_NO_BARTER_QUERY)
+        # "Matches your niche": only briefs whose confirmed niche is one of
+        # this creator's. Stored tags on both sides — no model at query time.
+        # The barter rule above still applies; this narrows, never widens.
+        if niche_match:
+            mine = (profile or {}).get("tag_niches") or []
+            query.setdefault("$and", []).append({"tags.niche": {"$in": mine}})
 
     total = await db.campaigns.count_documents(query)
 
@@ -43075,6 +44406,36 @@ async def public_sitemap():
     )
 
 
+
+# Admin half of the creator tag routes (see "Niche tags" above).
+@admin_router.get("/creators/{creator_id}/tags")
+async def admin_get_creator_tags(creator_id: str, user: dict = Depends(require_roles("admin"))):
+    try:
+        oid = ObjectId(creator_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Creator not found")
+    profile = await db.creator_profiles.find_one({"user_id": oid})
+    if not profile:
+        raise HTTPException(status_code=404, detail="Creator not found")
+    conn = await db.instagram_connections.find_one({"user_id": oid}, {"status": 1})
+    return _creator_tags_payload(profile, bool(conn and conn.get("status") == "connected"))
+
+
+@admin_router.put("/creators/{creator_id}/tags")
+async def admin_put_creator_tags(
+    creator_id: str, payload: TagSetPayload, user: dict = Depends(require_roles("admin"))
+):
+    """An admin's correction, recorded as theirs. Admin-only: a creator's tags
+    decide which briefs find them, across every brand."""
+    try:
+        oid = ObjectId(creator_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Creator not found")
+    await _set_confirmed_tags(oid, payload, "admin")
+    await audit(user, "creator.tags_admin", "creator_profile", oid, after=payload.model_dump())
+    return await admin_get_creator_tags(creator_id, user)
+
+
 # ---------------------------------------------------------------------------
 # Mounting the routers — at the end, and only here.
 #
@@ -43304,6 +44665,13 @@ async def _startup():
     await ai.ensure_indexes(db)
     await db.campaign_summaries.create_index("campaign_id", unique=True)
     await db.campaign_summaries.create_index("creator_ids")
+    # One latest row per post, and the append-only history the chart reads.
+    await db.post_performance.create_index(
+        [("collaboration_id", 1), ("post_key", 1)], unique=True
+    )
+    await db.post_performance.create_index("campaign_id")
+    await db.performance_snapshots.create_index([("campaign_id", 1), ("captured_at", 1)])
+    await backfill_post_performance()
 
     # users
     # NOTE: partial-unique indexes on email + phone because creators/brands now
@@ -43409,6 +44777,11 @@ async def _startup():
     await db.instagram_oauth_states.create_index("state", unique=True)
     await db.instagram_oauth_states.create_index("expires_at", expireAfterSeconds=0)
     await db.creator_profiles.create_index("niches")
+    # The niche filters are equality tests on stored tags — never a model call
+    # at query time — so each one is an index.
+    for field in ("tag_niches", "tag_languages", "tag_areas", "tag_formats"):
+        await db.creator_profiles.create_index(field)
+    await db.campaigns.create_index("tags.niche")
 
     # brand_profiles (1:1 with users)
     await db.brand_profiles.create_index("user_id", unique=True)

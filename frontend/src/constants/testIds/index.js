@@ -38,3 +38,4 @@ export * from './profile';
 export * from './questions';
 export * from './scheduling';
 export * from './share';
+export { DASHBOARD } from './dashboard';

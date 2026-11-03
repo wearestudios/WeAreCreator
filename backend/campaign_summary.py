@@ -74,12 +74,12 @@ class CampaignSummary(BaseModel):
 PROMPT = ai.register_prompt(
     ai.Prompt(
         task=TASK,
-        version="campaign_summary.v1",
+        version="campaign_summary.v2",
         system="""\
 You summarise one finished influencer campaign for the owner of a small business — often a restaurant, café or shop — who paid for it and is deciding whether to run another. Write plain English a busy owner reads in thirty seconds. No marketing jargon: say "people reached", not "reach metrics"; say "cost per 1,000 people reached", not "CPM".
 
 Rules you must follow:
-1. Quote only numbers that appear in the data, exactly or rounded for display. Money in rupees with Indian notation: ₹1,48,932, 1.49L or 38K are all fine for the values they round. Never calculate a new number: no sums, differences, ratios, multiples such as "2x", and no percentages that are not already in the data. The "derived" block already holds the averages, shares and costs you may need.
+1. Quote only numbers that appear in the data, exactly or rounded for display. Money in rupees with Indian notation: ₹1,48,932, 1.49L or 38K are all fine for the values they round. Never calculate a new number: no sums, differences, and no percentages that are not already in the data. A multiple such as "2.4x" or "2.4 times" is allowed only when that exact ratio is a field in the data. The "derived" block already holds the averages, shares, ratios and costs you may need.
 2. Each point lists evidence: the paths of the data fields it relies on, written like totals.reach, creators[0].engagement_rate, derived.by_format[0].average_reach or baseline.reach.change_percent. Every path must exist in the data.
 3. If derived.posts_measured is less than derived.posts_total, say so in the headline or the first "worked" point, naming both numbers (for example "4 of 6 posts measured").
 4. Never mention a measure that is not in the data — no sales, revenue, footfall, orders, followers, likes, comments, saves, clicks or ROI. If there is no "baseline" block, do not compare with earlier campaigns.
@@ -108,6 +108,7 @@ def build_summary_input(
     formats: dict,
     *,
     category_label: Optional[str] = None,
+    dashboard: Optional[dict] = None,
 ) -> dict:
     """The model's whole world, from `_campaign_analytics` and the history.
 
@@ -129,7 +130,9 @@ def build_summary_input(
                 {
                     "name": row.get("name") or "A creator",
                     "format": formats.get(row.get("creator_id")),
+                    "views": row.get("views"),
                     "reach": row.get("reach"),
+                    "shares": row.get("shares"),
                     "impressions": row.get("impressions"),
                     "engagements": row.get("engagements"),
                     "engagement_rate": row.get("engagement_rate"),
@@ -156,6 +159,7 @@ def build_summary_input(
                 "impressions": _positive(totals.get("total_impressions")),
                 "views": _positive(totals.get("total_views")),
                 "engagements": _positive(totals.get("total_engagements")),
+                "shares": _positive(totals.get("total_shares")),
                 "engagement_rate": totals.get("engagement_rate"),
                 "spend": _positive(totals.get("total_spend")),
                 "cost_per_thousand_reach": totals.get("cost_per_thousand_reach"),
@@ -171,13 +175,16 @@ def build_summary_input(
                 baseline[key] = _drop_none(
                     {
                         "this_campaign": delta.get("value"),
-                        "earlier_average": delta.get("previous"),
+                        # A sum over every earlier campaign, which is what
+                        # `_against_their_own_history` compares with — named so
+                        # the model cannot call it an average.
+                        "earlier_campaigns_combined": delta.get("previous"),
                         "change_percent": delta.get("change_percent"),
                         "better": delta.get("better"),
                     }
                 )
         data["baseline"] = baseline
-    data["derived"] = derive(data)
+    data["derived"] = derive(data, dashboard)
     return data
 
 
@@ -189,7 +196,7 @@ def _cpm(fees: float, reach: float) -> Optional[float]:
     return round(fees / reach * 1000, 2) if reach and fees else None
 
 
-def derive(data: dict) -> dict:
+def derive(data: dict, dashboard: Optional[dict] = None) -> dict:
     """Every figure the model may need that is not a field. Pure.
 
     Aggregates are computed from the sums, never averaged from per-post rates —
@@ -240,6 +247,72 @@ def derive(data: dict) -> dict:
             )
         )
     out["by_format"] = by_format
+
+    # Views, per creator: their share of the campaign's views, and how often
+    # somebody who watched passed it on.
+    viewed = [c for c in creators if c.get("views")]
+    total_views = sum(c["views"] for c in viewed)
+    if viewed and total_views:
+        out["by_creator_views"] = [
+            _drop_none(
+                {
+                    "name": c.get("name"),
+                    "views": c["views"],
+                    "share_of_views_percent": round(c["views"] / total_views * 100, 1),
+                    "shares_per_thousand_views": (
+                        round(c["shares"] / c["views"] * 1000, 1)
+                        if c.get("shares") is not None else None
+                    ),
+                }
+            )
+            for c in sorted(viewed, key=lambda c: -c["views"])
+        ]
+
+    # Average views per post by the format Instagram reports (reel, carousel…),
+    # and the ratio between each pair — the one kind of multiple the summary
+    # may quote, because it is computed here rather than by the model.
+    formats = [
+        f for f in ((dashboard or {}).get("by_format") or []) if f.get("posts") and f.get("views")
+    ]
+    if formats:
+        per_post = [
+            {
+                "format": f["format"],
+                "posts": f["posts"],
+                "views": f["views"],
+                "average_views_per_post": round(f["views"] / f["posts"]),
+            }
+            for f in formats
+        ]
+        out["by_post_format"] = per_post
+        ranked = sorted(per_post, key=lambda f: -f["average_views_per_post"])
+        out["format_ratios"] = [
+            {
+                "formats": f"{a['format']} to {b['format']}",
+                "average_views_ratio": round(
+                    a["average_views_per_post"] / b["average_views_per_post"], 1
+                ),
+            }
+            for i, a in enumerate(ranked)
+            for b in ranked[i + 1:]
+            if b["average_views_per_post"]
+        ]
+
+    # The dashboard counts posts, where `posts_total` above counts deliveries
+    # (a creator who posted twice is one delivery and two posts). Both are
+    # given, named apart, so "11 posts from 9 creators" can be grounded.
+    if dashboard:
+        out["instagram_posts_live"] = (dashboard.get("posts") or {}).get("live")
+        out["creators_posted"] = (dashboard.get("creators") or {}).get("posted")
+        out["creators_total"] = (dashboard.get("creators") or {}).get("total")
+        out = _drop_none(out)
+
+    last = (dashboard or {}).get("versus_last_campaign") or {}
+    if last.get("change_percent") is not None:
+        out["vs_last_campaign"] = {
+            "views_last_campaign": last.get("views"),
+            "views_change_percent": last["change_percent"],
+        }
     return out
 
 
@@ -372,6 +445,8 @@ def extract_numbers(text: str, *, strip: tuple = ()) -> list:
 
 def _kind_of(path: str) -> str:
     leaf = path.rsplit(".", 1)[-1]
+    if "ratio" in leaf:
+        return "multiple"
     if "percent" in leaf or "rate" in path:
         return "percent"
     if any(w in path for w in ("fee", "spend", "cost")):
@@ -445,9 +520,12 @@ _MISSING = object()
 
 
 def _matches(found: Found, values: list) -> bool:
-    if found.kind == "multiple":
-        return False
     for _path, value, kind in values:
+        # **A multiple matches only a ratio the data carries** — never a count
+        # that happens to share its digits. With no ratio field in the input,
+        # every "3x" is still refused.
+        if (found.kind == "multiple") != (kind == "multiple"):
+            continue
         if found.kind == "percent" and kind != "percent":
             continue
         if found.kind == "money" and kind != "money":

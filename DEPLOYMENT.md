@@ -257,6 +257,7 @@ it. See `backend/ai.py`.
 | `AI_DAILY_CALL_LIMIT` | `500`. Provider calls per IST day across every feature — the cost ceiling. |
 | `AI_ACCOUNT_TASK_DAILY_LIMIT` | `20`. Provider calls one account may make for one feature per IST day. |
 | `AI_LOG_SALT` | Any random string. Salts the account hash in the `ai_calls` log. |
+| `AI_TAGGING_VISION` | `false`. Niche tagging reads captions only; thumbnail vision stays off unless this is `true`, and is not built yet. |
 
 ## Everything else
 

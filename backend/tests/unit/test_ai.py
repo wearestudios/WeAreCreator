@@ -435,7 +435,10 @@ class TestCeilings:
 # log line, so a silent edit would serve summaries the old prompt wrote as if
 # the new one had.
 PROMPT_FINGERPRINTS = {
-    "campaign_summary.v1": "716f8d32fe55c58b",
+    "campaign_summary.v2": "ed480f3a76b24581",
+    "creator_tagging.v1": "cd7a54fee455ac22",
+    "brief_tagging.v1": "ce381cac9b3f8d05",
+    "brief_writer.v1": "960087a8593604da",
 }
 
 
@@ -451,7 +454,7 @@ def test_every_registered_prompt_is_pinned_to_its_version():
 
 def test_two_texts_cannot_share_a_version():
     with pytest.raises(RuntimeError):
-        ai.register_prompt(ai.Prompt("campaign_summary", "campaign_summary.v1", "something else"))
+        ai.register_prompt(ai.Prompt("campaign_summary", "campaign_summary.v2", "something else"))
 
 
 def test_no_test_reaches_a_real_provider():

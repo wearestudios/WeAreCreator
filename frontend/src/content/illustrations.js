@@ -18,8 +18,9 @@
 // Placed by meaning, as the pre-revamp pages had them (8263b6f). The rest of
 // the folder is accounted for elsewhere or left out on purpose: the three
 // photo-slot stand-ins are named in `photoSlots.js`, the six `float-*`
-// drawings belong to the unmounted floating cards, and `why-planning` fits
-// nothing on the three pages closely enough to place, so it is not forced in.
+// drawings belong to the unmounted floating cards. `why-planning` sat unused
+// until the "What the AI does" cards gave it a meaning: the desk where a brief
+// gets drafted.
 
 const at = (name) => `/img/marketing/${name}.svg`;
 
@@ -39,6 +40,8 @@ export const ILLUSTRATIONS = {
     "creators-profile-phone": { src: at("creators-profile-phone"), width: 1600, height: 1200 },
     "creators-cafe-shoot": { src: at("creators-cafe-shoot"), width: 1600, height: 900 },
     "why-fees-closeup": { src: at("why-fees-closeup"), width: 1000, height: 800 },
+    // Home: "What the AI does" — named by the cards in content/marketing.js.
+    "why-planning": { src: at("why-planning"), width: 1600, height: 1200 },
 };
 
 /** The illustration, or a thrown error: a misspelt name must fail loudly

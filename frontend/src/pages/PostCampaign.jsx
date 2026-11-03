@@ -80,6 +80,19 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import PublishGate from "@/components/brand/PublishGate";
+import BriefTags from "@/components/brand/BriefTags";
+import BriefWriter, { AiMark } from "@/components/brand/BriefWriter";
+import { DRAFT_FIELDS, isAiValue, planDraft, toFormValue } from "@/lib/briefDraft";
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
     Select,
     SelectContent,
@@ -426,6 +439,111 @@ export default function PostCampaign() {
     // is that, read off the stored campaign rather than off the picker.
     const isBarter = compensationType === "barter";
 
+    // --- The brief writer ---------------------------------------------------
+    // The form as the writer reads it, keyed like the API. `planDraft` decides
+    // what a draft may write; `aiValues` remembers what the last one did, so a
+    // field still holding it shows "AI draft" and one the brand changed does
+    // not — and is never replaced without asking.
+    const [aiValues, setAiValues] = useState({});
+    const [draftConflicts, setDraftConflicts] = useState(null);
+    const formNow = {
+        title,
+        brief,
+        campaign_type: campaignType,
+        category,
+        deliverable_items: deliverables,
+        budget_per_creator: budget,
+        total_budget: totalBudget,
+        creators_needed: creatorsNeeded,
+        revisions_included: revisionsIncluded,
+        event_date: eventDate,
+        event_time: eventTime,
+        start_date: startDate,
+        end_date: endDate,
+        brief_dos: briefDetails.brief_dos,
+        brief_donts: briefDetails.brief_donts,
+        mandatory_hashtags: briefDetails.mandatory_hashtags,
+        mandatory_mentions: briefDetails.mandatory_mentions,
+        caption_guidance: briefDetails.caption_guidance,
+        required_disclosure: requiredDisclosure,
+        compensation_type: compensationType,
+        venue_address: venueAddress,
+        area,
+    };
+    // What the page starts with — so a default is not mistaken for an edit.
+    const draftBaseline = {
+        title: "",
+        brief: "",
+        campaign_type: "personal_table",
+        category: brandProfile?.category || "",
+        deliverable_items: emptyDeliverables(),
+        budget_per_creator: "",
+        total_budget: "",
+        creators_needed: "1",
+        revisions_included: String(DEFAULT_REVISIONS_INCLUDED),
+        event_date: "",
+        event_time: "",
+        start_date: "",
+        end_date: "",
+        brief_dos: [],
+        brief_donts: [],
+        mandatory_hashtags: [],
+        mandatory_mentions: [],
+        caption_guidance: "",
+        required_disclosure: DEFAULT_DISCLOSURE,
+        compensation_type: "fixed",
+        venue_address: "",
+        area: brandProfile?.areas?.length === 1 ? brandProfile.areas[0] : "",
+    };
+    const detail = (key) => (value) => setBriefDetails((d) => ({ ...d, [key]: value }));
+    const writeDraftField = {
+        title: setTitle,
+        brief: setBrief,
+        campaign_type: setCampaignType,
+        category: setCategory,
+        deliverable_items: (v) => setDeliverables({ ...emptyDeliverables(), ...v }),
+        budget_per_creator: setBudget,
+        total_budget: setTotalBudget,
+        creators_needed: setCreatorsNeeded,
+        revisions_included: setRevisionsIncluded,
+        event_date: setEventDate,
+        event_time: setEventTime,
+        start_date: setStartDate,
+        end_date: setEndDate,
+        brief_dos: detail("brief_dos"),
+        brief_donts: detail("brief_donts"),
+        mandatory_hashtags: detail("mandatory_hashtags"),
+        mandatory_mentions: detail("mandatory_mentions"),
+        caption_guidance: detail("caption_guidance"),
+        required_disclosure: setRequiredDisclosure,
+        compensation_type: setCompensationType,
+        venue_address: setVenueAddress,
+        area: setArea,
+    };
+    const writeDraft = (values) => {
+        Object.entries(values).forEach(([key, value]) => writeDraftField[key](value));
+        setAiValues((prev) => ({ ...prev, ...values }));
+    };
+    const onDraft = (fields) => {
+        const { apply, conflicts } = planDraft({
+            fields,
+            current: formNow,
+            baseline: draftBaseline,
+            aiValues,
+            // An area the select cannot show is left alone rather than set
+            // to a value that renders as an empty box.
+            allowed: { area: (v) => areaOptions.includes(v) },
+        });
+        writeDraft(apply);
+        if (conflicts.length) setDraftConflicts({ fields, conflicts });
+    };
+    const replaceConflicts = () => {
+        const { fields, conflicts } = draftConflicts;
+        writeDraft(Object.fromEntries(conflicts.map((k) => [k, toFormValue(k, fields[k])])));
+        setDraftConflicts(null);
+    };
+    const ai = (key) => isAiValue(key, formNow, aiValues);
+
     // Whether this brief is ours to run whatever the picker says, and why. The
     // threshold comes from the server on `GET /brand/profile` — it is an
     // operating decision an admin can change, and a copy of the number here
@@ -443,6 +561,8 @@ export default function PostCampaign() {
         if (!brief.trim()) return "Please add a brief.";
         if (toDeliverableItems(deliverables).length === 0)
             return "What are you asking for? Pick at least one deliverable.";
+        // A draft that heard "barter" leaves this unselected on purpose.
+        if (!lockedBarter && !compensationType) return "Choose how this brief pays.";
         if (!isBarter) {
             const budgetNum = Number(budget);
             if (!Number.isFinite(budgetNum) || budgetNum < 0)
@@ -728,6 +848,24 @@ export default function PostCampaign() {
                         <CampaignTemplates onUse={applyTemplate} />
                     </div>
                 )}
+                <AlertDialog open={Boolean(draftConflicts)} onOpenChange={(o) => !o && setDraftConflicts(null)}>
+                    <AlertDialogContent data-testid="brief-writer-conflicts">
+                        <AlertDialogHeader>
+                            <AlertDialogTitle>Replace what you changed?</AlertDialogTitle>
+                            <AlertDialogDescription>
+                                The new draft has different{" "}
+                                {(draftConflicts?.conflicts || []).map((k) => DRAFT_FIELDS[k]).join(", ")}.
+                                Everything else has been updated already.
+                            </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                            <AlertDialogCancel data-testid="brief-writer-keep">Keep mine</AlertDialogCancel>
+                            <AlertDialogAction data-testid="brief-writer-replace" onClick={replaceConflicts}>
+                                Use the draft
+                            </AlertDialogAction>
+                        </AlertDialogFooter>
+                    </AlertDialogContent>
+                </AlertDialog>
 
                 <p className="mt-6 text-eyebrow uppercase tracking-eyebrow text-primary">
                     {isEditing ? "Edit campaign" : "New campaign"}
@@ -746,6 +884,15 @@ export default function PostCampaign() {
                         : "We read every brief before it goes out, usually the same day. Save as a draft if you want to polish it first."}
                 </p>
 
+                {!isEditing && (
+                    <div className="mt-8">
+                        <BriefWriter
+                            status={brandProfile?.brief_writer}
+                            hasDraft={Object.keys(aiValues).length > 0}
+                            onDraft={onDraft}
+                        />
+                    </div>
+                )}
                 <form
                     onSubmit={(e) => submit(e, "pending_review")}
                     noValidate
@@ -754,6 +901,7 @@ export default function PostCampaign() {
                     <section className="space-y-5">
                         <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                             What kind of campaign
+                            <AiMark on={ai("campaign_type")} testid="pc-ai-campaign_type" />
                         </p>
                         <div data-testid="pc-type-picker" className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                             {[
@@ -824,6 +972,7 @@ export default function PostCampaign() {
                                         {/* Nothing is bookable on a delivery —
                                             the window is when you post it. */}
                                         {isDelivery ? "Sending from" : "Bookable from"}
+                                        <AiMark on={ai("start_date")} testid="pc-ai-start_date" />
                                     </Label>
                                     <div className="relative mt-2">
                                         <CalendarDays className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -840,6 +989,7 @@ export default function PostCampaign() {
                                 <div>
                                     <Label htmlFor="pc-end" className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                                         {isDelivery ? "Sent by" : "Until"}
+                                        <AiMark on={ai("end_date")} testid="pc-ai-end_date" />
                                     </Label>
                                     <div className="relative mt-2">
                                         <CalendarDays className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -860,6 +1010,7 @@ export default function PostCampaign() {
                                     <div>
                                         <Label htmlFor="pc-event" className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                                             Which day
+                                            <AiMark on={ai("event_date")} testid="pc-ai-event_date" />
                                         </Label>
                                         <div className="relative mt-2">
                                             <CalendarDays className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -882,6 +1033,7 @@ export default function PostCampaign() {
                                             <div>
                                                 <Label htmlFor="pc-event-time" className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                                                     Starts at
+                                                    <AiMark on={ai("event_time")} testid="pc-ai-event_time" />
                                                 </Label>
                                                 <Input
                                                     id="pc-event-time"
@@ -996,6 +1148,7 @@ export default function PostCampaign() {
                                     className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground"
                                 >
                                     Disclosure the post must carry
+                                    <AiMark on={ai("required_disclosure")} testid="pc-ai-required_disclosure" />
                                 </Label>
                                 <select
                                     id="pc-disclosure"
@@ -1092,6 +1245,7 @@ export default function PostCampaign() {
                         <div>
                             <Label htmlFor="pc-title" className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                                 Campaign title
+                                <AiMark on={ai("title")} testid="pc-ai-title" />
                             </Label>
                             <Input
                                 id="pc-title"
@@ -1106,6 +1260,7 @@ export default function PostCampaign() {
                         <div>
                             <Label htmlFor="pc-brief" className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                                 Brief
+                                <AiMark on={ai("brief")} testid="pc-ai-brief" />
                             </Label>
                             <Textarea
                                 id="pc-brief"
@@ -1121,6 +1276,7 @@ export default function PostCampaign() {
                         <div>
                             <Label className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                                 Deliverables
+                                <AiMark on={ai("deliverable_items")} testid="pc-ai-deliverable_items" />
                             </Label>
                             {/* Counted, not written. Anything about *how* —
                                 a hashtag, a handle to tag, a turnaround —
@@ -1147,6 +1303,13 @@ export default function PostCampaign() {
                             collapsed, because a brief with none of it is a
                             perfectly good brief and six empty boxes here read
                             as six more things to do before posting. */}
+                        {["brief_dos", "brief_donts", "mandatory_hashtags", "mandatory_mentions", "caption_guidance"].some(ai) ? (
+                            <p data-testid="pc-ai-brief-details" className="text-meta text-muted-foreground">
+                                <AiMark on testid="pc-ai-brief-details-mark" />
+                                {" "}The do's, don'ts and tags below came from the draft — the
+                                disclosure line and #ad are always added.
+                            </p>
+                        ) : null}
                         <BriefDetailsEditor
                             value={briefDetails}
                             onChange={setBriefDetails}
@@ -1190,6 +1353,7 @@ export default function PostCampaign() {
                     <section className="space-y-5">
                         <p className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                             Money & scope
+                            <AiMark on={ai("compensation_type")} testid="pc-ai-compensation_type" />
                         </p>
 
                         {lockedBarter ? (
@@ -1536,6 +1700,7 @@ export default function PostCampaign() {
                                     className="text-xs uppercase tracking-[0.15em] text-muted-foreground"
                                 >
                                     Rounds of changes included
+                                    <AiMark on={ai("revisions_included")} testid="pc-ai-revisions_included" />
                                 </Label>
                                 <Input
                                     id="pc-revisions-included"
@@ -1615,6 +1780,7 @@ export default function PostCampaign() {
                                         {compensationType === "negotiated"
                                             ? "Budget per creator (guide)"
                                             : "Budget per creator"}
+                                        <AiMark on={ai("budget_per_creator")} testid="pc-ai-budget_per_creator" />
                                     </Label>
                                     <div className="relative mt-2">
                                         <IndianRupee className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -1641,6 +1807,7 @@ export default function PostCampaign() {
                             <div>
                                 <Label htmlFor="pc-needed" className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                                     Creators needed
+                                    <AiMark on={ai("creators_needed")} testid="pc-ai-creators_needed" />
                                 </Label>
                                 <div className="relative mt-2">
                                     <Users className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -1673,6 +1840,7 @@ export default function PostCampaign() {
                                     className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground"
                                 >
                                     Total campaign budget (optional)
+                                    <AiMark on={ai("total_budget")} testid="pc-ai-total_budget" />
                                 </Label>
                                 <div className="relative mt-2">
                                     <IndianRupee className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -1702,6 +1870,7 @@ export default function PostCampaign() {
                             <div>
                                 <Label className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                                     Category
+                                    <AiMark on={ai("category")} testid="pc-ai-category" />
                                 </Label>
                                 <Select value={category} onValueChange={setCategory}>
                                     <SelectTrigger
@@ -1726,6 +1895,7 @@ export default function PostCampaign() {
                             <div>
                                 <Label className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                                     Area
+                                    <AiMark on={ai("area")} testid="pc-ai-area" />
                                 </Label>
                                 <Select value={area} onValueChange={setArea}>
                                     <SelectTrigger
@@ -1778,6 +1948,7 @@ export default function PostCampaign() {
                             <div>
                                 <Label htmlFor="pc-venue" className="text-eyebrow uppercase tracking-eyebrow text-muted-foreground">
                                     Address
+                                    <AiMark on={ai("venue_address")} testid="pc-ai-venue_address" />
                                 </Label>
                                 <Input
                                     id="pc-venue"
@@ -1906,6 +2077,13 @@ export default function PostCampaign() {
                         </Button>
                     </div>
                 </form>
+                {/* Tags exist once the brief does: suggested in the
+                    background after a save, confirmed here by the brand. */}
+                {isEditing ? (
+                    <div className="mt-10">
+                        <BriefTags campaignId={editingId} />
+                    </div>
+                ) : null}
             </main>
         </div>
     );

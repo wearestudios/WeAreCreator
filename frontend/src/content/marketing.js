@@ -78,9 +78,9 @@ export const FACTS = {
  * capability it names (the route and its module) does not exist.
  */
 export const AI_FEATURES = {
-    campaignSummary: false,
-    nicheMatching: false,
-    briefWriter: false,
+    campaignSummary: true,
+    nicheMatching: true,
+    briefWriter: true,
 };
 
 /** Whether the site may mention this AI feature. Unknown keys are off. */
@@ -154,6 +154,12 @@ export const HOME = {
         title: "WeAre Creators — influencer marketing, minus the chasing",
         description:
             "Verified creators, every fee and term agreed in writing, and the content approved before anyone is paid. Free to post a brief, and no retainer.",
+        // In place of the two above while at least two AI switches are on —
+        // "AI-powered" is a claim about the product, and one feature is not
+        // a product that is powered by it.
+        aiTitle: "WeAre Creators — AI-powered influencer marketing, minus the chasing",
+        aiDescription:
+            "AI-powered matching with verified creators, every fee and term agreed in writing, and the content approved before anyone is paid. Free to post a brief, and no retainer.",
     },
     hero: {
         title: "Creator campaigns, minus the chasing.",
@@ -162,6 +168,9 @@ export const HOME = {
         // Who it is for, said in plain words — it replaced a dotted list of
         // sectors under the buttons.
         lead: "Find verified creators for your restaurant, café or hotel. Agree the fee, approve the content, pay on approval — with every term written down.",
+        // In place of `lead` while at least two AI switches are on. The AI is
+        // the matching; the fee, the approval and the payment stay people's.
+        aiLead: "AI-powered matching with verified creators for your restaurant, café or hotel. Agree the fee, approve the content, pay on approval — with every term written down.",
         // The brief asked for "you pay only when a deal is agreed". A campaign
         // fee can be charged for running a brief, so that is not true of every
         // brief; this is.
@@ -213,6 +222,11 @@ export const HOME = {
                 title: "Offer",
                 line: "Post the brief: what you want made, what it pays and how you may use it.",
                 creatorLine: "Creators see what it pays, what it asks for and how it may be used before they apply.",
+                // Each rendered only while `aiLive(key)`.
+                ai: [
+                    { key: "briefWriter", line: "Describe it in two lines — we draft the brief." },
+                    { key: "nicheMatching", line: "Matched creators apply — matched on what they post, not by follower count alone." },
+                ],
                 screen: { kicker: "New brief", rows: ["Weekend brunch launch", "₹11,000 per creator", "1 reel · 3 stories"] },
                 yours: true,
             },
@@ -238,6 +252,10 @@ export const HOME = {
                 title: "Get paid",
                 line: "You approve the work, and the creator is paid within 7 days of your approval.",
                 creatorLine: "Paid to their UPI or bank within 7 days of your approval — all of it.",
+                // Rendered only while `aiLive(key)`.
+                ai: [
+                    { key: "campaignSummary", line: "An AI summary then reads your results in plain English, using only your real numbers." },
+                ],
                 screen: { kicker: "Payment", rows: ["Work approved", "₹12,500 to Kiran", "Paid in full"] },
                 yours: true,
             },
@@ -313,6 +331,36 @@ export const HOME = {
     },
     // The navy band. "Guarantee" is a banned word on these pages, so the
     // label is not the brief's "The guarantees".
+    // "What the AI does": after How it works, while at least one switch is on,
+    // one card per switch that is on. It says what each feature does and,
+    // in the lead, what none of them does — the fee, the approval and the
+    // payment are people's, and the page says so rather than leaving it to
+    // be inferred.
+    ai: {
+        label: "What the AI does",
+        title: "Where the AI helps, and where it stops",
+        lead: "It drafts, matches and reads results. People agree every fee, approve every post and pay every creator.",
+        cards: [
+            {
+                key: "briefWriter",
+                title: "Drafts your brief",
+                line: "Describe your campaign in two lines. Get a full brief to edit.",
+                art: "why-planning",
+            },
+            {
+                key: "nicheMatching",
+                title: "Matches creators",
+                line: "Creators matched on what they actually post — cuisine, language, neighbourhood.",
+                art: "why-roster-tablet",
+            },
+            {
+                key: "campaignSummary",
+                title: "Reads your results",
+                line: "A plain-English read of your results, using only your real numbers.",
+                art: "how-report-desk",
+            },
+        ],
+    },
     promises: {
         label: "What holds",
         title: "Three things that are true in the code",
@@ -375,6 +423,9 @@ export const BRANDS = {
         label: "For brands",
         title: "Ten minutes to a brief",
         lead: "Say what you want made and what it pays. We shortlist verified creators, agree each fee in writing and run the shoot day.",
+        // In place of `lead` while `aiLive("briefWriter")`. The brief said
+        // "you shortlist"; we do — the brand chooses from our shortlist.
+        aiLead: "Describe your campaign in two lines and we draft the full brief for you to edit. Matched creators apply, we shortlist, and every term you agree is recorded.",
     },
     shortlist: {
         label: "The shortlist",
@@ -388,12 +439,17 @@ export const BRANDS = {
             kicker: "Shortlist · Weekend brunch launch",
             matchLabel: "match",
             quoteLabel: "quote",
+            // Drawn product UI, invented creators. `why` is shown only while
+            // `aiLive("nicheMatching")` — it is the line the product prints.
+            whyLabel: "Why this creator",
             rows: [
-                { initials: "KM", name: "Kiran M.", reasons: ["Food & drink", "Your city", "Posts reels"], quote: "₹14,000", match: "94%" },
-                { initials: "PR", name: "Priya R.", reasons: ["Food & drink", "Finished 6 of 6"], quote: "₹12,000", match: "88%" },
-                { initials: "TM", name: "Tanvi M.", reasons: ["Lifestyle", "Your city"], quote: "₹9,500", match: "81%" },
+                { initials: "KM", name: "Kiran M.", reasons: ["Food & drink", "Your city", "Posts reels"], why: "Casual dining · Kannada · English · shoots in Indiranagar", quote: "₹14,000", match: "94%" },
+                { initials: "PR", name: "Priya R.", reasons: ["Food & drink", "Finished 6 of 6"], why: "Cafés & coffee · English · shoots in Koramangala", quote: "₹12,000", match: "88%" },
+                { initials: "TM", name: "Tanvi M.", reasons: ["Lifestyle", "Your city"], why: "Bakery & desserts · Hindi · shoots in HSR Layout", quote: "₹9,500", match: "81%" },
             ],
         },
+        // Rendered only while `aiLive("nicheMatching")`.
+        aiLine: "Creators are matched on what they actually post — cuisine, language and neighbourhood — and you see why each one fits.",
         // The brief: "Messaging runs here". There is no brand–creator
         // messaging; on a brief we run, we are the ones talking to creators.
         closing: "You never see a phone number or an email. We handle the conversations.",
@@ -429,21 +485,37 @@ export const BRANDS = {
     report: {
         label: "What you get at the end",
         title: "One report, not nine screenshots",
-        lead: "Reach, views and engagement for every post — read from Instagram's official API where the creator connected it — with the cost per thousand reached.",
+        lead: "Views, accounts reached, likes, shares, saves and comments for every post — read from Instagram's official API where the creator connected it — with every post on one page.",
+        // Rendered only while `aiLive("campaignSummary")`.
+        aiLine: "An AI summary reads your results in plain English — using only your real numbers, never invented ones.",
         card: {
             kicker: "Example report",
-            title: "Weekend brunch launch · 6 creators",
-            // Only measures the backend records: reach, impressions, views,
-            // likes, comments, saves, engagement rate over reach, and cost
-            // per thousand reach on paid work.
+            // **A mirror of the real dashboard and nothing more.** Every
+            // figure is one `GET /brand/campaigns/{id}/analytics` returns in
+            // its `dashboard` block, under the label the dashboard prints, and
+            // a test holds the two lists together. Creator names and figures
+            // are invented.
+            title: "Weekend brunch launch",
+            hero: { label: "Total views", value: "4,27,300", sub: "across 11 posts from 9 creators" },
             totals: [
-                { label: "Reach", value: "48,200" },
-                { label: "Views", value: "61,900" },
-                { label: "Engagements", value: "3,140" },
-                { label: "Engagement rate", value: "6.5%" },
-                { label: "Cost per 1,000 reached", value: "₹1,556" },
+                { label: "Creators", value: "9", sub: "all posted" },
+                { label: "Accounts reached", value: "2,81,900", sub: "added across posts" },
+                { label: "Likes", value: "19,600" },
+                { label: "Shares", value: "2,450" },
+                { label: "Saves", value: "2,790" },
+                { label: "Comments", value: "1,035" },
             ],
-            note: "Engagements are likes, comments and saves; the rate is over reach, not followers.",
+            postsLabel: "Every post",
+            posts: [
+                { name: "Ananya", format: "reel", views: "98,000", shares: "880" },
+                { name: "Ishaan", format: "reel", views: "76,000", shares: "410" },
+                { name: "Meghna", format: "reel", views: "64,000", shares: "300" },
+                { name: "Rohan", format: "reel", views: "52,000", shares: "260" },
+                { name: "Zoya", format: "carousel", count: 5, views: "21,000", shares: "90" },
+                { name: "Dev", format: "carousel", count: 4, views: "18,000", shares: "60" },
+            ],
+            more: "+5 more",
+            note: "Accounts reached are added across posts: one person who saw two posts counts twice.",
         },
     },
     promises: {
@@ -489,6 +561,13 @@ export const BRANDS = {
         label: "Questions",
         title: "What brands ask first",
         items: [
+            {
+                // Shown only while `aiLive("briefWriter")`.
+                aiKey: "briefWriter",
+                track: "faq-ai-brief-writer",
+                q: "Do I have to write the brief myself?",
+                a: "No. Describe the campaign in a line or two, in English, Kannada or Hinglish, and we draft it. You edit and post; nothing goes out without you.",
+            },
             {
                 q: "What if nobody applies?",
                 a: "We invite creators who fit the brief. If we still can't fill it, the campaign fee is refunded, unless you turned down everyone we shortlisted.",
@@ -554,6 +633,8 @@ export const CREATORS = {
         // The brief: "The money is held before you travel". There is no
         // escrow; the fee being agreed in writing first is what is true.
         lead: "A brand never gets your phone, your email or your address — not when they shortlist you, not after the shoot, not ever. The fee is agreed in writing before you travel, and you keep 100% of it. Brands pay our fee, not you.",
+        // Under the lead while `aiLive("nicheMatching")`.
+        aiLine: "Briefs are matched to what you post — cuisine, language and neighbourhood.",
         // The brief's second chip was "ID-verified creators only". A person
         // reviews every profile; no ID document is collected.
         chips: ["Any follower count", "Verified creators only", "Paid within 7 days of approval", "Sign in with WhatsApp"],
@@ -562,6 +643,8 @@ export const CREATORS = {
         label: "Briefs that fit",
         title: "See the fee before you apply",
         lead: "Every brief comes from a brand we have checked, and shows what it pays, what it asks for and how the work may be used.",
+        // Rendered only while `aiLive("nicheMatching")`.
+        aiLine: "Briefs are matched to what you post, so you see the ones that suit you first.",
         card: {
             kicker: "Brief · Food & drink",
             title: "Weekend brunch launch",

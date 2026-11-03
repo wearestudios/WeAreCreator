@@ -37,10 +37,14 @@ import {
 } from "@/components/marketing/SiteParts";
 import StickyCta from "@/components/marketing/StickyCta";
 import { BRANDS_PAGE as IDS } from "@/constants/testIds";
-import { ASK, BRANDS, FACTS, platformFeeText } from "@/content/marketing";
+import { ASK, BRANDS, FACTS, aiLive, platformFeeText } from "@/content/marketing";
 
 /** An FAQ item gated on a fact renders only when that fact is true. */
-const visibleFaq = (items) => items.filter((item) => !item.showIf || FACTS[item.showIf] === true);
+// An item can wait on a fact (`showIf`) or on an AI switch (`aiKey`).
+const visibleFaq = (items) =>
+    items.filter(
+        (item) => (!item.showIf || FACTS[item.showIf] === true) && (!item.aiKey || aiLive(item.aiKey)),
+    );
 
 export default function ForBrands() {
     const { meta, hero, shortlist, pricing, report, promises, compare, faq, close } = BRANDS;
@@ -51,7 +55,19 @@ export default function ForBrands() {
                     <div className="lg:col-span-7">
                         <Label>{hero.label}</Label>
                         <h1 className="mkt-h1 mt-6 max-w-5xl text-heading">{hero.title}</h1>
-                        <p className="mkt-lead mt-6 max-w-2xl text-muted-foreground">{hero.lead}</p>
+                        {/* The h1 never changes; the lead does, while the
+                            writer is shipped to brands. */}
+                        {aiLive("briefWriter") ? (
+                            <p
+                                data-testid={IDS.heroAiLead}
+                                data-track-section="hero-ai-lead"
+                                className="mkt-lead mt-6 max-w-2xl text-muted-foreground"
+                            >
+                                {hero.aiLead}
+                            </p>
+                        ) : (
+                            <p className="mkt-lead mt-6 max-w-2xl text-muted-foreground">{hero.lead}</p>
+                        )}
                         <div className="mt-10 flex flex-col gap-3 sm:flex-row">
                             <Cta ask={ASK.postBrief} testid={IDS.ctaTop} />
                             <Cta ask={ASK.talkWhatsapp} variant="outline" testid={IDS.ctaTalkTop} />
@@ -77,7 +93,19 @@ export default function ForBrands() {
                         <Illustration name="why-roster-tablet" className="order-first lg:order-none lg:col-span-5" />
                     </div>
                     <div className="mt-12 max-w-4xl">
-                        <ShortlistCard card={shortlist.card} rowTestid={IDS.shortlistRow} />
+                        {/* Only while matching is shipped: the "Why this creator"
+                            line and the sentence about it describe what the
+                            brand's own applicant board prints. */}
+                        {aiLive("nicheMatching") ? (
+                            <p
+                                data-testid={IDS.shortlistAi}
+                                data-track-section="shortlist-ai-matching"
+                                className="mkt-body mb-6 text-foreground"
+                            >
+                                {shortlist.aiLine}
+                            </p>
+                        ) : null}
+                        <ShortlistCard card={shortlist.card} rowTestid={IDS.shortlistRow} showWhy={aiLive("nicheMatching")} />
                         <p className="mkt-body mt-6 text-foreground">{shortlist.closing}</p>
                     </div>
                 </Wrap>
@@ -130,6 +158,18 @@ export default function ForBrands() {
                     </div>
                     <div className="lg:col-span-7 lg:pt-16">
                         <ReportCard card={report.card} />
+                        {/* Only while the summary is shipped to brands: a line
+                            about a feature they cannot use is a claim the
+                            product does not keep. */}
+                        {aiLive("campaignSummary") ? (
+                            <p
+                                data-testid={IDS.reportAi}
+                                data-track-section="report-ai-summary"
+                                className="mkt-body mt-6 text-muted-foreground"
+                            >
+                                {report.aiLine}
+                            </p>
+                        ) : null}
                     </div>
                 </Wrap>
             </Band>
