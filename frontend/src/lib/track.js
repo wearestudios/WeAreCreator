@@ -40,6 +40,8 @@ export const EVENTS = {
     sectionView: "section_view",
     ctaClick: "cta_click",
     outboundWhatsapp: "outbound_whatsapp",
+    // The homepage's process switch: which side of the deal was asked for.
+    processTabChange: "process_tab_change",
 };
 
 export function isTrackedPath(pathname) {

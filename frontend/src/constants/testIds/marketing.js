@@ -63,12 +63,6 @@ export const MARKETING = {
 	handshakeCta: 'marketing-handshake-cta',
 	handshakeStudio: 'marketing-handshake-studio',
 
-	// The scroll film — the campaign playing itself out.
-	film: 'marketing-film',
-	filmTrack: 'marketing-film-track',
-	filmStage: 'marketing-film-stage',
-	filmSteps: 'marketing-film-steps',
-	filmPayout: 'marketing-film-payout',
 
 	// Shared furniture.
 	hero: 'marketing-hero',

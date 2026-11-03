@@ -185,7 +185,7 @@ def test_the_h1_text_is_the_same_on_every_step():
     assert "<h1" not in DECK and "<h1" not in SCREENS
     deck = CONTENT[CONTENT.index("    deck: {") : CONTENT.index("    promises: {")]
     assert title not in deck
-    hero = _code(HOME)[_code(HOME).index("function Hero()") : _code(HOME).index("function WhenNear")]
+    hero = _code(HOME)[_code(HOME).index("function Hero()") : _code(HOME).index("function WhoBuiltIt")]
     assert "<HeroDeckProvider" in hero and "<DeckStage" in hero and "<StepRail" in hero
 
 
@@ -219,7 +219,7 @@ def test_the_hero_and_the_band_use_no_image_and_name_no_colour():
         r"emerald|teal|cyan|sky|blue|indigo|violet|purple|pink|rose|navy)(?:-\d{2,3})?\b"
     )
     literal = re.compile(r"#[0-9a-fA-F]{3,8}\b|\brgba?\(|\bhsla?\(\s*\d")
-    hero = HOME[HOME.index("function Hero()") : HOME.index("function WhenNear")]
+    hero = HOME[HOME.index("function Hero()") : HOME.index("function WhoBuiltIt")]
     for name, src in (("HeroDeck", DECK), ("heroScreens", SCREENS), ("ComparisonBand", BAND),
                       ("Hero()", hero)):
         code = _code(src)
@@ -266,7 +266,7 @@ def test_the_sector_images_are_gone_and_nothing_points_at_them():
 def _deck_and_film():
     """Every string the deck's screens and the film draw, from the content
     module — the claims the hero card makes are made there."""
-    deck = CONTENT[CONTENT.index("    film: {") : CONTENT.index("    promises: {")]
+    deck = CONTENT[CONTENT.index("    deck: {") : CONTENT.index("    ai: {")]
     return " ".join(re.findall(r'"([^"]*)"', deck))
 
 

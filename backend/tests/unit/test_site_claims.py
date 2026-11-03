@@ -139,14 +139,18 @@ class TestHomePromises:
         # the brand's applicant board are served the one `agreed_amount`.
         assert "agreed_amount" in inspect.getsource(server._serialize_collab_row)
 
-    def test_the_steps_you_touch_are_the_brands_own_transitions(self):
-        """"You only touch two": posting the brief, and approving the work —
-        `content_approved` is brand-owned. Agreeing is ours on a brief we run
-        (`agreed_at` is the moment we finish it) and the shoot is ours."""
-        how = content()["HOME"]["how"]["items"]
-        assert [i["key"] for i in how if i["yours"]] == ["offer", "paid"]
-        assert "content_approved" in server._BRAND_OWNED_TRANSITIONS
+    def test_the_spine_says_we_shortlist_because_we_run_every_brief(self):
+        """Replaces "you only touch two", which went with the old section.
+        The brand's second step is the shortlist *we* make: every brand-posted
+        brief is run by us, and a brand sees an applicant only once we have
+        finished with them (`agreed_at`)."""
+        shortlist = next(
+            s for s in content()["HOME"]["processSpine"]["steps"]["brands"] if s["key"] == "shortlist"
+        )
+        assert shortlist["title"] == "Get a shortlist"
+        assert "we shortlist" in shortlist["line"]
         assert server.NEW_CAMPAIGN_EXECUTION_OWNER == "weare"
+        assert "agreed_at" in inspect.getsource(server._brand_sees_collab)
 
 
 # ---------------------------------------------------------------------------
@@ -246,10 +250,9 @@ class TestCreatorPromises:
         payout finding — so the copy promises the default.)"""
         assert server.CREATOR_PAYOUT_DAYS == 7
         assert f"Paid within {server.CREATOR_PAYOUT_DAYS} days of approval" in content()["CREATORS"]["hero"]["chips"]
-        # Home's card lost its chips; the promise is said once on home, in
-        # step 4.
-        paid = next(i for i in content()["HOME"]["how"]["items"] if i["key"] == "paid")
-        assert f"within {server.CREATOR_PAYOUT_DAYS} days of your approval" in paid["line"]
+        # On home the promise is the creator's last step on the process spine.
+        paid = next(i for i in content()["HOME"]["processSpine"]["steps"]["creators"] if i["key"] == "paid")
+        assert f"within {server.CREATOR_PAYOUT_DAYS} days of approval" in paid["line"]
 
     def test_creators_sign_in_with_whatsapp(self):
         """"Sign in with WhatsApp" / "a code sent to your WhatsApp": creators

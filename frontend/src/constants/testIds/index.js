@@ -34,6 +34,7 @@ export * from './manager';
 export * from './marketing';
 export * from './site';
 export * from './payout';
+export * from './process';
 export * from './profile';
 export * from './questions';
 export * from './scheduling';

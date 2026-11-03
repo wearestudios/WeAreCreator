@@ -1716,7 +1716,9 @@ holds all of it.
 - **Motion that explains, rewired rather than rewritten** — restored from
   8263b6f and #39 in a verbatim commit first, so the next commit's diff is
   exactly what was adapted:
-  - `CampaignFilm` sits in the homepage's "How it works", in the column
+  - *(Retired since: the film and the four illustrated steps were replaced
+    by the process spine — see "The process spine" below.)*
+    `CampaignFilm` sat in the homepage's "How it works", in the column
     beside the four steps, and **the steps are its track**: the stage is
     sticky in its column and each beat plays while its own step is the one
     being read (measured at 1280, 1440 and 1920). Seven beats, grouped under
@@ -1755,6 +1757,31 @@ holds all of it.
   Verified in a browser: zero running animations on all three pages.
 - **Word budgets moved by exactly what was added**: home 430 (416 used),
   /for-brands 670 (651). Drawn product UI still does not count.
+
+### The process spine
+
+Home's section 04, "How it works", is `components/marketing/ProcessSpine.jsx`:
+a navy band with a 1px spine, five numbered steps a side switched between
+brands and creators, the before/after strip and the feature row. Every word
+is `HOME.processSpine`; each mockup is a `process/StepCard*.jsx` drawn from
+the step's `card`, which counts as drawn product UI, not budget.
+
+- **No layout reads on scroll.** The active step is the one crossing the
+  viewport's centre line, found by an IntersectionObserver with a
+  `-50% 0px -50% 0px` root margin. The spine's fill is one rAF per scroll
+  (listener attached only while the section is near): one rect read, one
+  `scaleY` write. Steps are `memo`ised, so an active change re-renders two.
+- **The dimming is on the words and the card, never the step.** On the `li`
+  it made the node translucent and the spine showed through it.
+- **The switch writes `#brands` / `#creators` with `replaceState`**, so
+  `/#creators` deep-links to the creators' steps; `#how-it-works` is still the
+  section's anchor.
+- Every claim on it is held by `test_the_spine_claims_only_what_the_product_does`
+  — the payout window, the revision cap, contact hiding, barter opt-in, and
+  "we shortlist" because every brand brief is ours to run.
+- **Navy three times on home** was that brief's choice; the AI section sits
+  between the spine and the promise band, and a test fails if every AI switch
+  goes off and the two navy bands would touch.
 
 ### Measured, not assumed
 
